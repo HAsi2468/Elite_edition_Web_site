@@ -4,7 +4,8 @@ import CatalogManagerModal from './CatalogManagerModal';
 import {
   RefreshCw, PlusCircle, ArrowDownToLine, ArrowUpFromLine,
   Layers, Database, Settings, Trash2, FileDown, Search, X,
-  AlertTriangle, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Edit, FileText
+  AlertTriangle, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Edit, FileText,
+  Check, Plus
 } from 'lucide-react';
 
 export default function FabricInventoryPanel() {
@@ -32,7 +33,11 @@ export default function FabricInventoryPanel() {
   const [editingChallan, setEditingChallan] = useState(null);
   const [challanLotLoading, setChallanLotLoading] = useState(false);
   const [challanDeleteTarget, setChallanDeleteTarget] = useState(null);
-  const emptyTpRows = () => Array.from({ length: 4 }, (_, i) => ({ tpNo: i + 1, tpMeter: '' }));
+  const [availableLots, setAvailableLots] = useState([]);
+  const [billToOptions, setBillToOptions] = useState([]);
+  const [shipToOptions, setShipToOptions] = useState([]);
+
+  const emptyTpRows = () => [{ tpNo: 1, tpMeter: '' }];
   const [challanForm, setChallanForm] = useState({
     date: new Date().toISOString().split('T')[0],
     partyName: '',
@@ -44,6 +49,9 @@ export default function FabricInventoryPanel() {
     designNo: '',
     colour: '',
     panna: '',
+    pcs: '',
+    billTo: '',
+    shipTo: '',
     tpDetails: emptyTpRows(),
     notes: '',
   });
@@ -307,6 +315,8 @@ export default function FabricInventoryPanel() {
 
       if (cfg && cfg.parties) setPartiesList(cfg.parties);
       if (cfg && cfg.widths) setWidthsList(cfg.widths);
+      if (cfg && cfg.billToOptions) setBillToOptions(cfg.billToOptions);
+      if (cfg && cfg.shipToOptions) setShipToOptions(cfg.shipToOptions);
 
       try {
         const jRes = await api.getJobCards({ status: 'In Progress', limit: 200 });
@@ -471,12 +481,15 @@ export default function FabricInventoryPanel() {
   };
 
   // ── Challan helpers ────────────────────────────────────────────────────
-  const resetChallanForm = () => setChallanForm({
-    date: new Date().toISOString().split('T')[0],
-    partyName: '', lotNo: '', vendorChallanNo: '', fabricName: '', shortagePct: '',
-    jobNo: '', designNo: '', colour: '', panna: '',
-    tpDetails: emptyTpRows(), notes: '',
-  });
+  const resetChallanForm = () => {
+    setAvailableLots([]);
+    setChallanForm({
+      date: new Date().toISOString().split('T')[0],
+      partyName: '', lotNo: '', vendorChallanNo: '', fabricName: '', shortagePct: '',
+      jobNo: '', designNo: '', colour: '', panna: '', pcs: '',
+      tpDetails: emptyTpRows(), notes: '',
+    });
+  };
 
   const fetchChallans = async () => {
     try {
@@ -493,31 +506,85 @@ export default function FabricInventoryPanel() {
 
   useEffect(() => { fetchChallans(); }, [challanDateStart, challanDateEnd, challanSearch]);
 
-  // When Lot No changes — auto-fill vendor challan, fabric, shortage, panna
+  const getVendorShortForm = (name) => {
+    if (!name) return '';
+    const u = name.toUpperCase().trim();
+    if (u.includes('AVSAR')) return 'AV';
+    if (u.includes('ELITE')) return 'EL';
+    if (u.includes('FABTEX')) return 'FT';
+    if (u.includes('MAHAGAURI')) return 'MG';
+    if (u.includes('OEQUAL') || u.includes('OE')) return 'OE';
+    if (u.includes('OZONE')) return 'OZ';
+    if (u.includes('YAMUNAJI')) return 'YM';
+    return u.substring(0, 2);
+  };
+
+  // When Lot No changes — auto-fill vendor challans, fabric, shortage, panna
   const handleChallanLotChange = async (val) => {
-    setChallanForm(prev => ({ ...prev, lotNo: val }));
+    const lotsList = String(val)
+      .split(/[,\s&]+/)
+      .map(x => x.trim())
+      .filter(Boolean);
+    const defaultLot = lotsList[0] || '';
+
+    setChallanForm(prev => {
+      const updatedTps = prev.tpDetails.map(tp => {
+        if (!tp.lotNo || !lotsList.includes(tp.lotNo)) {
+          return { ...tp, lotNo: defaultLot };
+        }
+        return tp;
+      });
+      return { ...prev, lotNo: val, tpDetails: updatedTps };
+    });
     if (!val) return;
+
+    if (lotsList.length === 0) return;
+
     setChallanLotLoading(true);
     try {
-      const res = await api.getFabricLotInfo(val);
-      if (res.success && res.data) {
+      // Fetch details for all selected lots concurrently
+      const promises = lotsList.map(lot => api.getFabricLotInfo(lot).catch(() => null));
+      const results = await Promise.all(promises);
+
+      const validResults = results.filter(r => r && r.success && r.data);
+      if (validResults.length > 0) {
+        // Collect all vendor challans with their vendor short prefix
+        const vendorChallans = validResults
+          .map(r => {
+            const shortName = getVendorShortForm(r.data.vendorName);
+            const vNo = r.data.vendorChallanNo;
+            if (shortName && vNo) {
+              // Avoid duplicate prepending if already prefixed
+              if (vNo.toUpperCase().startsWith(shortName + '-')) return vNo;
+              return `${shortName}-${vNo}`;
+            }
+            return vNo;
+          })
+          .filter(Boolean);
+        
+        // Remove duplicates and join with commas
+        const uniqueChallans = [...new Set(vendorChallans)].join(', ');
+
+        // Collect fabricName, shortage, panna from first valid response
+        const first = validResults[0].data;
+
         setChallanForm(prev => ({
           ...prev,
-          vendorChallanNo: res.data.vendorChallanNo || prev.vendorChallanNo,
-          fabricName: res.data.fabricName || prev.fabricName,
-          shortagePct: res.data.shortagePct != null ? String(res.data.shortagePct) : prev.shortagePct,
-          panna: prev.panna || res.data.panna || '',
+          vendorChallanNo: uniqueChallans || prev.vendorChallanNo,
+          fabricName: first.fabricName || prev.fabricName,
+          shortagePct: first.shortagePct != null ? String(first.shortagePct) : prev.shortagePct,
+          panna: prev.panna || first.panna || '',
         }));
       }
     } catch (e) {
-      // lot not found — no-op
+      console.warn('Failed to fetch multiple lot info', e);
     } finally {
       setChallanLotLoading(false);
     }
   };
 
-  // When Job No changes — auto-fill design, colour, panna
-  const handleChallanJobChange = (val) => {
+  // When Job No changes — auto-fill design, colour, panna, fabric, party, billTo, shipTo
+  const handleChallanJobChange = async (val) => {
     setChallanForm(prev => ({ ...prev, jobNo: val }));
     const job = inProgressJobCards.find(j => j.jobNo === val);
     if (job) {
@@ -527,7 +594,25 @@ export default function FabricInventoryPanel() {
         designNo: job.designNo || prev.designNo,
         colour: job.colors || prev.colour,
         panna: job.panna || prev.panna,
+        fabricName: job.fabric || prev.fabricName,
+        partyName: job.party || prev.partyName,
+        billTo: job.billTo || prev.billTo || '',
+        shipTo: job.shipTo || prev.shipTo || '',
       }));
+
+      // Fetch lot numbers that have this fabric
+      if (job.fabric) {
+        try {
+          const res = await api.getFabricLotStock({ fabricQuality: job.fabric });
+          if (res.success && res.data) {
+            setAvailableLots(res.data);
+          }
+        } catch (e) {
+          console.warn('Failed to fetch lot stock for fabric', e);
+        }
+      }
+    } else {
+      setAvailableLots([]);
     }
   };
 
@@ -542,9 +627,14 @@ export default function FabricInventoryPanel() {
 
   const addTpRow = () => {
     setChallanForm(prev => {
-      if (prev.tpDetails.length >= 20) return prev;
+      if (prev.tpDetails.length >= 30) return prev;
       const nextNo = prev.tpDetails.length + 1;
-      return { ...prev, tpDetails: [...prev.tpDetails, { tpNo: nextNo, tpMeter: '' }] };
+      const lots = String(prev.lotNo || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      const defaultLot = lots[0] || '';
+      return { ...prev, tpDetails: [...prev.tpDetails, { tpNo: nextNo, tpMeter: '', lotNo: defaultLot }] };
     });
   };
 
@@ -569,7 +659,7 @@ export default function FabricInventoryPanel() {
         totalTp: challanTotalTp,
         tpDetails: challanForm.tpDetails
           .filter(r => r.tpMeter !== '' && r.tpMeter != null)
-          .map(r => ({ tpNo: Number(r.tpNo), tpMeter: parseFloat(r.tpMeter) || 0 })),
+          .map(r => ({ tpNo: Number(r.tpNo), tpMeter: parseFloat(r.tpMeter) || 0, lotNo: r.lotNo || '' })),
       };
       if (editingChallan) {
         await api.updateFabricChallan(editingChallan._id, payload);
@@ -579,7 +669,7 @@ export default function FabricInventoryPanel() {
       setIsChallanOpen(false);
       setEditingChallan(null);
       resetChallanForm();
-      fetchChallans();
+      fetchData();
     } catch (err) {
       alert(err.message);
     } finally {
@@ -603,9 +693,21 @@ export default function FabricInventoryPanel() {
       designNo: c.designNo || '',
       colour: c.colour || '',
       panna: c.panna || '',
+      pcs: c.pcs != null ? String(c.pcs) : '',
+      billTo: c.billTo || '',
+      shipTo: c.shipTo || '',
       tpDetails: tpRows,
       notes: c.notes || '',
     });
+
+    if (c.fabricName) {
+      api.getFabricLotStock({ fabricQuality: c.fabricName }).then(res => {
+        if (res.success && res.data) setAvailableLots(res.data);
+      }).catch(() => {});
+    } else {
+      setAvailableLots([]);
+    }
+
     setIsChallanOpen(true);
   };
 
@@ -614,11 +716,26 @@ export default function FabricInventoryPanel() {
     try {
       await api.deleteFabricChallan(challanDeleteTarget.id);
       setChallanDeleteTarget(null);
-      fetchChallans();
+      fetchData();
     } catch (err) {
       alert('Failed to delete challan: ' + err.message);
     }
   };
+
+  const handleDownloadChallanPdf = async (id, challanNo) => {
+    try {
+      await api.downloadFabricChallanPdf(id, challanNo);
+    } catch (err) {
+      alert('Failed to download PDF: ' + err.message);
+    }
+  };
+
+  const allInwardLots = transactions
+    .filter(t => t.type === 'INWARD' && t.lotNo != null)
+    .map(t => Number(t.lotNo))
+    .filter(lot => !isNaN(lot));
+  const maxLotNo = allInwardLots.length > 0 ? Math.max(...allInwardLots) : 0;
+  const nextLotNo = maxLotNo + 1;
 
   // Filtered transaction lists
   const inwardTx = transactions.filter(t => {
@@ -683,42 +800,65 @@ export default function FabricInventoryPanel() {
     { id: 'requirement', label: 'Fabric Requirement', icon: AlertTriangle },
   ];
 
+  // Parse lot numbers from the comma-separated lotNo field
+  const parseSelectedLots = (lotNoStr) => {
+    if (!lotNoStr) return [];
+    return String(lotNoStr)
+      .split(/[,\s&]+/)
+      .map(x => x.trim())
+      .filter(Boolean);
+  };
+
+  const selectedLotsList = parseSelectedLots(challanForm.lotNo);
+
+  // Calculate sum of available meters from the selected lots
+  const selectedLotsTotalStock = selectedLotsList.reduce((sum, lotNo) => {
+    const lotStockItem = availableLots.find(l => String(l.lotNo) === lotNo);
+    return sum + (lotStockItem ? lotStockItem.currentStock : 0);
+  }, 0);
+
+  const activeJob = inProgressJobCards.find(j => j.jobNo === challanForm.jobNo);
+  const jobMtrNeeded = activeJob ? parseFloat(activeJob.totalMtr) || 0 : 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
       {/* Header & Navigation */}
-      <div className="glass-panel" style={{ display: 'flex', gap: '1rem', padding: '0.75rem', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
+      <div className="glass-panel" style={{ display: 'flex', gap: '1rem', padding: '0.75rem', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'nowrap', overflowX: 'auto' }}>
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={activeTab === tab.id ? 'btn-primary' : 'btn-secondary'}
-              style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+              style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem', flexShrink: 0 }}
             >
               <tab.icon size={16} />
               {tab.label}
             </button>
           ))}
         </div>
-        <button onClick={handleExportCsv} className="btn-secondary" title="Download Fabric Stock CSV" style={{ gap: '0.4rem' }}>
-          <FileDown size={16} /> Export CSV
-        </button>
-        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="btn-secondary" title="Upload Fabric Stock CSV" style={{ gap: '0.4rem' }}>
-          <ArrowDownToLine size={16} /> Import CSV
-        </button>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleImportCsv}
-          accept=".csv"
-          style={{ display: 'none' }}
-        />
-        <button onClick={() => setIsPdfFilterOpen(true)} className="btn-secondary" title="Download Ledger PDF" style={{ gap: '0.4rem' }}>
-          <FileDown size={16} /> PDF Report
-        </button>
-        <button onClick={fetchData} className="btn-icon" title="Refresh Data">
-          <RefreshCw size={18} className={loading ? 'spin-loader' : ''} />
-        </button>
+
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={handleExportCsv} className="btn-secondary" title="Download Fabric Stock CSV" style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', flexShrink: 0 }}>
+            <FileDown size={16} /> Export CSV
+          </button>
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="btn-secondary" title="Upload Fabric Stock CSV" style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', flexShrink: 0 }}>
+            <ArrowDownToLine size={16} /> Import CSV
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportCsv}
+            accept=".csv"
+            style={{ display: 'none' }}
+          />
+          <button onClick={() => setIsPdfFilterOpen(true)} className="btn-secondary" title="Download Ledger PDF" style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', flexShrink: 0 }}>
+            <FileDown size={16} /> PDF Report
+          </button>
+          <button onClick={fetchData} className="btn-icon" title="Refresh Data" style={{ padding: '0.5rem', flexShrink: 0 }}>
+            <RefreshCw size={18} className={loading ? 'spin-loader' : ''} />
+          </button>
+        </div>
       </div>
 
       {error && <div style={{ color: 'red', padding: '1rem', background: '#ffebeb', borderRadius: '8px' }}>{error}</div>}
@@ -847,7 +987,23 @@ export default function FabricInventoryPanel() {
         {activeTab === 'inward' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <h2>Inward Transactions</h2>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <h2>Inward Transactions</h2>
+                {maxLotNo > 0 && (
+                  <span style={{ 
+                    fontSize: '0.85rem', 
+                    color: 'var(--success)', 
+                    background: 'rgba(16, 185, 129, 0.08)', 
+                    border: '1px solid rgba(16, 185, 129, 0.15)', 
+                    padding: '3px 10px', 
+                    borderRadius: '12px', 
+                    marginLeft: '12px', 
+                    fontWeight: 600 
+                  }}>
+                    Latest Lot: #{maxLotNo}
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative' }}>
                   <Search size={14} style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -1168,7 +1324,43 @@ export default function FabricInventoryPanel() {
                       <td>{t.lotNo ? `#${t.lotNo}` : '-'}</td>
                       <td>{t.panna || '-'}</td>
                       <td style={{ color: 'var(--danger)', fontWeight: 600 }}>-{t.qty}</td>
-                      <td>{t.notes}</td>
+                      <td>
+                        {(() => {
+                          const notes = t.notes || '';
+                          if (notes.startsWith('Auto: EDP-') || notes.startsWith('Auto: Job ')) {
+                            const parts = notes.split('|');
+                            if (parts.length >= 2) {
+                              const header = parts[0].trim();
+                              const badges = parts.slice(1).map(p => p.trim());
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                  <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.8rem' }}>
+                                    {header}
+                                  </span>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {badges.map((badge, bIdx) => (
+                                      <span key={bIdx} style={{ 
+                                        fontSize: '0.72rem', 
+                                        color: bIdx === 0 ? 'var(--primary-light)' : 'var(--success)', 
+                                        background: bIdx === 0 ? 'rgba(14, 165, 233, 0.08)' : 'rgba(16, 185, 129, 0.08)', 
+                                        border: bIdx === 0 ? '1px solid rgba(14, 165, 233, 0.15)' : '1px solid rgba(16, 185, 129, 0.15)',
+                                        padding: '2px 6px', 
+                                        borderRadius: '4px', 
+                                        display: 'inline-block',
+                                        marginTop: '2px',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {badge}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+                          return t.notes || '—';
+                        })()}
+                      </td>
                       <td>
                         <button
                           className="btn-icon"
@@ -1369,47 +1561,42 @@ export default function FabricInventoryPanel() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Challan No</th>
+                  <th>Ch.no.</th>
                   <th>Date</th>
                   <th>Party</th>
                   <th>Lot No</th>
                   <th>Fabric</th>
-                  <th>Shortage %</th>
                   <th>Job No</th>
-                  <th>Design No</th>
-                  <th>Colour</th>
                   <th>Panna</th>
                   <th>Total TP</th>
                   <th>Total Mtr</th>
-                  <th>Notes</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {challans.length === 0 && (
-                  <tr><td colSpan={14} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No challans found. Click "New Challan" to create one.</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No challans found. Click "New Challan" to create one.</td></tr>
                 )}
                 {challans.map(ch => (
                   <tr key={ch._id}>
-                    <td><span style={{ fontWeight: 700, color: 'var(--primary)' }}>#{ch.challanNo}</span></td>
+                    <td><span style={{ fontWeight: 700, color: 'var(--primary)' }}>EDP-{ch.challanNo}</span></td>
                     <td>{new Date(ch.date).toLocaleDateString()}</td>
                     <td>{ch.partyName || '—'}</td>
                     <td>{ch.lotNo != null ? `#${ch.lotNo}` : '—'}</td>
                     <td>{ch.fabricName || '—'}</td>
-                    <td>{ch.shortagePct != null ? `${ch.shortagePct}%` : '—'}</td>
                     <td style={{ color: 'var(--primary)' }}>{ch.jobNo || '—'}</td>
-                    <td>{ch.designNo || '—'}</td>
-                    <td>{ch.colour || '—'}</td>
                     <td>{ch.panna || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600 }}>{ch.totalTp}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>{ch.totalMtr} mtr</td>
-                    <td>{ch.notes || ''}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>{parseFloat(ch.totalMtr || 0).toFixed(2)} mtr</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-icon" title="Download PDF" style={{ color: 'var(--success)', marginRight: '0.5rem' }} onClick={() => handleDownloadChallanPdf(ch._id, ch.challanNo)}>
+                        <FileDown size={15} />
+                      </button>
                       <button className="btn-icon" title="Edit" style={{ color: 'var(--primary)', marginRight: '0.5rem' }} onClick={() => startEditChallan(ch)}>
                         <Edit size={15} />
                       </button>
                       {isAdmin && (
-                        <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setChallanDeleteTarget({ id: ch._id, label: `Challan #${ch.challanNo}` })}>
+                        <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setChallanDeleteTarget({ id: ch._id, label: `Challan EDP-${ch.challanNo}` })}>
                           <Trash2 size={15} />
                         </button>
                       )}
@@ -1440,7 +1627,7 @@ export default function FabricInventoryPanel() {
       {isChallanOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="glass-panel" style={{ width: '640px', padding: '2rem', maxHeight: '92vh', overflowY: 'auto' }}>
-            <h2 style={{ marginBottom: '1.5rem' }}>{editingChallan ? `Edit Challan #${editingChallan.challanNo}` : 'New Fabric Challan'}</h2>
+            <h2 style={{ marginBottom: '1.5rem' }}>{editingChallan ? `Edit Challan EDP-${editingChallan.challanNo}` : 'New Fabric Challan'}</h2>
             <form onSubmit={handleChallanSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
               {/* Row 1: Date + Party */}
@@ -1458,61 +1645,21 @@ export default function FabricInventoryPanel() {
                 </div>
               </div>
 
-              {/* Divider: Lot Details */}
-              <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Lot Details</span>
-              </div>
-
-              {/* Row 2: Lot No + Vendor Challan No */}
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Lot No {challanLotLoading && <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Loading…</span>}</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={challanForm.lotNo}
-                    onChange={e => handleChallanLotChange(e.target.value)}
-                    onBlur={e => e.target.value && handleChallanLotChange(e.target.value)}
-                    style={inputStyle}
-                    placeholder="Enter lot number…"
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Vendor Challan No <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-filled)</span></label>
-                  <input type="text" value={challanForm.vendorChallanNo} onChange={e => setChallanForm({ ...challanForm, vendorChallanNo: e.target.value })} style={inputStyle} placeholder="Auto-filled from lot…" />
-                </div>
-              </div>
-
-              {/* Row 3: Fabric Name + Shortage */}
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 2 }}>
-                  <label style={labelStyle}>Fabric Name <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-filled)</span></label>
-                  <input type="text" list="challan-fabrics" value={challanForm.fabricName} onChange={e => setChallanForm({ ...challanForm, fabricName: e.target.value })} style={inputStyle} placeholder="Auto-filled from lot…" />
-                  <datalist id="challan-fabrics">
-                    {fabricsList.map((f, i) => <option key={i} value={f} />)}
-                  </datalist>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Shortage %</label>
-                  <input type="number" step="0.01" min="0" max="100" value={challanForm.shortagePct} onChange={e => setChallanForm({ ...challanForm, shortagePct: e.target.value })} style={inputStyle} placeholder="e.g. 3.5" />
-                </div>
-              </div>
-
               {/* Divider: Job Details */}
               <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Job Details</span>
               </div>
 
-              {/* Row 4: Job No */}
+              {/* Row 2: Job No */}
               <div>
-                <label style={labelStyle}>Job No <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-fills design, colour, panna)</span></label>
+                <label style={labelStyle}>Job No <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-fills design, colour, panna, fabric)</span></label>
                 <input type="text" list="challan-jobs" value={challanForm.jobNo} onChange={e => handleChallanJobChange(e.target.value)} style={inputStyle} placeholder="Select or type job no…" />
                 <datalist id="challan-jobs">
                   {inProgressJobCards.map(j => <option key={j._id} value={j.jobNo}>{j.jobNo} — {j.party}</option>)}
                 </datalist>
               </div>
 
-              {/* Row 5: Design + Colour + Panna */}
+              {/* Row 3: Design + Colour + Panna */}
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
                   <label style={labelStyle}>Design No <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-filled)</span></label>
@@ -1531,38 +1678,239 @@ export default function FabricInventoryPanel() {
                 </div>
               </div>
 
+              {/* Row 3.5: Bill To & Ship To (Dropdowns from Setting tab) */}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Bill To</label>
+                  <select
+                    value={challanForm.billTo}
+                    onChange={e => setChallanForm({ ...challanForm, billTo: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select Bill To --</option>
+                    {billToOptions.map((opt, i) => (
+                      <option key={i} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Ship To</label>
+                  <select
+                    value={challanForm.shipTo}
+                    onChange={e => setChallanForm({ ...challanForm, shipTo: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select Ship To --</option>
+                    {shipToOptions.map((opt, i) => (
+                      <option key={i} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Divider: Lot Details */}
+              <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Lot Details</span>
+              </div>
+
+              {/* Row 4: Lot No + Vendor Challan No + PCS */}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 1.2 }}>
+                  <label style={labelStyle}>Lot No {challanLotLoading && <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Loading…</span>}</label>
+                  <input
+                    type="text"
+                    value={challanForm.lotNo}
+                    onChange={e => handleChallanLotChange(e.target.value)}
+                    style={inputStyle}
+                    placeholder="e.g. 320, 321"
+                  />
+                </div>
+                <div style={{ flex: 1.2 }}>
+                  <label style={labelStyle}>Vendor Challan No <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-filled)</span></label>
+                  <input type="text" value={challanForm.vendorChallanNo} onChange={e => setChallanForm({ ...challanForm, vendorChallanNo: e.target.value })} style={inputStyle} placeholder="Auto-filled from lot…" />
+                </div>
+                <div style={{ flex: 0.8 }}>
+                  <label style={labelStyle}>PCS</label>
+                  <input type="number" min="0" value={challanForm.pcs} onChange={e => setChallanForm({ ...challanForm, pcs: e.target.value })} style={inputStyle} placeholder="Expected pcs" />
+                </div>
+              </div>
+
+              {/* Row 5: Fabric Name + Shortage */}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 2 }}>
+                  <label style={labelStyle}>Fabric Name <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>(auto-filled)</span></label>
+                  <input type="text" list="challan-fabrics" value={challanForm.fabricName} onChange={e => setChallanForm({ ...challanForm, fabricName: e.target.value })} style={inputStyle} placeholder="Auto-filled from lot…" />
+                  <datalist id="challan-fabrics">
+                    {fabricsList.map((f, i) => <option key={i} value={f} />)}
+                  </datalist>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Shortage %</label>
+                  <input type="number" step="0.01" min="0" max="100" value={challanForm.shortagePct} onChange={e => setChallanForm({ ...challanForm, shortagePct: e.target.value })} style={inputStyle} placeholder="e.g. 3.5" />
+                  <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--success)', fontWeight: '600' }}>
+                    Row Meters: {(challanTotalMtr * (1 + (parseFloat(challanForm.shortagePct) || 0) / 100)).toFixed(2)} mtr
+                  </div>
+                </div>
+              </div>
+
+              {/* Smart Lot Selection & Stock Tracker */}
+              {challanForm.jobNo && (
+                <div style={{
+                  background: 'rgba(30, 41, 59, 0.7)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  marginTop: '0.25rem'
+                }}>
+                  {/* Job Requirement Info */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Job Requirement: <strong>{jobMtrNeeded > 0 ? `${jobMtrNeeded} mtr` : 'Not specified'}</strong>
+                    </span>
+                    {jobMtrNeeded > 0 && (
+                      <span style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '4px',
+                        background: selectedLotsTotalStock >= jobMtrNeeded ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: selectedLotsTotalStock >= jobMtrNeeded ? '#10b981' : '#f87171'
+                      }}>
+                        {selectedLotsTotalStock >= jobMtrNeeded ? '✓ Stock Sufficient' : '⚠️ Need More Stock'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Stock Progress Bar */}
+                  {jobMtrNeeded > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${Math.min(100, (selectedLotsTotalStock / jobMtrNeeded) * 100)}%`,
+                          background: selectedLotsTotalStock >= jobMtrNeeded ? 'var(--success)' : 'var(--primary)',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <span>Selected Lot Stock: {selectedLotsTotalStock.toFixed(2)} mtr</span>
+                        <span>{((selectedLotsTotalStock / jobMtrNeeded) * 100).toFixed(0)}% of required</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Available Lot Buttons Grid */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.6rem' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Available Inward Lots for "{challanForm.fabricName}":
+                    </div>
+                    {availableLots.length === 0 ? (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No inward stock found with this fabric.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {availableLots.map((lot, idx) => {
+                          const isSelected = selectedLotsList.includes(String(lot.lotNo));
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                let newLots;
+                                if (isSelected) {
+                                  // Remove the lot
+                                  newLots = selectedLotsList.filter(l => l !== String(lot.lotNo)).join(', ');
+                                } else {
+                                  // Add the lot
+                                  newLots = [...selectedLotsList, String(lot.lotNo)].join(', ');
+                                }
+                                handleChallanLotChange(newLots);
+                              }}
+                              className={isSelected ? "btn-primary" : "btn-secondary"}
+                              style={{
+                                padding: '0.3rem 0.6rem',
+                                fontSize: '0.74rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                borderRadius: '4px',
+                                border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-light)',
+                                background: isSelected ? 'rgba(14, 165, 233, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                                color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                                transition: 'all 0.2s'
+                              }}
+                              title={isSelected ? "Click to deselect lot" : "Click to select lot"}
+                            >
+                              {isSelected ? <Check size={12} /> : <Plus size={12} />}
+                              <span>Lot #{lot.lotNo}</span>
+                              <span style={{ opacity: 0.6, fontSize: '0.68rem' }}>({lot.panna} Panna)</span>
+                              <span style={{ color: isSelected ? 'inherit' : 'var(--success)', fontWeight: 700 }}>
+                                {lot.currentStock}m
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    * Click the lot buttons above to toggle selections and verify stock sufficiency.
+                  </div>
+                </div>
+              )}
+
               {/* Divider: TP Details */}
               <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TP Details</span>
-                <button type="button" className="btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.78rem' }} onClick={addTpRow} disabled={challanForm.tpDetails.length >= 20}>
+                <button type="button" className="btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.78rem' }} onClick={addTpRow} disabled={challanForm.tpDetails.length >= 30}>
                   <PlusCircle size={13} /> Add TP Row
                 </button>
               </div>
 
               {/* TP Rows */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 32px', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, paddingLeft: '0.25rem' }}>
-                  <span>TP No.</span><span>TP Meter (mtr)</span><span></span>
+                <div style={{ display: 'grid', gridTemplateColumns: '60px 120px 1fr 32px', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, paddingLeft: '0.25rem' }}>
+                  <span>TP No.</span><span>Lot No</span><span>TP Meter (mtr)</span><span></span>
                 </div>
-                {challanForm.tpDetails.map((row, idx) => (
-                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 32px', gap: '0.5rem', alignItems: 'center' }}>
-                    <div style={{ ...inputStyle, textAlign: 'center', fontWeight: 700, color: 'var(--primary)', cursor: 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {row.tpNo}
+                {(() => {
+                  const currentLots = String(challanForm.lotNo || '')
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+                  return challanForm.tpDetails.map((row, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 120px 1fr 32px', gap: '0.5rem', alignItems: 'center' }}>
+                      <div style={{ ...inputStyle, textAlign: 'center', fontWeight: 700, color: 'var(--primary)', cursor: 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {row.tpNo}
+                      </div>
+                      <select
+                        value={row.lotNo || ''}
+                        onChange={e => updateTpRow(idx, 'lotNo', e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="">-- Select --</option>
+                        {currentLots.map(lot => (
+                          <option key={lot} value={lot}>Lot #{lot}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={row.tpMeter}
+                        onChange={e => updateTpRow(idx, 'tpMeter', e.target.value)}
+                        style={inputStyle}
+                        placeholder="0.000"
+                      />
+                      <button type="button" onClick={() => removeTpRow(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: '0.2rem', display: 'flex', alignItems: 'center' }}>
+                        <X size={15} />
+                      </button>
                     </div>
-                    <input
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      value={row.tpMeter}
-                      onChange={e => updateTpRow(idx, 'tpMeter', e.target.value)}
-                      style={inputStyle}
-                      placeholder="0.000"
-                    />
-                    <button type="button" onClick={() => removeTpRow(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: '0.2rem', display: 'flex', alignItems: 'center' }}>
-                      <X size={15} />
-                    </button>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
 
               {/* Totals summary */}
@@ -1573,7 +1921,7 @@ export default function FabricInventoryPanel() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Meters</span>
-                  <div style={{ fontWeight: 800, fontSize: '1.4rem', color: 'var(--success)' }}>{challanTotalMtr.toFixed(3)} mtr</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.4rem', color: 'var(--success)' }}>{challanTotalMtr.toFixed(2)} mtr</div>
                 </div>
               </div>
 
@@ -1606,7 +1954,7 @@ export default function FabricInventoryPanel() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={labelStyle}>Lot No</label>
-                  <input type="text" disabled value={editingTransaction ? `#${editingTransaction.lotNo}` : "Auto Generated"} style={{ ...inputStyle, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }} />
+                  <input type="text" disabled value={editingTransaction ? `#${editingTransaction.lotNo}` : `Auto (Next: #${nextLotNo})`} style={{ ...inputStyle, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }} />
                 </div>
               </div>
 
