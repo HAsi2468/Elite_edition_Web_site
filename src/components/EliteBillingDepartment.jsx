@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../services/api';
 import { triggerPushNotification } from './NotificationToast';
 import { formatDateDDMMYYYY, formatForInputDate } from '../utils/dateUtils';
@@ -635,6 +635,28 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
     });
   }, [invoices, activeRange]);
 
+  const getAmountWithoutGst = useCallback((inv) => {
+    if (!inv) return 0;
+    if (inv.subtotal !== undefined && inv.subtotal !== null && Number(inv.subtotal) > 0) {
+      return Number(inv.subtotal);
+    }
+    if (inv.netSubtotal !== undefined && inv.netSubtotal !== null && Number(inv.netSubtotal) > 0) {
+      return Number(inv.netSubtotal);
+    }
+    if (inv.taxableAmount !== undefined && inv.taxableAmount !== null && Number(inv.taxableAmount) > 0) {
+      return Number(inv.taxableAmount);
+    }
+    const gTotal = Number(inv.grandTotal || inv.totalAmount || 0);
+    const tax = Number(inv.totalTax || inv.gstAmount || (Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0) + Number(inv.igstAmount || 0)) || 0);
+    if (gTotal > 0 && tax > 0) {
+      return Math.max(0, gTotal - tax);
+    }
+    if (gTotal > 0) {
+      return gTotal / 1.05;
+    }
+    return 0;
+  }, []);
+
   const periodStats = useMemo(() => {
     const totalInvoices = periodInvoices.length;
     let totalInvoiced = 0;
@@ -647,15 +669,16 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
     const todayStr = new Date().toISOString().split('T')[0];
 
     periodInvoices.forEach(inv => {
-      const grandTotal = Number(inv.grandTotal || inv.totalAmount || 0);
+      const amountExclGst = getAmountWithoutGst(inv);
       const paid = Number(inv.paidAmount || 0);
-      const balance = Math.max(0, grandTotal - paid);
+      const balance = Math.max(0, amountExclGst - paid);
 
-      totalInvoiced += grandTotal;
+      totalInvoiced += amountExclGst;
       totalPaid += paid;
       totalBalanceDue += balance;
 
-      if (inv.paymentStatus === 'PAID' || balance <= 0) {
+      const grandTotal = Number(inv.grandTotal || inv.totalAmount || 0);
+      if (inv.paymentStatus === 'PAID' || (grandTotal - paid) <= 0) {
         paidCount++;
       } else {
         unpaidCount++;
@@ -674,7 +697,7 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
       unpaidCount,
       overdueCount
     };
-  }, [periodInvoices]);
+  }, [periodInvoices, getAmountWithoutGst]);
 
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -1482,9 +1505,9 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             { id: 'challans', label: '🚚 Challan' },
             { id: 'invoices', label: '🧾 Invoices Directory', count: stats.totalInvoices },
             ...(activeTab === 'create' ? [{ id: 'create', label: editingInvoiceId ? '✍️ Edit Invoice' : '✍️ New Invoice' }] : []),
+            { id: 'expense', label: '💰 Expenses & Ledger' },
             { id: 'customers', label: `👥 Customers (${customers.length})` },
-            { id: 'items', label: `📦 Item (${itemsList.length})` },
-            { id: 'expense', label: '💰 Expenses & Ledger' }
+            { id: 'items', label: `📦 Item (${itemsList.length})` }
           ].map(t => {
             const isActive = activeTab === t.id;
             return (
@@ -1728,13 +1751,13 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
                               {formatDateDDMMYYYY(inv.invoiceDate)}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                              {fmtINR(inv.grandTotal)}
+                              {fmtINR(getAmountWithoutGst(inv))}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#34d399', fontWeight: 700, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                               {fmtINR(inv.paidAmount)}
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: inv.balanceDue > 0 ? '#f87171' : 'var(--text-muted)', fontWeight: 700, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                              {fmtINR(inv.balanceDue)}
+                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: Math.max(0, getAmountWithoutGst(inv) - (inv.paidAmount || 0)) > 0 ? '#f87171' : 'var(--text-muted)', fontWeight: 700, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                              {fmtINR(Math.max(0, getAmountWithoutGst(inv) - (inv.paidAmount || 0)))}
                             </td>
                             <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle' }}>
                               <span style={{
@@ -1836,38 +1859,18 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             <div>
               <label style={{ ...labelStyle, color: '#60a5fa', fontWeight: 800 }}>🏢 ISSUING COMPANY (SELLER) *</label>
               <select
-                value={invoiceForm.companyEntity || companyEntity || 'Elite Digital Print'}
-                onChange={e => {
-                  const selectedCompany = e.target.value;
-                  setInvoiceForm(f => {
-                    let prefix = 'EDP/26-27/';
-                    if (selectedCompany === 'Elite Edition') prefix = 'EE/26-27/';
-                    else if (selectedCompany === 'Elite Fabtex') prefix = 'EF/26-27/';
-                    else if (selectedCompany === 'Elite Stitching') prefix = 'ES/26-27/';
-                    else if (selectedCompany === 'Elite Online') prefix = 'EO/26-27/';
-
-                    const rawSeq = f.invoiceNo ? (f.invoiceNo.split('/').pop() || '101') : '101';
-                    return {
-                      ...f,
-                      companyEntity: selectedCompany,
-                      invoicePrefix: prefix,
-                      invoiceNo: `${prefix}${rawSeq}`
-                    };
-                  });
-                }}
+                value="Elite Digital Print"
+                disabled
                 style={{
                   ...inputStyle,
                   fontWeight: '800',
                   color: '#60a5fa',
                   background: 'rgba(96, 165, 250, 0.12)',
-                  border: '1px solid rgba(96, 165, 250, 0.4)'
+                  border: '1px solid rgba(96, 165, 250, 0.4)',
+                  cursor: 'not-allowed'
                 }}
               >
                 <option value="Elite Digital Print">🏢 Elite Digital Print</option>
-                <option value="Elite Edition">🏢 Elite Edition</option>
-                <option value="Elite Fabtex">🏢 Elite Fabtex</option>
-                <option value="Elite Stitching">🏢 Elite Stitching</option>
-                <option value="Elite Online">🏢 Elite Online</option>
               </select>
             </div>
             <div>

@@ -20,6 +20,7 @@ import {
   X
 } from 'lucide-react';
 import DateRangePicker from './DateRangePicker';
+import JobCardStatusDashboard from './JobCardStatusDashboard';
 
 export default function ReportsCenter({ department }) {
   const [activeDepartment, setActiveDepartment] = useState(() => {
@@ -28,7 +29,7 @@ export default function ReportsCenter({ department }) {
   });
   const [activeReportTab, setActiveReportTab] = useState(() => {
     if (department === 'elite-online') return 'sales';
-    return 'smart-dashboard';
+    return 'pending-status';
   }); 
   const todayStr = new Date().toISOString().split('T')[0];
   const [datePreset, setDatePreset] = useState('today');
@@ -78,7 +79,7 @@ export default function ReportsCenter({ department }) {
 
   // When department changes, set the first sub-tab as active
   useEffect(() => {
-    if (activeDepartment === 'elite-print') setActiveReportTab('smart-dashboard');
+    if (activeDepartment === 'elite-print') setActiveReportTab('pending-status');
     else if (activeDepartment === 'sales') setActiveReportTab('sales');
     else if (activeDepartment === 'inventory') setActiveReportTab('stock-value');
     else if (activeDepartment === 'returns') setActiveReportTab('returns-analysis');
@@ -342,6 +343,7 @@ export default function ReportsCenter({ department }) {
       <div style={{ ...styles.tabsContainer, marginTop: '0.5rem', background: 'transparent', padding: 0 }}>
         {activeDepartment === 'elite-print' && (
           <>
+            <button onClick={() => setActiveReportTab('pending-status')} style={activeReportTab === 'pending-status' ? styles.subTabActive : styles.subTab}>📊 Pending Status Overview</button>
             <button onClick={() => setActiveReportTab('smart-dashboard')} style={activeReportTab === 'smart-dashboard' ? styles.subTabActive : styles.subTab}>Smart Dashboard</button>
             <button onClick={() => setActiveReportTab('creative-output')} style={activeReportTab === 'creative-output' ? styles.subTabActive : styles.subTab}>Creative Output</button>
             <button onClick={() => setActiveReportTab('color-matching')} style={activeReportTab === 'color-matching' ? styles.subTabActive : styles.subTab}>Color Matching</button>
@@ -727,6 +729,9 @@ export default function ReportsCenter({ department }) {
           </div>
         ) : (
           <div style={{ width: '100%' }}>
+            {activeReportTab === 'pending-status' && (
+              <JobCardStatusDashboard department="digital_print" />
+            )}
             {activeReportTab === 'smart-dashboard' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
                 {/* 1. Low Stock Warning Box */}

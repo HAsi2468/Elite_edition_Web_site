@@ -40,7 +40,7 @@ export default function QADepartment({ department = 'digital_print' }) {
   // Filters for Printed Fabric Checking
   const [printedSearch, setPrintedSearch] = useState('');
   const [printedQaStatusFilter, setPrintedQaStatusFilter] = useState('All'); // 'All', 'QA Pending', 'QA Passed', 'QA Rejected'
-  const [datePreset, setDatePreset] = useState('all');
+  const [datePreset, setDatePreset] = useState('this_month');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
 

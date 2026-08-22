@@ -5,7 +5,7 @@ import { matchSearchQuery } from '../utils/searchUtils';
 import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
 
-import DateRangePicker from './DateRangePicker';
+import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 
 const MAX_ITEMS = 30;
 
@@ -18,14 +18,15 @@ const DEFAULT_ITEM = () => ({
 });
 
 export default function StitchingChallanPanel({ onNavigateToBilling }) {
+  const defaultThisMonth = getDatePresetRange('this_month');
   const [challans, setChallans] = useState([]);
   const [selectedStitchingHistory, setSelectedStitchingHistory] = useState(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [datePreset, setDatePreset] = useState('all');
-  const [dateStart, setDateStart] = useState('');
-  const [dateEnd, setDateEnd] = useState('');
+  const [datePreset, setDatePreset] = useState('this_month');
+  const [dateStart, setDateStart] = useState(defaultThisMonth.dateStart);
+  const [dateEnd, setDateEnd] = useState(defaultThisMonth.dateEnd);
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [selectedChallanIds, setSelectedChallanIds] = useState([]);

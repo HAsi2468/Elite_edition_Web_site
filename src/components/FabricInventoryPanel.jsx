@@ -8,7 +8,7 @@ import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import { matchSearchQuery } from '../utils/searchUtils';
 import { cleanDesignNameString } from '../utils/designUtils';
 import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
-import DateRangePicker from './DateRangePicker';
+import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 import {
   RefreshCw, PlusCircle, ArrowDownToLine, ArrowUpFromLine,
   Layers, Database, Settings, Trash2, FileDown, Search, X,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function FabricInventoryPanel({ department, onNavigateToBilling, initialTab = 'dashboard', onlyChallan = false }) {
+  const defaultThisMonth = getDatePresetRange('this_month');
   const [activeTab, setActiveTab] = useState(onlyChallan ? 'challan' : initialTab);
   const currentUser = api.getCurrentUser();
 
@@ -155,10 +156,10 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   const [challanSearch, setChallanSearch] = useState('');
   const [challanStatusFilter, setChallanStatusFilter] = useState('All');
   // Ref to always hold latest challan filter values — prevents stale closure in setInterval
-  const challanFiltersRef = useRef({ search: '', dateStart: '', dateEnd: '', status: 'All' });
-  const [challanDatePreset, setChallanDatePreset] = useState('all');
-  const [challanDateStart, setChallanDateStart] = useState('');
-  const [challanDateEnd, setChallanDateEnd] = useState('');
+  const challanFiltersRef = useRef({ search: '', dateStart: defaultThisMonth.dateStart, dateEnd: defaultThisMonth.dateEnd, status: 'All' });
+  const [challanDatePreset, setChallanDatePreset] = useState('this_month');
+  const [challanDateStart, setChallanDateStart] = useState(defaultThisMonth.dateStart);
+  const [challanDateEnd, setChallanDateEnd] = useState(defaultThisMonth.dateEnd);
   const [customChallanDateStart, setCustomChallanDateStart] = useState('');
   const [customChallanDateEnd, setCustomChallanDateEnd] = useState('');
   const [isChallanOpen, setIsChallanOpen] = useState(false);
@@ -234,9 +235,9 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   });
 
   // Stock Dashboard Date Range & Filtered Stock state
-  const [stockDatePreset, setStockDatePreset] = useState('all');
-  const [stockDateStart, setStockDateStart] = useState('');
-  const [stockDateEnd, setStockDateEnd] = useState('');
+  const [stockDatePreset, setStockDatePreset] = useState('this_month');
+  const [stockDateStart, setStockDateStart] = useState(defaultThisMonth.dateStart);
+  const [stockDateEnd, setStockDateEnd] = useState(defaultThisMonth.dateEnd);
   const [customStockDateStart, setCustomStockDateStart] = useState('');
   const [customStockDateEnd, setCustomStockDateEnd] = useState('');
 
