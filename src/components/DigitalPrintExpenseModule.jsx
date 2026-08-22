@@ -8,6 +8,7 @@ import {
 import imageCompression from 'browser-image-compression';
 import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
 import DateRangePicker from './DateRangePicker';
+import { triggerGlobalDataRefresh } from './NotificationToast';
 
 const DEFAULT_IN_CATEGORIES = [
   'Petty Cash Top-up',
@@ -184,7 +185,15 @@ function getDatePresetRange(preset, customStart = '', customEnd = '') {
   return { start, end, labelText };
 }
 
-export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onModalOpened = null }) {
+function formatDateISO(d) {
+  if (!d) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onModalOpened = null, companyEntity = 'Elite Digital Print' }) {
   const [expenses, setExpenses] = useState([]);
   const [summary, setSummary] = useState({ totalIn: 0, totalOut: 0, netBalance: 0, totalVouchers: 0 });
   const [loading, setLoading] = useState(false);
@@ -196,7 +205,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
 
   // Load Print Config
   useEffect(() => {
-    api.getPrintConfig()
+    api.getPrintConfig(companyEntity)
       .then(cfg => {
         if (cfg) {
           if (Array.isArray(cfg.expenseInCategories) && cfg.expenseInCategories.length > 0) {
@@ -211,7 +220,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
         }
       })
       .catch(err => console.warn('Failed to load print config for expense categories:', err));
-  }, []);
+  }, [companyEntity]);
 
   // Trigger modal auto open if requested
   useEffect(() => {
@@ -225,14 +234,14 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All'); // 'All', 'IN', 'OUT'
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [datePreset, setDatePreset] = useState('this_month');
+  const [datePreset, setDatePreset] = useState('all');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
 
   const activeRange = getDatePresetRange(datePreset, customDateStart, customDateEnd);
-  const dateStart = activeRange.start ? activeRange.start.toISOString().split('T')[0] : '';
-  const dateEnd = activeRange.end ? activeRange.end.toISOString().split('T')[0] : '';
+  const dateStart = activeRange.start ? formatDateISO(activeRange.start) : '';
+  const dateEnd = activeRange.end ? formatDateISO(activeRange.end) : '';
 
   // Modals
   const [showModal, setShowModal] = useState(false);
@@ -242,8 +251,9 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
 
   // Form State
   const [formVal, setFormVal] = useState({
+    companyEntity,
     voucherNo: '',
-    date: new Date().toISOString().split('T')[0],
+    date: formatDateISO(new Date()),
     type: 'OUT',
     category: 'Ink & Consumables',
     title: '',
@@ -259,12 +269,20 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
 
   useEffect(() => {
     fetchExpenses();
-  }, [search, typeFilter, categoryFilter, dateStart, dateEnd]);
+    const handleDataRefresh = (e) => {
+      if (!e || !e.detail || e.detail === 'expenses') {
+        fetchExpenses();
+      }
+    };
+    window.addEventListener('elite-data-refresh', handleDataRefresh);
+    return () => window.removeEventListener('elite-data-refresh', handleDataRefresh);
+  }, [search, typeFilter, categoryFilter, dateStart, dateEnd, companyEntity]);
 
   const fetchExpenses = async () => {
     setLoading(true);
     try {
       const params = {
+        companyEntity,
         search,
         type: typeFilter,
         category: categoryFilter,
@@ -296,8 +314,9 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
       : (outCategories && outCategories[0] ? outCategories[0] : DEFAULT_OUT_CATEGORIES[0]);
 
     setFormVal({
-      voucherNo: 'EDP-EXP-...',
-      date: new Date().toISOString().split('T')[0],
+      companyEntity,
+      voucherNo: 'EXP-...',
+      date: formatDateISO(new Date()),
       type: defaultType,
       category: defaultCat,
       title: '',
@@ -311,15 +330,15 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
     setShowModal(true);
 
     try {
-      const numRes = await api.getNextExpenseVoucherNo();
+      const numRes = await api.getNextExpenseVoucherNo(companyEntity);
       if (numRes && numRes.nextVoucherNo) {
         setFormVal(prev => ({ ...prev, voucherNo: numRes.nextVoucherNo }));
       } else {
-        setFormVal(prev => ({ ...prev, voucherNo: `EDP-EXP-${Date.now().toString().slice(-4)}` }));
+        setFormVal(prev => ({ ...prev, voucherNo: `EXP-${Date.now().toString().slice(-4)}` }));
       }
     } catch (e) {
       console.error('Failed to fetch next voucher number:', e);
-      setFormVal(prev => ({ ...prev, voucherNo: `EDP-EXP-${Date.now().toString().slice(-4)}` }));
+      setFormVal(prev => ({ ...prev, voucherNo: `EXP-${Date.now().toString().slice(-4)}` }));
     }
   };
 
@@ -330,8 +349,9 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
       : (outCategories && outCategories[0] ? outCategories[0] : DEFAULT_OUT_CATEGORIES[0]);
 
     setFormVal({
+      companyEntity: item.companyEntity || companyEntity,
       voucherNo: item.voucherNo || '',
-      date: item.date || new Date().toISOString().split('T')[0],
+      date: item.date || formatDateISO(new Date()),
       type: item.type || 'OUT',
       category: item.category || defaultCat,
       title: item.title || '',
@@ -407,6 +427,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
       }
 
       setShowModal(false);
+      triggerGlobalDataRefresh('expenses');
       fetchExpenses();
     } catch (err) {
       console.error('Failed to save expense entry:', err);
@@ -425,6 +446,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
     try {
       await api.deleteExpense(id);
       triggerEliteAlert('Expense record deleted successfully.');
+      triggerGlobalDataRefresh('expenses');
       fetchExpenses();
     } catch (err) {
       console.error('Failed to delete expense record:', err);
@@ -582,7 +604,15 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
 
   const categories = formVal.type === 'IN' ? inCategories : outCategories;
 
-  // Calculate Cash OUT vs Bank OUT breakdown
+  // Calculate Cash IN vs Bank IN & Cash OUT vs Bank OUT breakdowns
+  const cashInAmount = expenses
+    .filter(e => e.type === 'IN' && (e.paymentMode || '').toLowerCase() === 'cash')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const bankInAmount = expenses
+    .filter(e => e.type === 'IN' && (e.paymentMode || '').toLowerCase() !== 'cash')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
   const cashOutAmount = expenses
     .filter(e => e.type === 'OUT' && (e.paymentMode || '').toLowerCase() === 'cash')
     .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
@@ -592,81 +622,73 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
     .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Top Banner Header */}
-      <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(59,130,246,0.05))', border: '1px solid rgba(16,185,129,0.2)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ padding: '0.4rem', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', color: '#10b981', display: 'flex', alignItems: 'center' }}>
-                <Wallet size={24} />
-              </div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
-                Department Expense Tracker & Ledger
-              </h2>
-            </div>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem', marginBottom: 0 }}>
-              Track cash IN (Income/Receipts) and cash OUT (Department Expenses, Maintenance & Supplies) for Elite Digital Prints.
-            </p>
-          </div>
-        </div>
-      </div>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {canViewDashboard ? (
         <>
-          {/* Summary KPI Cards - 5 Cards in 1 Horizontal Line */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
-            {/* Total Income IN */}
-            <div className="glass-panel" style={{ padding: '0.85rem 1rem', borderLeft: '4px solid #10b981' }}>
+          {/* Summary KPI Cards - 6 Cards in 1 Horizontal Line */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.6rem' }}>
+            {/* Cash IN */}
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: '4px solid #10b981' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Cash IN (Income)</span>
-                <TrendingUp size={16} color="#10b981" />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Cash IN</span>
+                <TrendingUp size={15} color="#10b981" />
               </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#10b981', marginTop: 4 }}>
-                ₹{(summary.totalIn || 0).toLocaleString('en-IN')}
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#10b981', marginTop: 3 }}>
+                ₹{(cashInAmount || 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+
+            {/* Bank IN */}
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: '4px solid #06b6d4' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Bank IN</span>
+                <CreditCard size={15} color="#06b6d4" />
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0891b2', marginTop: 3 }}>
+                ₹{(bankInAmount || 0).toLocaleString('en-IN')}
               </div>
             </div>
 
             {/* Cash Expense OUT */}
-            <div className="glass-panel" style={{ padding: '0.85rem 1rem', borderLeft: '4px solid #ef4444' }}>
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: '4px solid #ef4444' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Cash Expense</span>
-                <TrendingDown size={16} color="#ef4444" />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Cash Expense</span>
+                <TrendingDown size={15} color="#ef4444" />
               </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#dc2626', marginTop: 4 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#dc2626', marginTop: 3 }}>
                 ₹{(cashOutAmount || 0).toLocaleString('en-IN')}
               </div>
             </div>
 
             {/* Bank Expense OUT */}
-            <div className="glass-panel" style={{ padding: '0.85rem 1rem', borderLeft: '4px solid #6366f1' }}>
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: '4px solid #6366f1' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Bank Expense</span>
-                <CreditCard size={16} color="#6366f1" />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Bank Expense</span>
+                <CreditCard size={15} color="#6366f1" />
               </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#4f46e5', marginTop: 4 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#4f46e5', marginTop: 3 }}>
                 ₹{(bankOutAmount || 0).toLocaleString('en-IN')}
               </div>
             </div>
 
             {/* Net Balance */}
-            <div className="glass-panel" style={{ padding: '0.85rem 1rem', borderLeft: `4px solid ${summary.netBalance >= 0 ? '#2563eb' : '#d97706'}` }}>
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: `4px solid ${summary.netBalance >= 0 ? '#2563eb' : '#d97706'}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Net Balance</span>
-                <Wallet size={16} color={summary.netBalance >= 0 ? '#2563eb' : '#d97706'} />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Net Balance</span>
+                <Wallet size={15} color={summary.netBalance >= 0 ? '#2563eb' : '#d97706'} />
               </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: summary.netBalance >= 0 ? '#2563eb' : '#d97706', marginTop: 4 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: summary.netBalance >= 0 ? '#2563eb' : '#d97706', marginTop: 3 }}>
                 ₹{(summary.netBalance || 0).toLocaleString('en-IN')}
               </div>
             </div>
 
             {/* Total Vouchers Count */}
-            <div className="glass-panel" style={{ padding: '0.85rem 1rem', borderLeft: '4px solid #8b5cf6' }}>
+            <div className="glass-panel" style={{ padding: '0.75rem 0.85rem', borderLeft: '4px solid #8b5cf6' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total Transactions</span>
-                <FileText size={16} color="#8b5cf6" />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em' }}>Total Txns</span>
+                <FileText size={15} color="#8b5cf6" />
               </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: 4 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: 3 }}>
                 {summary.totalVouchers || 0}
               </div>
             </div>
@@ -731,17 +753,6 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
                 </optgroup>
               </select>
 
-              {/* Refresh Button */}
-              <button
-                type="button"
-                onClick={fetchExpenses}
-                className="glass-button"
-                style={{ padding: '0.25rem 0.65rem', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title="Refresh Ledger"
-              >
-                <RefreshCw size={13} className={loading ? 'spin-loader' : ''} />
-              </button>
-
               {/* PDF Download Button (Icon with tooltip) */}
               <button
                 type="button"
@@ -797,6 +808,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
                       <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Amount (₹)</th>
                       <th style={{ padding: '0.75rem 1rem' }}>Payment Mode</th>
                       <th style={{ padding: '0.75rem 1rem' }}>Vendor / Person</th>
+                      <th style={{ padding: '0.75rem 1rem' }}>Logged By</th>
                       <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
@@ -846,6 +858,11 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
                           </td>
                           <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>
                             {item.paidToOrReceivedFrom || 'N/A'}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0284c7', background: '#e0f2fe', padding: '2px 7px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                              👤 {item.createdByName || item.createdBy || 'Staff User'}
+                            </span>
                           </td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
@@ -920,7 +937,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                   <button
                     type="button"
-                    onClick={() => setFormVal(prev => ({ ...prev, type: 'IN', category: IN_CATEGORIES[0] }))}
+                    onClick={() => setFormVal(prev => ({ ...prev, type: 'IN', category: inCategories?.[0] || DEFAULT_IN_CATEGORIES[0] }))}
                     style={{
                       padding: '0.55rem', fontSize: '0.82rem', fontWeight: 800, borderRadius: '8px',
                       border: formVal.type === 'IN' ? '1.5px solid #10b981' : '1px solid var(--border-light)',
@@ -933,7 +950,7 @@ export default function DigitalPrintExpenseModule({ autoOpenCreate = false, onMo
 
                   <button
                     type="button"
-                    onClick={() => setFormVal(prev => ({ ...prev, type: 'OUT', category: OUT_CATEGORIES[0] }))}
+                    onClick={() => setFormVal(prev => ({ ...prev, type: 'OUT', category: outCategories?.[0] || DEFAULT_OUT_CATEGORIES[0] }))}
                     style={{
                       padding: '0.55rem', fontSize: '0.82rem', fontWeight: 800, borderRadius: '8px',
                       border: formVal.type === 'OUT' ? '1.5px solid #ef4444' : '1px solid var(--border-light)',

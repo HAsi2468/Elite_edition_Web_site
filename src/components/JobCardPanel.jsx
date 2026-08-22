@@ -3,7 +3,7 @@ import { api, getBaseUrl } from '../services/api';
 import {
   PlusCircle, Search, RefreshCw, Edit2, Trash2, FileText,
   Printer, ChevronLeft, ChevronRight, Clock, CheckCircle,
-  AlertCircle, Cpu, X, Save, Eye, Image, LayoutGrid, List, Send
+  AlertCircle, Cpu, X, Save, Eye, Image, LayoutGrid, List, Send, Download, Receipt
 } from 'lucide-react';
 import DesignCatalogue from './DesignCatalogue';
 import DesignMaster from './DesignMaster';
@@ -12,7 +12,65 @@ import PrintSettings from './PrintSettings';
 import ReportsCenter from './ReportsCenter';
 import FabricInventoryPanel from './FabricInventoryPanel';
 import RawMaterialsPanel from './RawMaterialsPanel';
+import EliteBillingDepartment from './EliteBillingDepartment';
+import EliteDigitalPrintsSplitView from './EliteDigitalPrintsSplitView';
+import JobPrintingLog from './JobPrintingLog';
+import FusingDepartment from './FusingDepartment';
+import GarmentJobCardDashboard from './GarmentJobCardDashboard';
+import StitchingChallanPanel from './StitchingChallanPanel';
+import StitchingSettings from './StitchingSettings';
+import QADepartment from './QADepartment';
+import { areDesignsEquivalent, cleanDesignNameString, extractDesignNames } from '../utils/designUtils';
+
+const normalizeFabricName = (val, pannaVal = '') => {
+  if (!val) return '';
+  let str = String(val).trim().toUpperCase();
+
+  let extractedPanna = '';
+  const pannaMatches = str.match(/(?:\s+(\d+))+\s*$/);
+  if (pannaMatches) {
+    const digits = pannaMatches[0].trim().split(/\s+/);
+    extractedPanna = digits[digits.length - 1];
+    str = str.replace(/(?:\s+(\d+))+\s*$/, '').trim();
+  }
+
+  let base = str;
+  if (base === 'LINEN' || base === 'KOINUR LINEN' || base === 'KOHINUR LINEN' || base === 'KOHINOOR LINEN' || base.includes('KOINUR') || base.includes('KOHINOOR') || base.includes('KOHINUR')) {
+    base = 'KOHINOOR LINEN';
+  } else if (base === 'REYON' || base === 'RAYON' || base === 'POLY REYON' || base === 'POLY RAYON' || base.includes('REYON') || base.includes('RAYON')) {
+    if (base.includes('30 SPN')) {
+      base = 'POLY REYON 30 SPN';
+    } else {
+      base = 'POLY REYON';
+    }
+  } else if (base === 'CREPE' || base === 'CRAPE' || base === 'FRANCH CREPE' || base === 'FRENCH CREP' || base.includes('CREPE') || base.includes('CRAPE') || base.includes('CREP')) {
+    base = 'FRENCH CREPE';
+  } else if (base === 'CAMRIK' || base === 'CEMBRIC' || base === 'CEMBRIK' || base === 'CAMBRIK' || base.includes('CAMRIK') || base.includes('CEMBRIK')) {
+    base = 'CAMBRIC';
+  } else if (base === 'MAL' || base === 'POLY MAL' || base === 'POLYMALL' || base === 'POLY MLL' || base === 'POLLY MAL') {
+    base = 'POLLY MAL';
+  }
+
+  let finalPanna = extractedPanna || (pannaVal ? String(pannaVal).trim().replace(/['"]/g, '') : '');
+  if (finalPanna === '38' || finalPanna === '46' || finalPanna === '56') finalPanna = '58';
+  if (!finalPanna || finalPanna.toUpperCase() === 'UNKNOWN' || isNaN(parseInt(finalPanna, 10))) {
+    if (base.includes('ARMANI')) finalPanna = '44';
+    else finalPanna = '58';
+  }
+
+  return `${base} ${finalPanna}`;
+};
+import DigitalPrintComplainModule from './DigitalPrintComplainModule';
+import DigitalPrintExpenseModule from './DigitalPrintExpenseModule';
+import DateRangePicker from './DateRangePicker';
+import ScreenGroupRoster from './ScreenGroupRoster';
+import { dispatchScreenGroupEvent } from '../services/screenGroupService';
+import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
 import { COLOR_NAMES, getColorHex } from '../utils/colors';
+import { triggerPushNotification, triggerGlobalDataRefresh } from './NotificationToast';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
+import { matchSearchQuery } from '../utils/searchUtils';
+import JobCardTooltip from './JobCardTooltip';
 
 // ─── EXP.TIME calculation (mirrors Apps Script exactly) ─────────────────────
 const SPEED_GRANDO = {
@@ -27,16 +85,27 @@ const SPEED_PRINTDOT = {
 };
 function calcExpTime(panna, passText, totalMtr, machineName) {
   const pannaMatch = String(panna || '').match(/\d+/);
-  const pannaNum = pannaMatch ? Number(pannaMatch[0]) : null;
+  let pannaNum = pannaMatch ? Number(pannaMatch[0]) : null;
   const passMatch = String(passText || '').match(/\d+/);
-  const pass = passMatch ? Number(passMatch[0]) : null;
-  if (!pannaNum || !pass || !totalMtr) return '';
+  let pass = passMatch ? Number(passMatch[0]) : null;
+  if (!totalMtr || Number(totalMtr) <= 0) return '';
 
   const mName = String(machineName || '').trim().toUpperCase();
-  const table = mName === 'GRANDO' ? SPEED_GRANDO : mName === 'PRINTDOT' ? SPEED_PRINTDOT : null;
-  if (!table || !table[pannaNum] || !table[pannaNum][pass]) return '';
+  const table = mName === 'GRANDO' ? SPEED_GRANDO : SPEED_PRINTDOT;
 
-  const speed = table[pannaNum][pass];
+  if (!pannaNum) pannaNum = 58;
+  const availablePannas = [36, 38, 42, 44, 46, 58];
+  let targetPanna = availablePannas.reduce((prev, curr) => 
+    Math.abs(curr - pannaNum) < Math.abs(prev - pannaNum) ? curr : prev
+  );
+
+  if (!pass) pass = 4;
+  const availablePasses = [1, 2, 4, 6, 8];
+  let targetPass = availablePasses.reduce((prev, curr) => 
+    Math.abs(curr - pass) < Math.abs(prev - pass) ? curr : prev
+  );
+
+  const speed = (table[targetPanna] && table[targetPanna][targetPass]) || 186;
   const time = Number(totalMtr) / speed;
   let hours = Math.floor(time);
   let minutes = Math.round((time - hours) * 60);
@@ -50,14 +119,20 @@ function convertDriveUrl(link) {
   if (!link || !link.trim()) return '';
   if (link.startsWith('data:')) return link;
   
-  // If it's a local relative path
+  // If it's a local relative path — always resolve to absolute using window.location.origin
+  // This is critical for the print popup window which opens as a blank page
   if (link.startsWith('/')) {
-    const baseUrl = getBaseUrl();
-    if (baseUrl && baseUrl.startsWith('http')) {
-      try {
-        const url = new URL(baseUrl);
-        return `${url.origin}${link}`;
-      } catch (e) {}
+    try {
+      return `${window.location.origin}${link}`;
+    } catch (e) {
+      // Fallback to getBaseUrl origin
+      const baseUrl = getBaseUrl();
+      if (baseUrl && baseUrl.startsWith('http')) {
+        try {
+          const url = new URL(baseUrl);
+          return `${url.origin}${link}`;
+        } catch (e2) {}
+      }
     }
     return link;
   }
@@ -83,6 +158,7 @@ function convertDriveUrl(link) {
   return link;
 }
 
+// ─── Extract multiple design names helper ────────────────────────────────────
 // ─── Blank form ──────────────────────────────────────────────────────────────
 const BLANK = {
   jobNo:'', designNo:'', designName:'', category:'', fabric:'', pcs:'', top:'', sleeve:'',
@@ -114,41 +190,27 @@ function StatusBadge({ status }) {
 }
 
 // ─── Print / PDF template (matches the physical job card layout) ─────────────
-function JobCardPrintView({ card, onClose, onShare }) {
-  const printRef = useRef();
-  const [resolvedImages, setResolvedImages] = useState({
-    imageUrl1: card.imageUrl1 || '',
-    imageUrl2: card.imageUrl2 || '',
-  });
+export function triggerJobCardPrint(cardOrCards) {
+  if (!cardOrCards) return;
+  const cards = Array.isArray(cardOrCards) ? cardOrCards : [cardOrCards];
+  if (cards.length === 0) return;
 
-  useEffect(() => {
-    const resolveImages = async () => {
-      if (card.imageUrl1) return;
-      const key = card.designName || card.designNo;
-      if (!key) return;
-      try {
-        const res = await api.getDesigns({ search: key, limit: 5 });
-        if (res && res.data && res.data.length > 0) {
-          const matched = res.data.find(d => d.designName === key || d.designNo === key) || res.data[0];
-          setResolvedImages({
-            imageUrl1: matched.imageUrl || '',
-            imageUrl2: matched.imageUrl2 || '',
-          });
-        }
-      } catch (err) {
-        console.error('Failed to resolve design images for print:', err);
-      }
-    };
-    resolveImages();
-  }, [card]);
+  const win = window.open('', '_blank', 'width=600,height=800');
+  if (!win) return;
 
-  const doPrint = () => {
-    // Convert Drive links to direct embeddable URLs for print
-    const img1 = convertDriveUrl(resolvedImages.imageUrl1);
-    const img2 = convertDriveUrl(resolvedImages.imageUrl2);
+  const titleText = cards.length === 1 ? `Job Card ${cards[0].jobNo || ''}` : `${cards.length} Job Cards`;
 
-    
-    // Dynamic image container layout based on existence of image 2
+  const pagesHtml = cards.map((card, idx) => {
+    let imageUrl1 = card.imageUrl1 || '';
+    let imageUrl2 = card.imageUrl2 || '';
+
+    const keyStr = card.designName || card.designNo || '';
+    const names = extractDesignNames(keyStr);
+    const showTwoImages = names.length >= 2;
+
+    const img1 = convertDriveUrl(imageUrl1);
+    const img2 = showTwoImages ? convertDriveUrl(imageUrl2) : '';
+
     let imgAreaHtml = '';
     if (img1 && img2) {
       imgAreaHtml = `
@@ -183,142 +245,12 @@ function JobCardPrintView({ card, onClose, onShare }) {
       </div>`;
     }
 
-    const win = window.open('', '_blank', 'width=600,height=800');
-    win.document.write(`<!DOCTYPE html><html><head>
-      <title>Job Card ${card.jobNo}</title>
-      <style>
-        @page { size: A5; margin: 8mm; }
-        @media print {
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        body { background: #fff; color: #000; font-size: 9pt; line-height: 1.2; position: relative; padding-left: 12mm; }
-        .wrap { width: 100%; display: flex; flex-direction: column; gap: 1px; }
-        
-        /* Header styles */
-        .header { display: flex; align-items: stretch; border: 1.5px solid #000; height: 44px; margin-bottom: 1px; }
-        .logo-box {
-          width: 140px;
-          padding: 4px 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-right: 1.5px solid #000;
-        }
-        .logo-box-right {
-          width: 140px;
-          padding: 4px 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-left: 1.5px solid #000;
-        }
-        .center-box {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 2px 0;
-          text-align: center;
-        }
-        .center-title {
-          font-size: 15.5pt;
-          font-weight: 900;
-          letter-spacing: 0.5px;
-          color: #000;
-          text-transform: uppercase;
-        }
-        .machine-box {
-          width: 90%;
-          border: 1px solid #000;
-          font-size: 9pt;
-          font-weight: 900;
-          letter-spacing: 1.5px;
-          padding: 1px 0;
-          margin-top: 1px;
-          text-transform: uppercase;
-          text-align: center;
-          background: ${card.machineName === 'GRANDO' ? '#0b5394' : card.machineName === 'PRINTDOT' ? '#cc0000' : '#fff'};
-          color: ${card.machineName ? '#fff' : '#000'};
-        }
+    const dateStr = card.date ? (card.date.includes('-') ? card.date.split('-').reverse().join('/') : card.date) : '';
+    const printDateStr = card.printDate ? (card.printDate.includes('-') ? card.printDate.split('-').reverse().join('/') : card.printDate) : '';
+    const isLast = idx === cards.length - 1;
 
-        /* Tables */
-        table { width: 100%; border-collapse: collapse; margin-top: 1px; }
-        td, th { border: 1.2px solid #000; padding: 3px 5px; font-size: 9pt; vertical-align: middle; }
-        .label { font-weight: 800; white-space: nowrap; width: 1%; background: #fff; }
-        .val { font-weight: 500; }
-
-        /* Notes Section */
-        .notes-container {
-          width: 100%;
-          border-left: 1.2px solid #000;
-          border-right: 1.2px solid #000;
-          margin-top: 1px;
-        }
-        .note-row {
-          background: #f3f3f3;
-          border-bottom: 1.2px solid #000;
-          padding: 3px 6px;
-          font-size: 9pt;
-          font-weight: 700;
-          min-height: 18px;
-        }
-        .note-row-emergency {
-          background: #f3f3f3;
-          border-bottom: 1.2px solid #000;
-          padding: 3px 6px;
-          font-size: 9pt;
-          font-weight: 700;
-          color: #cc0000;
-          min-height: 18px;
-        }
-
-        /* T.P. Meter styles */
-        .tp-table { width: 100%; border-collapse: collapse; margin-top: 2px; }
-        .tp-table td { text-align: center; padding: 2px 4px; font-size: 8.5pt; border: 1.2px solid #000; height: 26px; }
-        .tp-table th { font-size: 9pt; font-weight: 800; border: 1.2px solid #000; background: #fff; padding: 3px; }
-        .tp-label { font-weight: 700; width: 1%; white-space: nowrap; }
-        .tp-val { width: 14%; }
-        .tp-val { width: 14%; }
-
-        /* Punch Guide */
-        .punch-guide {
-          position: absolute;
-          left: 2mm;
-          top: 90mm; /* Center of A5 height relative to top of body */
-          width: 8mm;
-          z-index: 100;
-        }
-        .punch-hole {
-          position: absolute;
-          left: 1mm;
-          width: 6mm;
-          height: 6mm;
-          border: 1px solid #9ca3af;
-          border-radius: 50%;
-          box-sizing: border-box;
-        }
-        .punch-hole.top { top: -43mm; }
-        .punch-hole.bottom { top: 37mm; }
-        .punch-center {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 10mm;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          transform: translateY(-50%);
-        }
-        .punch-text {
-          font-size: 5pt;
-          color: #9ca3af;
-          margin-top: 2px;
-        }
-      </style>
-    </head><body>
-      <!-- PUNCH GUIDE -->
+    return `
+    <div class="card-page ${!isLast ? 'page-break' : ''}">
       <div class="punch-guide">
         <div class="punch-hole top"></div>
         <div class="punch-center">
@@ -335,32 +267,16 @@ function JobCardPrintView({ card, onClose, onShare }) {
       <!-- HEADER -->
       <div class="header">
         <div class="logo-box">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <svg width="18" height="26" viewBox="0 0 22 30" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;">
-              <rect width="22" height="30" rx="10" fill="black"/>
-              <path d="M11 6C7.5 6 5 8.5 5 12C5 15.5 7.5 18 11 18C13 18 15 16.5 15 15C15 13.5 13.5 13 12 13C10.5 13 9.5 14 9.5 15C9.5 16 10.5 16.5 11 16.5C11.5 16.5 12 16 12 15.5H13.5C13.5 17 12 18 10 18C7.5 18 6.5 15.5 6.5 13C6.5 10.5 8 7.5 11 7.5C14 7.5 15.5 10.5 15.5 13C15.5 14.5 14.5 15.5 13.5 16L14.5 17.5C16 16.5 17 15 17 13C17 8.5 14.5 6 11 6Z" fill="white"/>
-            </svg>
-            <div style="text-align: left; line-height: 1.1;">
-              <div style="font-size: 15.5pt; font-weight: 900; letter-spacing: -0.5px; color: #000;">ELITE</div>
-              <div style="font-size: 6.5pt; font-weight: 800; letter-spacing: 2px; color: #000; margin-top: -1px;">EDITION</div>
-            </div>
-          </div>
+          <img src="${window.location.origin}/DigitalLogo.png" alt="Elite Digital Prints" style="height: 36px; object-fit: contain; filter: invert(0);">
         </div>
         <div class="center-box">
           <div class="center-title">ELITE DIGITAL</div>
-          <div class="machine-box">${card.machineName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</div>
+          <div class="machine-box" style="background: ${card.machineName === 'GRANDO' ? '#0b5394' : card.machineName === 'PRINTDOT' ? '#cc0000' : '#fff'}; color: ${card.machineName ? '#fff' : '#000'};">
+            ${card.machineName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
+          </div>
         </div>
         <div class="logo-box-right">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <svg width="18" height="26" viewBox="0 0 22 30" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;">
-              <rect width="22" height="30" rx="10" fill="black"/>
-              <path d="M11 6C7.5 6 5 8.5 5 12C5 15.5 7.5 18 11 18C13 18 15 16.5 15 15C15 13.5 13.5 13 12 13C10.5 13 9.5 14 9.5 15C9.5 16 10.5 16.5 11 16.5C11.5 16.5 12 16 12 15.5H13.5C13.5 17 12 18 10 18C7.5 18 6.5 15.5 6.5 13C6.5 10.5 8 7.5 11 7.5C14 7.5 15.5 10.5 15.5 13C15.5 14.5 14.5 15.5 13.5 16L14.5 17.5C16 16.5 17 15 17 13C17 8.5 14.5 6 11 6Z" fill="white"/>
-            </svg>
-            <div style="text-align: left; line-height: 1.1;">
-              <div style="font-size: 15.5pt; font-weight: 900; letter-spacing: -0.5px; color: #000;">ELITE</div>
-              <div style="font-size: 6.5pt; font-weight: 800; letter-spacing: 2px; color: #000; margin-top: -1px;">EDITION</div>
-            </div>
-          </div>
+          <img src="${window.location.origin}/DigitalLogo.png" alt="Elite Digital Prints" style="height: 36px; object-fit: contain;">
         </div>
       </div>
 
@@ -369,10 +285,10 @@ function JobCardPrintView({ card, onClose, onShare }) {
         <tr>
           <td class="label">JOB NO. :</td><td class="val">${card.jobNo || ''}</td>
           <td class="label">COLORS :</td><td class="val">${card.colors || ''}</td>
-          <td class="label">DATE :</td><td class="val">${card.date || ''}</td>
+          <td class="label">DATE :</td><td class="val">${dateStr}</td>
         </tr>
         <tr>
-          <td class="label">D. NO. :</td><td class="val">${card.designNo || ''}</td>
+          <td class="label">D. NO. :</td><td class="val">${cleanDesignNameString(card.designNo || card.designName || '')}</td>
           <td class="label">PANNA :</td><td class="val">${card.panna || ''}</td>
           <td class="label">PASS :</td><td class="val">${card.pass || ''}</td>
         </tr>
@@ -402,18 +318,14 @@ function JobCardPrintView({ card, onClose, onShare }) {
         </tr>
       </table>
 
-      <!-- IMAGE AREA CONTAINER (Side-by-side or Single) -->
       ${imgAreaHtml}
 
-
-      <!-- NOTES CONTAINER (Three stripes) -->
       <div class="notes-container">
         <div class="note-row">NOTE 1 : ${card.note1 || ''}</div>
         <div class="note-row-emergency">EMRG. NOTE : ${card.emergencyNotes || ''}</div>
         <div class="note-row">NOTE 2 : ${card.note2 || ''}</div>
       </div>
 
-      <!-- DETAILS TABLE 1 -->
       <table style="width: 100%; margin-top: 1px;">
         <tr>
           <td class="label" style="width: 15%;">DESIGNER :</td>
@@ -429,23 +341,21 @@ function JobCardPrintView({ card, onClose, onShare }) {
         </tr>
       </table>
 
-      <!-- DETAILS TABLE 2 (OPERATOR) -->
       <table style="width: 100%; margin-top: 1px;">
         <tr>
           <td class="label" style="width: 15%;">OPERATER:</td>
-          <td class="val" style="width: 35%;"></td>
+          <td class="val" style="width: 35%;">${card.operatorName || ''}</td>
           <td class="label" style="width: 15%;">PRINT DATE :</td>
-          <td class="val" style="width: 35%;"></td>
+          <td class="val" style="width: 35%;">${printDateStr}</td>
         </tr>
         <tr>
           <td class="label">ROLL NO. :</td>
           <td class="val"></td>
           <td class="label">PRINT METER :</td>
-          <td class="val"></td>
+          <td class="val" style="font-weight: 700;">${card.printMtr || ''}</td>
         </tr>
       </table>
 
-      <!-- DETAILS TABLE 3 (FUSING) -->
       <table style="width: 100%; margin-top: 1px;">
         <tr>
           <td class="label" style="width: 15%; text-align: center; font-weight: 800;">FUSING</td>
@@ -462,7 +372,6 @@ function JobCardPrintView({ card, onClose, onShare }) {
         </tr>
       </table>
 
-      <!-- T.P. METER TABLE -->
       <table class="tp-table">
         <tr>
           <th colspan="10" style="text-align: center; font-weight: 800;">T.P. METER</th>
@@ -508,10 +417,240 @@ function JobCardPrintView({ card, onClose, onShare }) {
           <td class="tp-label"></td><td class="tp-val"></td>
         </tr>
       </table>
-    </div></body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 600);
+    </div>
+  </div>`;
+  }).join('\n');
+
+  win.document.write(`<!DOCTYPE html><html><head>
+    <title>${titleText}</title>
+    <style>
+      @page { size: A5; margin: 8mm; }
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .page-break { page-break-after: always; break-after: page; }
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+      body { background: #fff; color: #000; font-size: 9pt; line-height: 1.2; position: relative; padding-left: 12mm; }
+      .card-page { width: 100%; position: relative; }
+      .wrap { width: 100%; display: flex; flex-direction: column; gap: 1px; }
+      
+      /* Header styles */
+      .header { display: flex; align-items: stretch; border: 1.5px solid #000; height: 44px; margin-bottom: 1px; }
+      .logo-box {
+        width: 140px;
+        padding: 4px 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-right: 1.5px solid #000;
+      }
+      .logo-box-right {
+        width: 140px;
+        padding: 4px 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-left: 1.5px solid #000;
+      }
+      .center-box {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 0;
+        text-align: center;
+      }
+      .center-title {
+        font-size: 15.5pt;
+        font-weight: 900;
+        letter-spacing: 0.5px;
+        color: #000;
+        text-transform: uppercase;
+      }
+      .machine-box {
+        width: 90%;
+        border: 1px solid #000;
+        font-size: 9pt;
+        font-weight: 900;
+        letter-spacing: 1.5px;
+        padding: 1px 0;
+        margin-top: 1px;
+        text-transform: uppercase;
+        text-align: center;
+      }
+
+      /* Tables */
+      table { width: 100%; border-collapse: collapse; margin-top: 1px; }
+      td, th { border: 1.2px solid #000; padding: 3px 5px; font-size: 9pt; vertical-align: middle; }
+      .label { font-weight: 800; white-space: nowrap; width: 1%; background: #fff; }
+      .val { font-weight: 500; }
+
+      /* Notes Section */
+      .notes-container {
+        width: 100%;
+        border-left: 1.2px solid #000;
+        border-right: 1.2px solid #000;
+        margin-top: 1px;
+      }
+      .note-row {
+        background: #f3f3f3;
+        border-bottom: 1.2px solid #000;
+        padding: 3px 6px;
+        font-size: 9pt;
+        font-weight: 700;
+        min-height: 18px;
+      }
+      .note-row-emergency {
+        background: #f3f3f3;
+        border-bottom: 1.2px solid #000;
+        padding: 3px 6px;
+        font-size: 9pt;
+        font-weight: 700;
+        color: #cc0000;
+        min-height: 18px;
+      }
+
+      /* T.P. Meter styles */
+      .tp-table { width: 100%; border-collapse: collapse; margin-top: 2px; }
+      .tp-table td { text-align: center; padding: 2px 4px; font-size: 8.5pt; border: 1.2px solid #000; height: 26px; }
+      .tp-table th { font-size: 9pt; font-weight: 800; border: 1.2px solid #000; background: #fff; padding: 3px; }
+      .tp-label { font-weight: 700; width: 1%; white-space: nowrap; }
+      .tp-val { width: 14%; }
+
+      /* Punch Guide */
+      .punch-guide {
+        position: absolute;
+        left: 2mm;
+        top: 90mm;
+        width: 8mm;
+        z-index: 100;
+      }
+      .punch-hole {
+        position: absolute;
+        left: 1mm;
+        width: 6mm;
+        height: 6mm;
+        border: 1px solid #9ca3af;
+        border-radius: 50%;
+        box-sizing: border-box;
+      }
+      .punch-hole.top { top: -43mm; }
+      .punch-hole.bottom { top: 37mm; }
+      .punch-center {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 10mm;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: translateY(-50%);
+      }
+      .punch-text {
+        font-size: 5pt;
+        color: #9ca3af;
+        margin-top: 2px;
+      }
+    </style>
+  </head><body>
+    ${pagesHtml}
+  <script>
+    window.onload = function() {
+      var imgs = document.getElementsByTagName('img');
+      var loaded = 0;
+      var total = imgs.length;
+      function triggerPrint() {
+        setTimeout(function() {
+          window.focus();
+          window.print();
+        }, 300);
+      }
+      if (total === 0) {
+        triggerPrint();
+        return;
+      }
+      for (var i = 0; i < total; i++) {
+        if (imgs[i].complete) {
+          loaded++;
+          if (loaded >= total) triggerPrint();
+        } else {
+          imgs[i].onload = function() {
+            loaded++;
+            if (loaded >= total) triggerPrint();
+          };
+          imgs[i].onerror = function() {
+            loaded++;
+            if (loaded >= total) triggerPrint();
+          };
+        }
+      }
+    };
+  </script>
+  </body></html>`);
+  win.document.close();
+}
+
+function JobCardPrintView({ card, onClose, onShare }) {
+  const printRef = useRef();
+  const [resolvedImages, setResolvedImages] = useState({
+    imageUrl1: card.imageUrl1 || '',
+    imageUrl2: card.imageUrl2 || '',
+  });
+
+  useEffect(() => {
+    const resolveImages = async () => {
+      if (!card) return;
+
+      const rawName = card.designName || card.designNo || '';
+      const names = extractDesignNames(rawName);
+
+      let img1 = card.imageUrl1 || '';
+      let img2 = card.imageUrl2 || '';
+
+      try {
+        // Look up in catalog if no image or if image is a Drive link
+        if ((!img1 || img1.includes('drive.google.com')) && names[0]) {
+          const res1 = await api.getDesigns({ search: names[0], limit: 5 });
+          if (res1 && res1.data && res1.data.length > 0) {
+            const matched1 = res1.data.find(d =>
+              d.designName?.toLowerCase() === names[0].toLowerCase() ||
+              String(d.designNo || '').toLowerCase() === names[0].toLowerCase()
+            ) || res1.data[0];
+            const freshImg = matched1.imageUrl || matched1.imageUrl2 || '';
+            if (freshImg) img1 = freshImg;
+            if (!img2 && matched1.imageUrl2 && matched1.imageUrl !== matched1.imageUrl2) {
+              img2 = matched1.imageUrl2;
+            }
+          }
+        }
+
+        // If 2 design names were entered and img2 isn't set, resolve design 2 image
+        if (!img2 && names.length > 1 && names[1]) {
+          const res2 = await api.getDesigns({ search: names[1], limit: 5 });
+          if (res2 && res2.data && res2.data.length > 0) {
+            const matched2 = res2.data.find(d =>
+              d.designName?.toLowerCase() === names[1].toLowerCase() ||
+              String(d.designNo || '').toLowerCase() === names[1].toLowerCase()
+            ) || res2.data[0];
+            img2 = matched2.imageUrl || matched2.imageUrl2 || '';
+          }
+        }
+
+        setResolvedImages({ imageUrl1: img1, imageUrl2: img2 });
+      } catch (err) {
+        console.error('Failed to resolve design images for print:', err);
+        setResolvedImages({
+          imageUrl1: card.imageUrl1 || '',
+          imageUrl2: (names.length >= 2) ? (card.imageUrl2 || '') : '',
+        });
+      }
+    };
+    resolveImages();
+  }, [card]);
+
+  const doPrint = () => {
+    triggerJobCardPrint(card);
   };
 
   return (
@@ -550,8 +689,12 @@ function JobCardPrintView({ card, onClose, onShare }) {
         </div>
 
         <div style={{ display:'flex', gap:'0.75rem' }}>
-          <button className="btn-primary" style={{ flex:1, justifyContent:'center' }} onClick={doPrint}>
-            <Printer size={15}/> Print / PDF
+          <button
+            className="btn-primary"
+            style={{ flex:1, justifyContent:'center' }}
+            onClick={doPrint}
+          >
+            <Printer size={15}/> Print / Save as PDF
           </button>
           {onShare && (
             <button className="btn-secondary" style={{ flex:1, justifyContent:'center', color: '#60a5fa', borderColor: 'rgba(96,165,250,0.3)' }} onClick={() => onShare(card)}>
@@ -593,6 +736,14 @@ function Field({ label, name, form, onChange, type='text', options, half, readOn
                 name={name} 
                 value={form[name]} 
                 onChange={onChange} 
+                onBlur={(e) => {
+                  if (name === 'fabric' && e.target.value) {
+                    const norm = normalizeFabricName(e.target.value, form.panna);
+                    if (norm && norm !== form[name]) {
+                      onChange({ target: { name: 'fabric', value: norm } });
+                    }
+                  }
+                }}
                 list={`${name}-options`}
                 readOnly={readOnly}
                 placeholder="Select or type..."
@@ -752,7 +903,15 @@ function ImageField({ label, name, form, onChange, index }) {
                 src={previewUrl}
                 alt={`Selected preview ${index}`}
                 style={{ maxHeight: '100px', maxWidth: '100%', objectFit: 'contain', borderRadius: '4px' }}
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                }}
               />
+              <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', padding: '0.4rem', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600 }}>
+                <span>🔒 Image URL Restricted / Unavailable</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Click Browse to re-upload image file</span>
+              </div>
               <button
                 type="button"
                 onClick={(e) => {
@@ -827,7 +986,7 @@ function ImageField({ label, name, form, onChange, index }) {
 }
 
 // ─── JOB CARD FORM MODAL ─────────────────────────────────────────────────────
-function JobCardForm({ card, onSave, onClose }) {
+function JobCardForm({ card, onSave, onClose, department }) {
   const [form, setForm] = useState(card ? { ...card } : { ...BLANK });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -858,7 +1017,7 @@ function JobCardForm({ card, onSave, onClose }) {
 
     const fetchAllDesigns = async () => {
       try {
-        const res = await api.getDesigns({ limit: 100 });
+        const res = await api.getDesigns({ limit: 5000 });
         if (res && res.data) {
           setDesignsList(res.data);
         }
@@ -868,12 +1027,12 @@ function JobCardForm({ card, onSave, onClose }) {
     };
     fetchAllDesigns();
 
-    if (!card) {
+    if (!card || !card._id || !card.jobNo) {
       const fetchNextNo = async () => {
         try {
           const res = await api.getNextJobCardNo();
           if (res && res.nextJobNo) {
-            setForm(f => ({ ...f, jobNo: String(res.nextJobNo) }));
+            setForm(f => ({ ...f, jobNo: f.jobNo || String(res.nextJobNo) }));
           }
         } catch (err) {
           console.error('Failed to fetch next job number:', err);
@@ -886,7 +1045,7 @@ function JobCardForm({ card, onSave, onClose }) {
   // Sync selectedDesign if editing an existing card
   useEffect(() => {
     if (card && card.designName && designsList.length > 0) {
-      const matched = designsList.find(d => d.designName === card.designName);
+      const matched = designsList.find(d => d.designName === card.designName || d.designNo === card.designNo);
       if (matched) setSelectedDesign(matched);
     }
   }, [card, designsList]);
@@ -904,12 +1063,55 @@ function JobCardForm({ card, onSave, onClose }) {
 
   const handleDesignNameChange = (e) => {
     const { value } = e.target;
-    setForm(f => ({ ...f, designName: value }));
+    setForm(f => ({ ...f, designName: value, designNo: value }));
     setShowSuggestions(true);
   };
 
-  const selectDesign = (d) => {
+  const selectDesign = (d, imageMode = 'both') => {
     setSelectedDesign(d);
+
+    const rawInput = (form.designName || form.designNo || '').trim();
+    const existingNames = extractDesignNames(rawInput);
+    const dName = d.designName || d.designNo;
+
+    let newDesignName = dName;
+    let img1 = '';
+    let img2 = '';
+
+    if (imageMode === 'img1') {
+      img1 = d.imageUrl || d.imageUrl2 || '';
+      img2 = '';
+    } else if (imageMode === 'img2') {
+      img1 = d.imageUrl2 || d.imageUrl || '';
+      img2 = '';
+    } else {
+      const hasMultiDelimiter = /[,&/+]|\band\b/i.test(rawInput);
+
+      if (hasMultiDelimiter && existingNames.length > 0) {
+        const nonDupExisting = existingNames.filter(n => !areDesignsEquivalent(n, dName));
+        if (nonDupExisting.length > 0) {
+          newDesignName = cleanDesignNameString(`${nonDupExisting.join(', ')}, ${dName}`);
+
+          const d1 = designsList.find(item =>
+            (item.designName && areDesignsEquivalent(item.designName, nonDupExisting[0])) ||
+            (item.designNo && areDesignsEquivalent(item.designNo, nonDupExisting[0]))
+          );
+
+          img1 = (d1 && (d1.imageUrl || d1.imageUrl2)) || form.imageUrl1 || '';
+          img2 = d.imageUrl || d.imageUrl2 || '';
+        } else {
+          newDesignName = dName;
+          img1 = d.imageUrl || d.imageUrl2 || '';
+          img2 = d.imageUrl2 && d.imageUrl2 !== img1 ? d.imageUrl2 : '';
+        }
+      } else if (d.imageUrl && d.imageUrl2) {
+        img1 = d.imageUrl;
+        img2 = d.imageUrl2;
+      } else {
+        img1 = d.imageUrl || d.imageUrl2 || '';
+        img2 = d.imageUrl2 && d.imageUrl2 !== img1 ? d.imageUrl2 : '';
+      }
+    }
 
     // Auto-calculate standard values if pcs is already entered
     const pcsVal = parseFloat(form.pcs) || 0;
@@ -924,7 +1126,8 @@ function JobCardForm({ card, onSave, onClose }) {
 
     setForm(f => ({
       ...f,
-      designName: d.designName,
+      designName: newDesignName,
+      designNo: newDesignName,
       designer: d.designerName || f.designer,
       colourMatching: d.colourMatching || f.colourMatching,
       fabric: d.fabricName || f.fabric,
@@ -936,9 +1139,8 @@ function JobCardForm({ card, onSave, onClose }) {
       pass: d.pass || f.pass,
       profile: (d.machineProfiles && form.machineName && d.machineProfiles[form.machineName]) || f.profile,
       paperType: d.paperType || f.paperType,
-      imageUrl1: d.imageUrl || f.imageUrl1,
-      imageUrl2: d.imageUrl2 || f.imageUrl2,
-      designNo: d.designName,
+      imageUrl1: img1,
+      imageUrl2: img2,
 
       // Auto-calculated values based on pcs
       consumption: consumptionVal || f.consumption,
@@ -953,12 +1155,19 @@ function JobCardForm({ card, onSave, onClose }) {
     setShowSuggestions(false);
   };
 
-  const filteredDesigns = useMemo(() =>
-    form.designName
-      ? designsList.filter(d => d.designName.toLowerCase().includes(form.designName.toLowerCase()))
-      : designsList,
-    [form.designName, designsList]
-  );
+  const filteredDesigns = useMemo(() => {
+    const val = (form.designName || form.designNo || '').trim();
+    if (!val) return designsList;
+
+    const names = val.split(/[,&/+]|\band\b/i).map(s => s.trim());
+    const lastTerm = (names[names.length - 1] || val).trim();
+
+    if (!lastTerm) return designsList;
+
+    return designsList.filter(d =>
+      matchSearchQuery(d, lastTerm, ['designName', 'designNo', 'category', 'fabricName', 'designerName'])
+    );
+  }, [form.designName, form.designNo, designsList]);
 
   // Auto-recalculate EXP.TIME whenever relevant fields change
   useEffect(() => {
@@ -1021,15 +1230,49 @@ function JobCardForm({ card, onSave, onClose }) {
     e.preventDefault();
     if (!form.jobNo.trim()) { setError('Job No. is required.'); return; }
     setSaving(true); setError('');
+    const cleanFabric = normalizeFabricName(form.fabric, form.panna);
+    const cleanDesign = cleanDesignNameString(form.designName || form.designNo);
+    const activeUser = api.getCurrentUser() || {};
+    const uName = activeUser.name || activeUser.username || 'HASI';
+    const uId = activeUser._id || activeUser.id || '';
+    const payload = {
+      ...form,
+      designName: cleanDesign || form.designName,
+      designNo: cleanDesign || form.designNo,
+      fabric: cleanFabric || form.fabric,
+      department: department || (card?.department) || 'digital_print',
+      category: form.category || (department === 'stitching' ? 'Stitching' : ''),
+      userId: uId,
+      createdById: uId,
+      updatedById: uId,
+      userName: uName,
+      createdBy: form.createdBy || uName,
+      updatedBy: uName
+    };
+
+    delete payload._id;
+    delete payload.id;
+    delete payload.created_date_time;
+    delete payload.modified_date_time;
+    delete payload.__v;
+    if (!payload.orderChatRoomId) delete payload.orderChatRoomId;
+
     try {
-      if (card?._id) {
-        await api.updateJobCard(card._id, form);
+      if (card?._id || card?.id) {
+        const targetId = card._id || card.id;
+        await api.updateJobCard(targetId, payload);
+        triggerPushNotification('📝 Job Card Updated', `Job Card #${form.jobNo} saved successfully.`, 'info');
       } else {
-        await api.createJobCard(form);
+        await api.createJobCard(payload);
+        triggerPushNotification('✨ Job Card Created', `Job Card #${form.jobNo} created successfully!`, 'success');
+        dispatchScreenGroupEvent('jobcards', 'New Job Card Created 🚀', `Job Card #${form.jobNo} for ${form.party || 'Customer'} was created and dispatched to Job Cards Group.`, 'jobcards_list');
       }
       onSave();
     } catch (err) {
-      setError(err.message || 'Failed to save job card.');
+      console.error('Save Job Card error:', err);
+      const msg = err.message || 'Failed to save job card. Please check server logs or network.';
+      setError(msg);
+      triggerEliteAlert('Failed to Save Job Card', msg);
     } finally {
       setSaving(false);
     }
@@ -1037,31 +1280,31 @@ function JobCardForm({ card, onSave, onClose }) {
 
   return (
     <div className="modal-overlay" style={{ alignItems:'flex-start', paddingTop:'1rem' }}>
-      <div style={{ background:'var(--bg-modal,#111827)', border:'1px solid var(--border-light)',
-        borderRadius:'var(--radius-lg)', width:'100%', maxWidth:900,
-        boxShadow:'var(--shadow-lg)', overflow:'hidden', maxHeight:'96vh', display:'flex', flexDirection:'column' }}>
-
         {/* Header */}
-        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid var(--border-light)',
-          display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-            <div style={{ width:36, height:36, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center',
-              background: form.machineName === 'GRANDO' ? '#0b5394' : form.machineName === 'PRINTDOT' ? '#ea4444' : 'var(--primary-glow)',
-              transition:'background 0.3s ease' }}>
-              <Cpu size={18} color="#fff"/>
-            </div>
-            <div>
-              <h3 style={{ fontSize:'1.05rem', fontWeight:700, color:'var(--text-primary)' }}>
-                {card ? `Edit Job Card — ${card.jobNo}` : 'New Job Card'}
-              </h3>
-              <p style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginTop:1 }}>Elite Digital Prints</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="btn-icon"><X size={16}/></button>
-        </div>
+        <form onSubmit={handleSubmit} style={{ background:'var(--bg-modal,#111827)', border:'1px solid var(--border-light)',
+          borderRadius:'var(--radius-lg)', width:'100%', maxWidth:900,
+          boxShadow:'var(--shadow-lg)', overflow:'hidden', maxHeight:'96vh', display:'flex', flexDirection:'column' }}>
 
-        {/* Scrollable body */}
-        <form onSubmit={handleSubmit} style={{ overflowY:'auto', padding:'1.25rem 1.5rem', flex:1 }}>
+          <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid var(--border-light)',
+            display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+              <div style={{ width:36, height:36, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center',
+                background: form.machineName === 'GRANDO' ? '#0b5394' : form.machineName === 'PRINTDOT' ? '#ea4444' : 'var(--primary-glow)',
+                transition:'background 0.3s ease' }}>
+                <Cpu size={18} color="#fff"/>
+              </div>
+              <div>
+                <h3 style={{ fontSize:'1.05rem', fontWeight:700, color:'var(--text-primary)' }}>
+                  {card ? `Edit Job Card — ${card.jobNo}` : 'New Job Card'}
+                </h3>
+                <p style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginTop:1 }}>Elite Digital Prints</p>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="btn-icon"><X size={16}/></button>
+          </div>
+
+          {/* Scrollable body */}
+          <div style={{ overflowY:'auto', padding:'1.25rem 1.5rem', flex:1 }}>
           {error && <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)',
             borderRadius:'var(--radius-sm)', padding:'0.6rem 0.9rem', color:'#fca5a5',
             fontSize:'0.8rem', marginBottom:'1rem' }}>{error}</div>}
@@ -1129,15 +1372,21 @@ function JobCardForm({ card, onSave, onClose }) {
             </div>
             <div ref={suggestionsRef} style={{ display:'flex', flexDirection:'column', gap:'0.3rem', flex: '0 0 calc(50% - 0.4rem)', minWidth:120, position:'relative' }}>
               <label style={{ fontSize:'0.68rem', fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em' }}>
-                Design Name (ED1, ED2...)
+                Design No. / Design Name *
               </label>
               <input
                 type="text"
                 name="designName"
                 value={form.designName}
                 onChange={handleDesignNameChange}
+                onBlur={() => {
+                  const cleaned = cleanDesignNameString(form.designName || form.designNo);
+                  if (cleaned !== form.designName) {
+                    setForm(f => ({ ...f, designName: cleaned, designNo: cleaned }));
+                  }
+                }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="Type ED1, ED2 or select..."
+                placeholder="Type or select Design No. (e.g. ED1, ED2)..."
                 style={{
                   padding:'0.5rem 0.7rem',
                   fontSize:'0.85rem',
@@ -1159,40 +1408,114 @@ function JobCardForm({ card, onSave, onClose }) {
                   border:'1px solid var(--border-light)',
                   borderRadius:'var(--radius-sm)',
                   boxShadow:'var(--shadow-lg)',
-                  maxHeight:'160px',
+                  maxHeight:'200px',
                   overflowY:'auto',
                   zIndex:999,
                   marginTop:'4px'
                 }}>
-                  {filteredDesigns.map(d => (
-                    <div
-                      key={d._id}
-                      onClick={() => selectDesign(d)}
-                      style={{
-                        padding:'0.5rem 0.75rem',
-                        fontSize:'0.8rem',
-                        cursor:'pointer',
-                        borderBottom:'1px solid var(--border-light)',
-                        color:'var(--text-primary)',
-                        display:'flex',
-                        justifyContent:'space-between',
-                        alignItems:'center'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <span style={{ fontWeight:700, color:'var(--primary)' }}>{d.designName}</span>
-                      <span style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>
-                        {d.fabricName ? `${d.fabricName} ` : ''}({d.designerName || 'No Designer'})
-                      </span>
-                    </div>
-                  ))}
+                  {filteredDesigns.map(d => {
+                    const hasTwoImages = !!(d.imageUrl && d.imageUrl2);
+                    return (
+                      <div
+                        key={d._id}
+                        onClick={() => selectDesign(d, 'both')}
+                        style={{
+                          padding:'0.5rem 0.75rem',
+                          fontSize:'0.8rem',
+                          cursor:'pointer',
+                          borderBottom:'1px solid var(--border-light)',
+                          color:'var(--text-primary)',
+                          display:'flex',
+                          justifyContent:'space-between',
+                          alignItems:'center',
+                          gap: '0.5rem'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {d.imageUrl && (
+                            <img src={d.imageUrl} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }} />
+                          )}
+                          {d.imageUrl2 && (
+                            <img src={d.imageUrl2} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }} />
+                          )}
+                          <div>
+                            <span style={{ fontWeight:700, color:'var(--primary)' }}>{d.designName || d.designNo}</span>
+                            {d.designNo && d.designNo !== d.designName && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '4px' }}>({d.designNo})</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>
+                            {d.fabricName ? `${d.fabricName} • ` : ''}{d.category || ''}
+                          </span>
+
+                          {hasTwoImages && (
+                            <div style={{ display: 'flex', gap: '3px' }} onClick={e => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => selectDesign(d, 'both')}
+                                title="Use Both Images"
+                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: 700, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: 3, cursor: 'pointer' }}
+                              >
+                                Both
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => selectDesign(d, 'img1')}
+                                title="Use Image 1 Only"
+                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: 700, background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid var(--border-light)', borderRadius: 3, cursor: 'pointer' }}
+                              >
+                                Img 1
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => selectDesign(d, 'img2')}
+                                title="Use Image 2 Only"
+                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: 700, background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid var(--border-light)', borderRadius: 3, cursor: 'pointer' }}
+                              >
+                                Img 2
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
             <Field label="Date" name="date" type="date" form={form} onChange={onChange} half/>
             <Field label="Status" name="status" form={form} onChange={onChange}
               options={['Pending','In Progress','Done']} half/>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem', flex: '1 1 calc(33% - 0.4rem)', minWidth:130 }}>
+              <label style={{ fontSize:'0.68rem', fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em' }}>
+                Created By (Staff Member)
+              </label>
+              <select 
+                name="createdBy" 
+                value={form.createdBy || form.createdByName || ''} 
+                onChange={(e) => setForm(f => ({ ...f, createdBy: e.target.value, createdByName: e.target.value }))}
+                style={{ padding: '0.5rem 0.7rem', fontSize: '0.85rem', background: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontWeight: 600 }}
+              >
+                <option value="Parth Asodariya">Parth Asodariya</option>
+                <option value="Harshil">Harshil</option>
+                <option value="HASI">HASI</option>
+                <option value="Rushabh">Rushabh</option>
+                <option value="JAY">JAY</option>
+                <option value="Ram">Ram</option>
+                <option value="Ajay Bind">Ajay Bind</option>
+                <option value="Dev Patel">Dev Patel</option>
+                <option value="Dhruv Patel">Dhruv Patel</option>
+                <option value="Durgesh Yadav">Durgesh Yadav</option>
+                <option value="Kaushik sir">Kaushik sir</option>
+                <option value="EliteAC">EliteAC</option>
+                <option value="Elite Edition">Elite Edition</option>
+              </select>
+            </div>
           </div>
 
           {/* Section: Party Details */}
@@ -1298,7 +1621,86 @@ function JobCardForm({ card, onSave, onClose }) {
           </div>
 
           {/* Section: Images */}
-          <div style={sectionLabel}>🖼 Design Images</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={sectionLabel}>🖼 Design Images</div>
+            {(form.imageUrl1 || form.imageUrl2 || (selectedDesign && (selectedDesign.imageUrl || selectedDesign.imageUrl2))) && (
+              <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>IMAGE MODE:</span>
+                
+                {/* Both Images Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const img1 = (selectedDesign && selectedDesign.imageUrl) || form.imageUrl1 || '';
+                    const img2 = (selectedDesign && selectedDesign.imageUrl2) || form.imageUrl2 || '';
+                    setForm(f => ({ ...f, imageUrl1: img1, imageUrl2: img2 }));
+                  }}
+                  style={{
+                    padding: '0.2rem 0.55rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700,
+                    border: '1px solid',
+                    borderColor: (!!form.imageUrl1 && !!form.imageUrl2) ? '#38bdf8' : 'var(--border-light)',
+                    background: (!!form.imageUrl1 && !!form.imageUrl2) ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    color: (!!form.imageUrl1 && !!form.imageUrl2) ? '#38bdf8' : 'var(--text-muted)', cursor: 'pointer'
+                  }}
+                >
+                  📸 Both Images
+                </button>
+
+                {/* Image 1 Only Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const img1 = (selectedDesign && selectedDesign.imageUrl) || form.imageUrl1 || form.imageUrl2 || '';
+                    setForm(f => ({ ...f, imageUrl1: img1, imageUrl2: '' }));
+                  }}
+                  style={{
+                    padding: '0.2rem 0.55rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700,
+                    border: '1px solid',
+                    borderColor: (!!form.imageUrl1 && !form.imageUrl2 && (!selectedDesign || form.imageUrl1 !== selectedDesign.imageUrl2)) ? '#38bdf8' : 'var(--border-light)',
+                    background: (!!form.imageUrl1 && !form.imageUrl2 && (!selectedDesign || form.imageUrl1 !== selectedDesign.imageUrl2)) ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    color: (!!form.imageUrl1 && !form.imageUrl2 && (!selectedDesign || form.imageUrl1 !== selectedDesign.imageUrl2)) ? '#38bdf8' : 'var(--text-muted)', cursor: 'pointer'
+                  }}
+                >
+                  🖼️ Img 1 Only
+                </button>
+
+                {/* Image 2 Only Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const img2 = (selectedDesign && selectedDesign.imageUrl2) || form.imageUrl2 || form.imageUrl1 || '';
+                    setForm(f => ({ ...f, imageUrl1: img2, imageUrl2: '' }));
+                  }}
+                  style={{
+                    padding: '0.2rem 0.55rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700,
+                    border: '1px solid',
+                    borderColor: (!!form.imageUrl1 && !form.imageUrl2 && selectedDesign && form.imageUrl1 === selectedDesign.imageUrl2) ? '#38bdf8' : 'var(--border-light)',
+                    background: (!!form.imageUrl1 && !form.imageUrl2 && selectedDesign && form.imageUrl1 === selectedDesign.imageUrl2) ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    color: (!!form.imageUrl1 && !form.imageUrl2 && selectedDesign && form.imageUrl1 === selectedDesign.imageUrl2) ? '#38bdf8' : 'var(--text-muted)', cursor: 'pointer'
+                  }}
+                >
+                  🖼️ Img 2 Only
+                </button>
+
+                {/* Swap Button */}
+                {(form.imageUrl1 || form.imageUrl2) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm(f => ({ ...f, imageUrl1: f.imageUrl2, imageUrl2: f.imageUrl1 }));
+                    }}
+                    style={{
+                      padding: '0.2rem 0.55rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 700,
+                      border: '1px solid var(--border-light)', background: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--text-muted)', cursor: 'pointer'
+                    }}
+                  >
+                    🔄 Swap
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <div style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'0.6rem', lineHeight:1.5 }}>
             📂 From your Drive folder — open it, right-click any image → <strong>Share</strong> → <strong>Copy link</strong> → paste below.
           </div>
@@ -1306,19 +1708,18 @@ function JobCardForm({ card, onSave, onClose }) {
             <ImageField label="Image 1 — Design / Pattern" name="imageUrl1" form={form} onChange={onChange} index={1}/>
             <ImageField label="Image 2 — Fabric / Full View" name="imageUrl2" form={form} onChange={onChange} index={2}/>
           </div>
-        </form>
+          </div>
 
         {/* Footer */}
         <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid var(--border-light)',
           display:'flex', gap:'0.75rem', justifyContent:'flex-end', flexShrink:0 }}>
           <button type="button" onClick={onClose} className="btn-secondary" style={{ padding:'0.55rem 1.2rem' }}>Cancel</button>
-          <button type="submit" form="jcForm" className="btn-primary" style={{ padding:'0.55rem 1.4rem' }}
-            onClick={handleSubmit} disabled={saving}>
+          <button type="submit" className="btn-primary" style={{ padding:'0.55rem 1.4rem' }} disabled={saving}>
             <Save size={14}/>
             {saving ? 'Saving...' : card ? 'Update Job Card' : 'Create Job Card'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -1333,7 +1734,7 @@ const rowStyle = {
 };
 
 // ─── MAIN PANEL ──────────────────────────────────────────────────────────────
-export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
+export default function JobCardPanel({ activeSubTab = 'jobcards', department }) {
   const [cards, setCards] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1344,12 +1745,24 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortBy, setSortBy] = useState('jobNo');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [datePreset, setDatePreset] = useState('all');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
+  const [customDateStart, setCustomDateStart] = useState('');
+  const [customDateEnd, setCustomDateEnd] = useState('');
   const [formCard, setFormCard] = useState(null);   // null=closed, {}=new, {...}=edit
   const [showForm, setShowForm] = useState(false);
+  const [historyModalCard, setHistoryModalCard] = useState(null);
   const [previewCard, setPreviewCard] = useState(null);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [viewMode, setViewMode] = useState('grid');
+  const [billingChallanData, setBillingChallanData] = useState(null);
+  const [overrideSubTab, setOverrideSubTab] = useState(null);
+
+  const effectiveSubTab = overrideSubTab || activeSubTab;
+
+  useEffect(() => {
+    setOverrideSubTab(null);
+  }, [activeSubTab]);
 
   // Sharing to Chat states
   const [showShareModal, setShowShareModal] = useState(false);
@@ -1358,6 +1771,44 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [shareSearch, setShareSearch] = useState('');
   const [sharingJobCard, setSharingJobCard] = useState(false);
+
+  // Multi-select for Job Cards Bulk Download / Print
+  const [selectedJobCardIds, setSelectedJobCardIds] = useState([]);
+
+  const handleToggleSelectAllJobCards = (visibleCards) => {
+    const visibleIds = visibleCards.map(c => c._id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedJobCardIds.includes(id));
+    if (allSelected) {
+      setSelectedJobCardIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedJobCardIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleToggleSelectJobCard = (id) => {
+    setSelectedJobCardIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkPrintSelectedJobCards = async () => {
+    if (selectedJobCardIds.length === 0) return;
+    const selectedCards = cards.filter(c => selectedJobCardIds.includes(c._id));
+    if (selectedCards.length > 0) {
+      triggerJobCardPrint(selectedCards);
+      triggerPushNotification('🖨️ Multi-Select Job Cards Print', `Opened ${selectedCards.length} Job Cards in physical A5 print view.`, 'success');
+    } else {
+      try {
+        await api.downloadBulkJobCardPdf(
+          selectedJobCardIds,
+          `Combined_Job_Cards_${selectedJobCardIds.length}_Cards.pdf`
+        );
+        triggerPushNotification('📥 Combined Job Cards PDF Downloaded', `${selectedJobCardIds.length} Job Cards merged into 1 single multi-page PDF document.`, 'success');
+      } catch (e) {
+        triggerEliteAlert('PDF Error', 'Failed to generate combined Job Cards PDF: ' + e.message, 'error');
+      }
+    }
+  };
 
   // ── Debounced search: fires API only after user stops typing for 400ms ──────
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -1401,7 +1852,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
       const currentUser = api.getCurrentUser();
       const senderId = currentUser ? (currentUser._id || currentUser.id) : '';
       if (!senderId) {
-        alert('You must be signed in to share job cards.');
+        triggerEliteAlert('Authentication Required', 'You must be signed in to share job cards.', 'warning');
         return;
       }
 
@@ -1419,31 +1870,33 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
       content += `🔗 *Download PDF:* ${downloadLink}`;
 
       await api.sendRoomMessage(selectedRoomId, { senderId, content });
-      alert('Job Card shared successfully to the chat room!');
+      triggerEliteAlert('Job Card Shared 🚀', 'Job Card shared successfully to the chat room!', 'success');
       setShowShareModal(false);
       setShareCard(null);
       setSelectedRoomId('');
       setShareSearch('');
     } catch (err) {
       console.error('Failed to share job card', err);
-      alert('Failed to share job card.');
+      triggerEliteAlert('Sharing Failed', 'Failed to share job card.', 'error');
     } finally {
       setSharingJobCard(false);
     }
   };
 
-  const fetchCards = useCallback(async () => {
+  const fetchCards = useCallback(async (isSilent = false) => {
     if (activeSubTab !== 'list') return;
     // Cancel any in-flight request to prevent race conditions
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setLoading(true); setError('');
+    if (!isSilent) setLoading(true);
+    setError('');
     try {
       const res = await api.getJobCards({
         search: debouncedSearch,
         status: statusFilter === 'All' ? '' : statusFilter,
+        department,
         page,
         limit: 25,
         sortBy,
@@ -1457,74 +1910,214 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
         setPages(res.pages || 1);
       }
     } catch (err) {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !isSilent) {
         setError(err.message || 'Failed to load job cards.');
       }
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted && !isSilent) setLoading(false);
     }
-  }, [debouncedSearch, statusFilter, page, activeSubTab, sortBy, sortOrder, dateStart, dateEnd]);
+  }, [debouncedSearch, statusFilter, page, activeSubTab, sortBy, sortOrder, dateStart, dateEnd, department]);
 
   useEffect(() => {
-    fetchCards();
-    const interval = setInterval(fetchCards, 30000);
-    return () => clearInterval(interval);
+    fetchCards(false);
+    const interval = setInterval(() => fetchCards(true), 10000);
+    const handleDataRefresh = () => fetchCards(true);
+    window.addEventListener('elite-data-refresh', handleDataRefresh);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('elite-data-refresh', handleDataRefresh);
+    };
   }, [fetchCards, activeSubTab]);
 
   const handleDelete = async (id, jobNo) => {
-    if (!window.confirm(`Delete Job Card "${jobNo}"?`)) return;
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Job Card',
+      message: `Are you sure you want to delete Job Card "${jobNo}"? This action cannot be undone.`,
+      confirmText: 'Delete Job Card',
+      type: 'danger'
+    });
+    if (!confirmed) return;
     try {
       await api.deleteJobCard(id);
+      triggerPushNotification('🗑️ Job Card Deleted', `Job Card #${jobNo} removed.`, 'warning');
+      triggerGlobalDataRefresh('jobcards');
       fetchCards();
     } catch (err) {
-      alert(err.message || 'Failed to delete.');
+      triggerEliteAlert('Delete Failed', err.message || 'Failed to delete.', 'error');
     }
   };
 
-  const openNew  = () => { setFormCard(null); setShowForm(true); };
+  const handleSendToBilling = (c) => {
+    const challanData = {
+      isJobCardChallan: true,
+      challanNo: c.billNo || c.ourChallanNo || c.jobNo,
+      jobNo: c.jobNo,
+      party: c.party,
+      customerName: c.party,
+      designNo: c.designNo || c.designName,
+      fabric: c.fabric,
+      lotNo: c.lotNo,
+      partyChallan: c.partyChallan,
+      vendorChallanNo: c.partyChallan,
+      ourChallanNo: c.ourChallanNo || c.jobNo,
+      date: c.date,
+      totalMtr: c.totalMtr,
+      items: [
+        {
+          designNo: c.designNo || c.designName,
+          particulars: `Digital Printing Service - ${c.fabric || 'Fabric'} (Design: ${c.designNo || c.designName || ''})`,
+          pcs: parseFloat(c.totalMtr) || parseFloat(c.totalQty) || 1,
+          rate: parseFloat(c.rate) || 0,
+          amount: (parseFloat(c.totalMtr) || 1) * (parseFloat(c.rate) || 0),
+          hsnCode: '998821',
+          unit: 'Meters',
+          jobNo: c.jobNo,
+          lotNo: c.lotNo,
+          partyChallan: c.partyChallan,
+          ourChallanNo: c.ourChallanNo || c.jobNo,
+          imageUrl: c.designImage || c.imageUrl || ''
+        }
+      ]
+    };
+    setBillingChallanData(challanData);
+    setOverrideSubTab('billing');
+  };
+
+  const openNew  = () => {
+    setFormCard(null);
+    setShowForm(true);
+  };
   const openEdit = (c) => { setFormCard(c); setShowForm(true); };
-  const onSaved  = () => { setShowForm(false); fetchCards(); };
+  const onSaved  = () => {
+    setShowForm(false);
+    triggerGlobalDataRefresh('jobcards');
+    fetchCards();
+  };
 
   const MACHINE_COLOR = { GRANDO:'#3b82f6', PRINTDOT:'#ef4444' };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'1.2rem' }}>
-      {activeSubTab === 'catalogue' ? (
-        <DesignCatalogue />
-      ) : activeSubTab === 'master' ? (
-        <DesignMaster />
-      ) : activeSubTab === 'fabric' ? (
-        <FabricInventoryPanel />
-      ) : activeSubTab === 'raw_materials' ? (
+      {department === 'stitching' && (effectiveSubTab === 'dashboard' || effectiveSubTab === 'list' || effectiveSubTab === 'jobcards' || !effectiveSubTab) ? (
+        <GarmentJobCardDashboard />
+      ) : department === 'stitching' && (effectiveSubTab === 'challan' || effectiveSubTab === 'fabric_challan' || effectiveSubTab === 'stitching_challan') ? (
+        <StitchingChallanPanel onNavigateToBilling={(ch) => { setBillingChallanData(ch); setOverrideSubTab('billing'); }} />
+      ) : effectiveSubTab === 'catalogue' || effectiveSubTab === 'master' ? (
+        <DesignCatalogue department={department} initialSubTab={effectiveSubTab === 'master' ? 'master' : 'catalogue'} />
+      ) : effectiveSubTab === 'fabric' ? (
+        <FabricInventoryPanel department={department} onNavigateToBilling={(ch) => { setBillingChallanData(ch); setOverrideSubTab('billing'); }} />
+      ) : effectiveSubTab === 'billing' || effectiveSubTab === 'billing_digital' || effectiveSubTab === 'billing_elite' ? (
+        <EliteBillingDepartment initialChallanData={billingChallanData} department={department} companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} />
+      ) : effectiveSubTab === 'billing_fabtex' ? (
+        <EliteBillingDepartment initialChallanData={billingChallanData} department={department} companyEntity="Elite Fabtex" />
+      ) : effectiveSubTab === 'printing_log' || effectiveSubTab === 'print_entry' ? (
+        <JobPrintingLog />
+      ) : effectiveSubTab === 'fusing_log' || effectiveSubTab === 'fusing' ? (
+        <FusingDepartment />
+      ) : effectiveSubTab === 'qa' || effectiveSubTab === 'quality' || effectiveSubTab === 'quality_checking' ? (
+        <QADepartment department={department} />
+      ) : effectiveSubTab === 'engine' || effectiveSubTab === 'split_view' ? (
+        <EliteDigitalPrintsSplitView />
+      ) : effectiveSubTab === 'raw_materials' ? (
         <RawMaterialsPanel />
-      ) : activeSubTab === 'tracking' ? (
-        <JobCardTracking onPreview={setPreviewCard} />
-      ) : activeSubTab === 'settings' ? (
-        <PrintSettings />
-      ) : activeSubTab === 'jobcards' ? (
-        <ReportsCenter department="elite-print" />
+      ) : effectiveSubTab === 'complain' || effectiveSubTab === 'complaint' || effectiveSubTab === 'complaints' ? (
+        <DigitalPrintComplainModule companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} />
+      ) : effectiveSubTab === 'expense' || effectiveSubTab === 'expenses' ? (
+        <DigitalPrintExpenseModule companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} />
+      ) : effectiveSubTab === 'settings' || effectiveSubTab === 'stitching_settings' ? (
+        department === 'stitching' ? <StitchingSettings /> : <PrintSettings />
+      ) : effectiveSubTab === 'jobcards' ? (
+        department === 'stitching' ? <GarmentJobCardDashboard /> : <ReportsCenter department="elite-print" />
       ) : (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
           {/* Header banner */}
-          <div className="glass-panel" style={{ padding:'1.25rem 1.5rem' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'0.85rem' }}>
-                <div style={{ width:44, height:44, borderRadius:12, background:'linear-gradient(135deg,#38bdf8,#8b5cf6)',
-                  display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <FileText size={22} color="#fff"/>
+          <div className="glass-panel" style={{ padding: '1.1rem 1.35rem 0.85rem 1.35rem', background: '#ffffff', borderRadius: '14px', border: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'var(--shadow-md)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#38bdf8,#2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(37,99,235,0.3)', color: '#fff' }}>
+                  <FileText size={22} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'var(--text-primary)' }}>Elite Digital Prints</h2>
-                  <p style={{ fontSize:'0.78rem', color:'var(--text-muted)', marginTop:1 }}>
-                    Job Card Management — {total} total cards
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
+                      {department === 'stitching' ? 'Stitching Job Cards' : 'Job Cards & Production'}
+                    </h2>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0', fontWeight: 500 }}>
+                    Production &amp; Stage Tracking — <strong>{total}</strong> Total Cards
                   </p>
                 </div>
               </div>
-              <button className="btn-primary" onClick={openNew} style={{ padding:'0.55rem 1.25rem' }}>
-                <PlusCircle size={15}/> New Job Card
+
+              {/* Entry Buttons Top in Header */}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={openNew}
+                  style={{ padding: '0.5rem 1.15rem', borderRadius: '8px', background: 'linear-gradient(135deg,#38bdf8,#2563eb)', color: '#fff', fontSize: '0.8rem', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 3px 12px rgba(37,99,235,0.3)' }}
+                >
+                  <PlusCircle size={15} /> New Job Card
+                </button>
+              </div>
+            </div>
+
+            {/* Divider Line */}
+            <div style={{ height: '1px', background: 'var(--border-light)', width: '100%', margin: '0.6rem 0 0.4rem 0' }} />
+
+            {/* Sub-Tab Navigation Bar */}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setOverrideSubTab('list')}
+                style={{
+                  padding: '0.45rem 1rem',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  borderRadius: '8px',
+                  border: (effectiveSubTab === 'list' || effectiveSubTab === 'jobcards') ? '1.5px solid #2563eb' : '1px solid var(--border-light)',
+                  background: (effectiveSubTab === 'list' || effectiveSubTab === 'jobcards') ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-card, #ffffff)',
+                  color: (effectiveSubTab === 'list' || effectiveSubTab === 'jobcards') ? '#1d4ed8' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileText size={15} />
+                <span>📋 Production Cards</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverrideSubTab('tracking')}
+                style={{
+                  padding: '0.45rem 1rem',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  borderRadius: '8px',
+                  border: effectiveSubTab === 'tracking' ? '1.5px solid #2563eb' : '1px solid var(--border-light)',
+                  background: effectiveSubTab === 'tracking' ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-card, #ffffff)',
+                  color: effectiveSubTab === 'tracking' ? '#1d4ed8' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <RefreshCw size={15} />
+                <span>🔄 Job Card Tracking</span>
               </button>
             </div>
           </div>
+
+          {effectiveSubTab === 'tracking' ? (
+            <JobCardTracking onPreview={setPreviewCard} />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
 
       {/* Filters */}
       <div className="glass-panel" style={{ padding:'1rem 1.25rem' }}>
@@ -1535,24 +2128,21 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
               placeholder="Search Job No., Party, Design…"
               style={{ paddingLeft:32, width:'100%', fontSize:'0.85rem' }}/>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>From:</span>
-            <input
-              type="date"
-              value={dateStart}
-              onChange={e => { setDateStart(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.6rem', fontSize: '0.82rem', width: '135px', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--nav-bg)', color: 'var(--text-primary)' }}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>To:</span>
-            <input
-              type="date"
-              value={dateEnd}
-              onChange={e => { setDateEnd(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.6rem', fontSize: '0.82rem', width: '135px', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--nav-bg)', color: 'var(--text-primary)' }}
-            />
-          </div>
+          <DateRangePicker
+            preset={datePreset}
+            onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+              setDatePreset(p);
+              setDateStart(ds);
+              setDateEnd(de);
+              setPage(1);
+            }}
+            customStart={customDateStart}
+            customEnd={customDateEnd}
+            onCustomChange={(s, e) => {
+              setCustomDateStart(s);
+              setCustomDateEnd(e);
+            }}
+          />
           {['All','Pending','In Progress','Done'].map(s=>(
             <button key={s} onClick={()=>{ setStatusFilter(s); setPage(1); }}
               style={{ padding:'0.45rem 0.9rem', fontSize:'0.8rem', borderRadius:'var(--radius-sm)',
@@ -1570,12 +2160,8 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
               borderColor: sortBy==='urgency' ? '#fbbf24' : 'var(--border-light)',
               background: sortBy==='urgency' ? 'rgba(245,158,11,0.12)' : 'transparent',
               color: sortBy==='urgency' ? '#fbbf24' : 'var(--text-muted)',
-              display: 'flex', alignItems: 'center', gap: '0.45rem',
-              transition:'all 0.15s' }}>
+              display: 'flex', alignItems: 'center', gap: '0.45rem', transition: 'all 0.15s' }}>
             🔥 Urgency Priority
-          </button>
-          <button onClick={fetchCards} className="btn-icon" title="Refresh">
-            <RefreshCw size={14} className={loading ? 'spin-loader' : ''}/>
           </button>
           
           <div style={{ display: 'flex', gap: '0.2rem', marginLeft: 'auto', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '2px' }}>
@@ -1643,64 +2229,114 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
         </div>
       ) : (
         <>
+          {/* Bulk Job Cards Selection Action Bar */}
+          {selectedJobCardIds.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1.1rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: '10px', marginBottom: '1rem', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.2)' }}>
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Printer size={16} color="#34d399" />
+                <span>{selectedJobCardIds.length} Job Card{selectedJobCardIds.length > 1 ? 's' : ''} Selected</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <button
+                  onClick={handleBulkPrintSelectedJobCards}
+                  className="btn-primary"
+                  style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <Download size={15} />
+                  Download Combined PDF ({selectedJobCardIds.length})
+                </button>
+                <button
+                  onClick={() => setSelectedJobCardIds([])}
+                  className="btn-secondary"
+                  style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           {viewMode === 'list' ? (
             <div className="glass-panel" style={{ overflowX: 'auto', padding: 0 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.02)' }}>
-                    <th 
-                      onClick={() => {
-                        if (sortBy === 'jobNo') {
-                          setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortBy('jobNo');
-                          setSortOrder('desc');
-                        }
-                        setPage(1);
-                      }}
-                      style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      Job No {sortBy === 'jobNo' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Party</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Design</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fabric</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colors</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Panna</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Mtr</th>
-                    <th 
-                      onClick={() => {
-                        if (sortBy === 'date') {
-                          setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortBy('date');
-                          setSortOrder('desc');
-                        }
-                        setPage(1);
-                      }}
-                      style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      Date {sortBy === 'date' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cards.map(c => (
-                    <tr 
-                      key={c._id} 
-                      style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.015)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-                    >
+              {(() => {
+                const displayedCards = cards.filter(c => matchSearchQuery(c, debouncedSearch, ['jobNo', 'party', 'designNo', 'designName', 'machineName', 'billNo', 'partyChallan', 'ourChallanNo', 'lotNo', 'fabric']));
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.02)' }}>
+                        <th style={{ padding: '0.75rem 0.5rem', width: '42px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={displayedCards.length > 0 && displayedCards.every(c => selectedJobCardIds.includes(c._id))}
+                            onChange={() => handleToggleSelectAllJobCards(displayedCards)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#10b981' }}
+                            title="Select All Job Cards"
+                          />
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (sortBy === 'jobNo') {
+                              setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setSortBy('jobNo');
+                              setSortOrder('desc');
+                            }
+                            setPage(1);
+                          }}
+                          style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          Job No {sortBy === 'jobNo' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
+                        </th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Party</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Design</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fabric</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colors</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Panna</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Mtr</th>
+                        <th 
+                          onClick={() => {
+                            if (sortBy === 'date') {
+                              setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setSortBy('date');
+                              setSortOrder('desc');
+                            }
+                            setPage(1);
+                          }}
+                          style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          Date {sortBy === 'date' ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ''}
+                        </th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Created By</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedCards.map(c => (
+                        <tr 
+                          key={c._id} 
+                          style={{ borderBottom: '1px solid var(--border-light)', background: selectedJobCardIds.includes(c._id) ? 'rgba(16, 185, 129, 0.08)' : 'transparent', transition: 'background-color 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = selectedJobCardIds.includes(c._id) ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.015)'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = selectedJobCardIds.includes(c._id) ? 'rgba(16, 185, 129, 0.08)' : ''}
+                        >
+                          <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedJobCardIds.includes(c._id)}
+                              onChange={() => handleToggleSelectJobCard(c._id)}
+                              style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#10b981' }}
+                            />
+                          </td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span>{c.jobNo}</span>
-                          {c.emergencyNotes && c.emergencyNotes.trim() && (
-                            <span title="Urgent" style={{ padding: '0.1rem 0.35rem', borderRadius: 4, fontSize: '0.6rem', background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>URGENT</span>
-                          )}
-                        </div>
+                        <JobCardTooltip card={c}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ color: 'var(--primary)', cursor: 'pointer' }}>{c.jobNo}</span>
+                            {c.emergencyNotes && c.emergencyNotes.trim() && (
+                              <span title="Urgent" style={{ padding: '0.1rem 0.35rem', borderRadius: 4, fontSize: '0.6rem', background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>URGENT</span>
+                            )}
+                          </div>
+                        </JobCardTooltip>
                       </td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{c.party || '—'}</td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--primary)', fontWeight: 600 }}>{c.designName || c.designNo || '—'}</td>
@@ -1708,11 +2344,19 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{c.colors || '—'}</td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{c.panna || '—'}</td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600 }}>{c.totalMtr || '—'}</td>
-                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{c.date || '—'}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-primary)' }}>{formatDateDDMMYYYY(c.date)}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '6px', background: 'rgba(124, 58, 237, 0.12)', color: '#a78bfa', fontWeight: 700, fontSize: '0.75rem', border: '1px solid rgba(124, 58, 237, 0.25)' }}>
+                          {c.createdByName || c.createdBy || 'Staff User'}
+                        </span>
+                      </td>
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem' }}><StatusBadge status={c.status} /></td>
                       <td style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                          <button onClick={() => handleSendToBilling(c)} className="btn-icon" title="Create Invoice / Send to Billing" style={{ padding: '0.3rem', color: '#a78bfa' }}><Receipt size={13} /></button>
+                          <button onClick={() => triggerJobCardPrint(c)} className="btn-icon" title="Print / Save PDF" style={{ padding: '0.3rem', color: '#10b981' }}><Printer size={13} /></button>
                           <button onClick={() => setPreviewCard(c)} className="btn-icon" title="Preview" style={{ padding: '0.3rem' }}><Eye size={13} /></button>
+                          <button onClick={() => setHistoryModalCard(c)} className="btn-icon" title="View Audit History & Staff Log" style={{ padding: '0.3rem', color: '#fbbf24' }}><Clock size={13} /></button>
                           <button onClick={() => openEdit(c)} className="btn-icon" title="Edit" style={{ padding: '0.3rem' }}><Edit2 size={13} /></button>
                           <button 
                             onClick={() => handleOpenShareModal(c)} 
@@ -1760,7 +2404,9 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            );
+          })()}
+        </div>
           ) : (
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(340px, 1fr))', gap:'1rem' }}>
               {cards.map(c => (
@@ -1772,7 +2418,9 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                   {/* Card header */}
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-                      <span style={{ fontWeight:800, fontSize:'0.95rem', color:'var(--text-primary)' }}>{c.jobNo}</span>
+                      <JobCardTooltip card={c}>
+                        <span style={{ fontWeight:800, fontSize:'0.95rem', color:'var(--primary)', cursor: 'pointer' }}>{c.jobNo}</span>
+                      </JobCardTooltip>
                       {c.machineName && (
                         <span style={{ padding:'0.15rem 0.55rem', borderRadius:6, fontSize:'0.65rem', fontWeight:800,
                           background: c.machineName==='GRANDO' ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)',
@@ -1794,9 +2442,10 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.35rem 0.6rem', fontSize:'0.8rem' }}>
                     {[
                       ['Party', c.party], ['Design', c.designName || c.designNo],
-                      ['Fabric', c.fabric], ['Date', c.date],
+                      ['Fabric', c.fabric], ['Date', formatDateDDMMYYYY(c.date)],
                       ['Designer', c.designer], ['C.Match', c.colourMatching],
                       ['Total Mtr', c.totalMtr], ['EXP.TIME', c.expTime],
+                      ['Created By', c.createdByName || c.createdBy || 'Staff User'],
                     ].map(([k,v])=>(
                       <div key={k} style={{ display:'flex', gap:'0.3rem' }}>
                         <span style={{ color:'var(--text-muted)', fontWeight:600, flexShrink:0 }}>{k}:</span>
@@ -1809,27 +2458,38 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                   </div>
 
                   {/* Actions */}
-                  <div style={{ display:'flex', gap:'0.5rem', borderTop:'1px solid var(--border-light)', paddingTop:'0.7rem' }}>
+                  <div style={{ display:'flex', gap:'0.45rem', borderTop:'1px solid var(--border-light)', paddingTop:'0.7rem', flexWrap:'wrap' }}>
+                    <button onClick={()=>handleSendToBilling(c)} className="btn-secondary"
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', color: '#4f46e5', borderColor: '#c7d2fe', background: '#eff6ff', fontWeight: 700 }}
+                      title="Create Delivery Challan">
+                      <FileText size={13}/> Challan
+                    </button>
+                    <button onClick={()=>triggerJobCardPrint(c)} className="btn-secondary"
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', color: '#059669', borderColor: '#a7f3d0', background: '#ecfdf5', fontWeight: 700 }}
+                      title="Print / Save PDF">
+                      <Printer size={13}/> Print / PDF
+                    </button>
                     <button onClick={()=>setPreviewCard(c)} className="btn-secondary"
-                      style={{ flex:1, padding:'0.4rem', fontSize:'0.78rem', justifyContent:'center' }}>
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', fontWeight: 600 }}>
                       <Eye size={13}/> Preview
                     </button>
+                    <button onClick={()=>setHistoryModalCard(c)} className="btn-secondary"
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', color: '#d97706', borderColor: '#fde68a', background: '#fffbeb', fontWeight: 700 }}
+                      title="View Audit History & Mistakes Log">
+                      <Clock size={13}/> History
+                    </button>
                     <button onClick={()=>openEdit(c)} className="btn-secondary"
-                      style={{ flex:1, padding:'0.4rem', fontSize:'0.78rem', justifyContent:'center' }}>
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', fontWeight: 600 }}>
                       <Edit2 size={13}/> Edit
                     </button>
                     <button onClick={()=>handleOpenShareModal(c)} className="btn-secondary"
-                      style={{ padding:'0.4rem 0.7rem', fontSize:'0.78rem', borderRadius:'var(--radius-sm)',
-                        background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.2)',
-                        color:'#60a5fa', cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem',
-                        fontFamily:'var(--font-sans)', transition:'all 0.15s' }}>
-                      <Send size={13}/>
+                      style={{ flex:1, padding:'0.42rem 0.5rem', fontSize:'0.78rem', justifyContent:'center', color: '#2563eb', borderColor: '#bfdbfe', background: '#eff6ff', fontWeight: 700 }}
+                      title="Share Job Card to Chat">
+                      <Send size={13}/> Share
                     </button>
-                    <button onClick={()=>handleDelete(c._id, c.jobNo)}
-                      style={{ padding:'0.4rem 0.7rem', fontSize:'0.78rem', borderRadius:'var(--radius-sm)',
-                        background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)',
-                        color:'#f87171', cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem',
-                        fontFamily:'var(--font-sans)', transition:'all 0.15s' }}>
+                    <button onClick={()=>handleDelete(c._id, c.jobNo)} className="btn-secondary"
+                      style={{ padding:'0.42rem 0.6rem', fontSize:'0.78rem', justifyContent:'center', color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2', fontWeight: 700 }}
+                      title="Delete Job Card">
                       <Trash2 size={13}/>
                     </button>
                   </div>
@@ -1855,19 +2515,19 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
 
       {/* Modals */}
       {showForm && (
-        <JobCardForm card={formCard} onSave={onSaved} onClose={()=>setShowForm(false)}/>
+        <JobCardForm card={formCard} onSave={onSaved} onClose={()=>setShowForm(false)} department={department}/>
       )}
       {previewCard && (
         <JobCardPrintView 
           card={previewCard} 
           onClose={()=>setPreviewCard(null)}
           onShare={(c) => {
-            setPreviewCard(null);
             handleOpenShareModal(c);
           }}
         />
       )}
 
+      {/* 🌟 SHARE TO CHAT FLOATING MODAL 🌟 */}
       {showShareModal && (
         <div style={{
           position: 'fixed',
@@ -1875,64 +2535,111 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(3, 7, 18, 0.75)',
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 999999,
           display: 'flex',
-          justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 9999,
-          backdropFilter: 'blur(5px)'
+          justifyContent: 'center',
+          padding: '1rem',
+          animation: 'fadeIn 0.2s ease-out'
         }}>
           <div style={{
-            background: '#161b26',
-            border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-            borderRadius: '16px',
+            background: '#ffffff',
             width: '100%',
-            maxWidth: '480px',
-            padding: '24px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
-            color: 'var(--text-primary)'
+            maxWidth: '520px',
+            borderRadius: '14px',
+            boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.3)',
+            border: '1px solid #cbd5e1',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            color: '#0f172a'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Share Job Card to Chat</h3>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.1rem 1.4rem',
+              background: '#f8fafc',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: '#eff6ff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Send size={18} color="#2563eb" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                    Share Job Card {shareCard?.jobNo ? `— ${shareCard.jobNo}` : ''}
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                    Send this job card directly into a team chat channel or direct message.
+                  </p>
+                </div>
+              </div>
+
               <button 
+                type="button"
                 onClick={() => { setShowShareModal(false); setSelectedRoomId(''); setShareSearch(''); }} 
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted, #9ca3af)' }}
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 30,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#475569'
+                }}
               >
-                <X size={20} />
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleShareJobCard}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Search Channel or Member</label>
+            <form onSubmit={handleShareJobCard} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>Search Channel or Team Member</label>
                 <input 
                   type="text" 
                   value={shareSearch} 
                   onChange={e => setShareSearch(e.target.value)} 
-                  placeholder="Type name to search..." 
+                  placeholder="Type channel or member name..." 
                   style={{
                     width: '100%',
-                    padding: '10px',
+                    padding: '0.6rem 0.85rem',
                     borderRadius: '8px',
-                    border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-                    backgroundColor: 'rgba(255,255,255,0.03)',
-                    color: 'var(--text-primary)',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
                     outline: 'none',
-                    fontSize: '0.9rem'
+                    fontSize: '0.85rem'
                   }}
                 />
               </div>
 
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Select Chat Destination</label>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>Select Chat Destination</label>
                 <div style={{
-                  maxHeight: '200px',
+                  maxHeight: '230px',
                   overflowY: 'auto',
-                  border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
                   display: 'flex',
                   flexDirection: 'column',
-                  backgroundColor: 'rgba(255,255,255,0.01)'
+                  gap: '4px',
+                  padding: '6px',
+                  backgroundColor: '#f8fafc'
                 }}>
                   {chatRooms
                     .filter(r => {
@@ -1954,46 +2661,57 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                           key={r._id} 
                           onClick={() => setSelectedRoomId(r._id)}
                           style={{
-                            padding: '10px 14px',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '10px',
                             cursor: 'pointer',
-                            backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
-                            borderBottom: '1px solid rgba(255,255,255,0.04)',
-                            transition: 'background-color 0.2s',
+                            backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                            border: isSelected ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                            color: isSelected ? '#1d4ed8' : '#0f172a',
+                            transition: 'all 0.15s ease',
                           }}
                         >
                           <div style={{
-                            width: '8px',
-                            height: '8px',
+                            width: '28px',
+                            height: '28px',
                             borderRadius: '50%',
-                            backgroundColor: isDirect ? 'var(--success)' : 'var(--primary)'
-                          }} />
-                          <span style={{ fontSize: '0.9rem', fontWeight: isSelected ? '600' : 'normal', color: isSelected ? 'var(--primary)' : 'var(--text-primary)' }}>{displayName}</span>
+                            background: isSelected
+                              ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
+                              : '#e2e8f0',
+                            color: isSelected ? '#ffffff' : '#475569',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.78rem',
+                            fontWeight: '800'
+                          }}>
+                            {isDirect ? displayName.charAt(0).toUpperCase() : '#'}
+                          </div>
+                          <span style={{ fontSize: '0.88rem', fontWeight: isSelected ? 700 : 500, flex: 1 }}>{displayName}</span>
+                          {isSelected && <span style={{ fontSize: '0.85rem', color: '#2563eb', fontWeight: 800 }}>✓</span>}
                         </div>
                       );
                     })}
                   {chatRooms.length === 0 && (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
                       No active channels or messages found.
                     </div>
                   )}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button 
                   type="button" 
                   onClick={() => { setShowShareModal(false); setSelectedRoomId(''); setShareSearch(''); }} 
+                  className="btn-secondary"
                   style={{
-                    padding: '10px 18px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem'
+                    padding: '0.5rem 1.2rem',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700
                   }}
                 >
                   Cancel
@@ -2002,17 +2720,19 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
                   type="submit" 
                   disabled={sharingJobCard || !selectedRoomId}
                   style={{
-                    padding: '10px 20px',
-                    borderRadius: '8px',
+                    padding: '12px 24px',
+                    borderRadius: '24px',
                     border: 'none',
-                    backgroundColor: selectedRoomId ? 'var(--primary)' : 'var(--border-light)',
-                    color: '#0b0f19',
+                    background: selectedRoomId ? 'linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)' : 'rgba(255,255,255,0.08)',
+                    color: 'white',
                     cursor: selectedRoomId ? 'pointer' : 'not-allowed',
                     fontWeight: 'bold',
-                    fontSize: '0.85rem',
+                    fontSize: '0.88rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
+                    gap: '8px',
+                    boxShadow: selectedRoomId ? '0 4px 14px rgba(56,189,248,0.3)' : 'none',
+                    opacity: selectedRoomId ? 1 : 0.5
                   }}
                 >
                   {sharingJobCard ? 'Sharing...' : 'Confirm Share'}
@@ -2022,8 +2742,69 @@ export default function JobCardPanel({ activeSubTab = 'jobcards' }) {
           </div>
         </div>
       )}
-        </>
+
+      {/* Staff Audit History & Mistakes Tracker Modal */}
+      {historyModalCard && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }}>
+          <div style={{
+            width: '100%', maxWidth: '640px', background: '#0f172a', border: '1px solid rgba(56, 189, 248, 0.3)',
+            borderRadius: '14px', padding: '1.25rem', color: '#f8fafc', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={20} /> Job Card #{historyModalCard.jobNo} — Staff Audit History
+                </h3>
+                <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                  Complete timeline of every staff member who created or edited this Job Card.
+                </p>
+              </div>
+              <button className="btn-icon" onClick={() => setHistoryModalCard(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {(!historyModalCard.auditTrail || historyModalCard.auditTrail.length === 0) ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f1f5f9' }}>Created By: <span style={{ color: '#a78bfa' }}>{historyModalCard.createdByName || historyModalCard.createdBy || 'Staff User'}</span></div>
+                  {historyModalCard.updatedByName && (
+                    <div style={{ marginTop: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Last Updated By: <span style={{ color: '#38bdf8' }}>{historyModalCard.updatedByName}</span></div>
+                  )}
+                  <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#64748b' }}>No detailed field changes recorded prior to system upgrade.</div>
+                </div>
+              ) : (
+                historyModalCard.auditTrail.map((entry, idx) => (
+                  <div key={idx} style={{ padding: '0.85rem 1rem', borderRadius: '10px', background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 800, fontSize: '0.88rem', color: entry.action === 'CREATE' ? '#34d399' : '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>👤 {entry.performedByName || entry.performedBy || 'Staff User'}</span>
+                        <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', background: entry.action === 'CREATE' ? 'rgba(52,211,153,0.15)' : 'rgba(56,189,248,0.15)', color: entry.action === 'CREATE' ? '#34d399' : '#38bdf8', border: `1px solid ${entry.action === 'CREATE' ? 'rgba(52,211,153,0.3)' : 'rgba(56,189,248,0.3)'}` }}>
+                          {entry.action}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600 }}>
+                        {new Date(entry.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#f1f5f9', fontWeight: 600, background: 'rgba(15, 23, 42, 0.6)', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      {entry.details || entry.changesSummary || 'Updated Job Card'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
-    </div>
-  );
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+);
 }

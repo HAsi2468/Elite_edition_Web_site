@@ -2,47 +2,62 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, getBaseUrl } from '../services/api';
 import {
   PlusCircle, Search, RefreshCw, Edit2, Trash2, X, Save, Image,
-  Eye, FileText, ChevronLeft, ChevronRight, CheckCircle, AlertCircle
+  Eye, FileText, ChevronLeft, ChevronRight, CheckCircle, AlertCircle,
+  Layers, BookOpen
 } from 'lucide-react';
 import { COLOR_NAMES, getColorHex, detectDominantColors } from '../utils/colors';
 import imageCompression from 'browser-image-compression';
+import { triggerPushNotification, triggerGlobalDataRefresh } from './NotificationToast';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
+import { matchSearchQuery } from '../utils/searchUtils';
+import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
+
+import PKDOrdersImportModal from './PKDOrdersImportModal';
+import DesignMaster from './DesignMaster';
 
 // Copy convertDriveUrl helper
 function convertDriveUrl(link) {
   if (!link || !link.trim()) return '';
-  if (link.startsWith('data:')) return link;
-  
-  // If it's a local relative path
-  if (link.startsWith('/')) {
+  const trimmed = link.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  // Handle local uploaded files e.g. "uploads/chat-123.jpg" or "/uploads/chat-123.jpg"
+  if (trimmed.includes('uploads/')) {
+    const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
     const baseUrl = getBaseUrl();
     if (baseUrl && baseUrl.startsWith('http')) {
       try {
         const url = new URL(baseUrl);
-        return `${url.origin}${link}`;
+        return `${url.origin}${cleanPath}`;
       } catch (e) {}
     }
-    return link;
+    return cleanPath;
   }
-  
-  // If it's a Google Drive link
-  if (link.includes('drive.google.com') || link.includes('googleusercontent') || link.includes('lh3.google')) {
-    if (link.includes('uc?export') || link.includes('lh3.google') || link.includes('googleusercontent')) return link;
-    const fileMatch = link.match(/\/d\/([-\w]{20,})/);
-    if (fileMatch) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
-    const openMatch = link.match(/[?&]id=([-\w]{20,})/);
-    if (openMatch) return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
-    if (link.includes('/folders/')) return '';
-    const idMatch = link.match(/([-\w]{25,})/);
-    return idMatch ? `https://drive.google.com/uc?export=view&id=${idMatch[1]}` : link;
+
+  // Handle Google Drive Links - extract File ID & use high-res CORS-free thumbnail endpoint
+  if (trimmed.includes('drive.google.com') || trimmed.includes('googleusercontent') || trimmed.includes('lh3.google')) {
+    let fileId = '';
+    const dMatch = trimmed.match(/\/d\/([-\w]{20,})/);
+    if (dMatch) fileId = dMatch[1];
+    if (!fileId) {
+      const idMatch = trimmed.match(/[?&]id=([-\w]{20,})/);
+      if (idMatch) fileId = idMatch[1];
+    }
+    if (!fileId) {
+      const genericMatch = trimmed.match(/([-\w]{25,})/);
+      if (genericMatch) fileId = genericMatch[1];
+    }
+
+    if (fileId) {
+      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+    }
   }
-  
-  // If it's any other external link (e.g. starts with http)
-  if (link.startsWith('http')) {
-    return link;
+
+  if (trimmed.startsWith('http')) {
+    return trimmed;
   }
-  
-  // Fallback
-  return link;
+
+  return trimmed;
 }
 
 // Image compression helper
@@ -95,6 +110,11 @@ const BLANK_DESIGN = {
   imageUrl2: '',
   notes: '',
   status: 'Active',
+  partySkuId: '',
+  sizeSalesRates: {
+    xs_34: 0, s_36: 0, m_38: 0, l_40: 0, xl_42: 0,
+    xl2_44: 0, xl3_46: 0, xl4_48: 0, xl5_50: 0, xl6_52: 0
+  },
   top100: '',
   sleeve100: '',
   bottom100: '',
@@ -327,11 +347,18 @@ function DesignImageField({ label, name, value, onChange, placeholder }) {
   );
 }
 
-export default function DesignCatalogue() {
+export default function DesignCatalogue({ department, initialSubTab = 'catalogue' }) {
+  const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
   const [designs, setDesigns] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
   
   // Search & Filters
   const [search, setSearch] = useState('');
@@ -339,7 +366,7 @@ export default function DesignCatalogue() {
   const [colorFilter, setColorFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('Active');
   const [sortBy, setSortBy] = useState('designName');
-  const [sortOrder, setSortOrder] = useState('asc');
+  const [sortOrder, setSortOrder] = useState('desc');
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -348,6 +375,7 @@ export default function DesignCatalogue() {
 
   // Modal form states
   const [showForm, setShowForm] = useState(false);
+  const [showPKDImportModal, setShowPKDImportModal] = useState(false);
   const [formDesign, setFormDesign] = useState(null); // null means New
   const [formVal, setFormVal] = useState({ ...BLANK_DESIGN });
   const [saving, setSaving] = useState(false);
@@ -387,26 +415,32 @@ export default function DesignCatalogue() {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const cfg = await api.getPrintConfig();
+        const cfg = department === 'stitching' ? await api.getStitchingConfig() : await api.getPrintConfig();
         setPrintConfig(cfg);
       } catch (err) {
-        console.error('Failed to load print settings:', err);
+        console.error('Failed to load settings:', err);
       }
     };
 
-    const loadAll = () => {
-      fetchDesigns();
+    const loadAll = (isSilent = false) => {
+      fetchDesigns(isSilent);
       fetchCategories();
       fetchConfig();
     };
 
-    loadAll();
-    const interval = setInterval(loadAll, 30000);
-    return () => clearInterval(interval);
+    loadAll(false);
+    const interval = setInterval(() => loadAll(true), 10000);
+    const handleDataRefresh = () => loadAll(true);
+    window.addEventListener('elite-data-refresh', handleDataRefresh);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('elite-data-refresh', handleDataRefresh);
+    };
   }, [search, categoryFilter, colorFilter, statusFilter, page, sortBy, sortOrder]);
 
-  const fetchDesigns = async () => {
-    setLoading(true);
+  const fetchDesigns = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     setError('');
     try {
       const res = await api.getDesigns({
@@ -414,10 +448,11 @@ export default function DesignCatalogue() {
         category: categoryFilter,
         colors: colorFilter,
         status: statusFilter,
+        department,
         sortBy,
         sortOrder,
         page,
-        limit: 12
+        limit: 1000
       });
       if (res && res.data) {
         setDesigns(res.data);
@@ -425,9 +460,9 @@ export default function DesignCatalogue() {
         setPages(res.pages || 1);
       }
     } catch (err) {
-      setError(err.message || 'Failed to fetch designs.');
+      if (!isSilent) setError(err.message || 'Failed to fetch designs');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
@@ -440,17 +475,30 @@ export default function DesignCatalogue() {
     }
   };
 
-  const openNew = () => {
+  const openNew = async () => {
     setFormDesign(null);
     setFormVal({ ...BLANK_DESIGN });
     setFormError('');
     setDetectedColors(null);
     setShowForm(true);
+
+    try {
+      const res = await api.getNextDesignNumber({ department: department || 'digital_print' });
+      if (res && res.nextDesignNo) {
+        setFormVal(prev => ({ ...prev, designName: res.nextDesignNo }));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch next design number:', e);
+    }
   };
 
   const openEdit = (d) => {
     setFormDesign(d);
-    setFormVal({ ...BLANK_DESIGN, ...d });
+    setFormVal({
+      ...BLANK_DESIGN,
+      ...d,
+      sizeSalesRates: d.sizeSalesRates || { ...BLANK_DESIGN.sizeSalesRates }
+    });
     setFormError('');
     setDetectedColors(null);
     setShowForm(true);
@@ -492,6 +540,29 @@ export default function DesignCatalogue() {
     setFormVal(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleSizeSalesRateChange = (key, val) => {
+    const num = parseFloat(val) || 0;
+    setFormVal(prev => ({
+      ...prev,
+      sizeSalesRates: {
+        ...(prev.sizeSalesRates || {}),
+        [key]: num
+      }
+    }));
+  };
+
+  const handleApplyAllSalesRates = (val) => {
+    const num = parseFloat(val) || 0;
+    const updated = {};
+    ['xs_34', 's_36', 'm_38', 'l_40', 'xl_42', 'xl2_44', 'xl3_46', 'xl4_48', 'xl5_50', 'xl6_52'].forEach(k => {
+      updated[k] = num;
+    });
+    setFormVal(prev => ({
+      ...prev,
+      sizeSalesRates: updated
+    }));
+  };
+
   const handleMachineProfileChange = (machineName, profileValue) => {
     setFormVal(prev => ({
       ...prev,
@@ -513,6 +584,8 @@ export default function DesignCatalogue() {
     try {
       const sanitizedVal = {
         ...formVal,
+        department: department || (formDesign?.department) || 'digital_print',
+        category: formVal.category || '',
         top100: formVal.top100 === '' || formVal.top100 === null || formVal.top100 === undefined ? 0 : Number(formVal.top100),
         sleeve100: formVal.sleeve100 === '' || formVal.sleeve100 === null || formVal.sleeve100 === undefined ? 0 : Number(formVal.sleeve100),
         bottom100: formVal.bottom100 === '' || formVal.bottom100 === null || formVal.bottom100 === undefined ? 0 : Number(formVal.bottom100),
@@ -524,10 +597,13 @@ export default function DesignCatalogue() {
 
       if (formDesign) {
         await api.updateDesign(formDesign._id, sanitizedVal);
+        triggerPushNotification('🎨 Design Updated', `Design "${sanitizedVal.designName}" updated.`, 'info');
       } else {
         await api.createDesign(sanitizedVal);
+        triggerPushNotification('🎨 Design Created', `New design "${sanitizedVal.designName}" added.`, 'success');
       }
       setShowForm(false);
+      triggerGlobalDataRefresh('catalog');
       fetchDesigns();
       fetchCategories();
     } catch (err) {
@@ -538,19 +614,33 @@ export default function DesignCatalogue() {
   };
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete design "${name}"?`)) return;
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Design',
+      message: `Are you sure you want to delete design "${name}"? This action cannot be undone.`,
+      confirmText: 'Delete Design',
+      type: 'danger'
+    });
+    if (!confirmed) return;
     try {
       await api.deleteDesign(id);
+      triggerPushNotification('🗑️ Design Deleted', `Design "${name}" removed.`, 'warning');
+      triggerGlobalDataRefresh('catalog');
       fetchDesigns();
       fetchCategories();
     } catch (err) {
-      alert(err.message || 'Failed to delete design.');
+      triggerEliteAlert('Delete Failed', err.message || 'Failed to delete design.', 'error');
     }
   };
 
   // Bulk auto-detect colours for ALL designs
   const handleBulkAutoDetectColors = async () => {
-    if (!window.confirm('This will analyze every design image and set the colour field to the most dominant colour detected.\n\nDesigns without images will be skipped.\n\nContinue?')) return;
+    const confirmed = await triggerEliteConfirm({
+      title: 'Bulk Detect Colors',
+      message: 'This will analyze every design image and set the colour field to the most dominant colour detected.\n\nDesigns without images will be skipped. Continue?',
+      confirmText: 'Start Analysis',
+      type: 'primary'
+    });
+    if (!confirmed) return;
 
     setBulkDetecting(true);
     setBulkProgress({ current: 0, total: 0, updated: 0, skipped: 0, failed: 0, log: [] });
@@ -609,7 +699,7 @@ export default function DesignCatalogue() {
       // Refresh the grid
       fetchDesigns();
     } catch (err) {
-      alert('Bulk operation failed: ' + err.message);
+      triggerEliteAlert('Bulk Error', 'Bulk operation failed: ' + err.message, 'error');
     } finally {
       // Keep modal open so user can see results — they close it manually
     }
@@ -617,54 +707,177 @@ export default function DesignCatalogue() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-      {/* Top Banner */}
-      <div className="glass-panel" style={{ padding: '1.25rem 1.5rem' }}>
+      
+      {/* ══ UNIFIED HEADER GLASS PANEL ══ */}
+      <div className="glass-panel" style={{ padding: '1.1rem 1.35rem 0.85rem 1.35rem', borderRadius: '14px', display: 'flex', flexDirection: 'column', gap: '0.85rem', boxShadow: 'var(--shadow-md)' }}>
+        
+        {/* Top Header Row: Title & Subtitle + Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          
+          {/* Left Title & Icon */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#38bdf8,#8b5cf6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Image size={22} color="#fff" />
+            <div style={{
+              width: 44, height: 44, borderRadius: 12,
+              background: 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.3)',
+              color: '#fff', flexShrink: 0
+            }}>
+              <Image size={22} />
             </div>
             <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>Design Catalogue</h2>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                Store & display master designs — {total} total designs
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
+                {department === 'stitching' ? 'Elite Stitching — Design Room' : 'Design Catalog'}
+              </h2>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0 0', fontWeight: 500 }}>
+                {department === 'stitching' ? 'Store & display master designs for Stitching department' : 'Store & display master designs'} — <strong>{total}</strong> total designs
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+
+          {/* Right Action Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
             <button
+              type="button"
               onClick={handleBulkAutoDetectColors}
               disabled={bulkDetecting}
               style={{
-                padding: '0.55rem 1.1rem',
+                padding: '0.5rem 1rem',
                 fontSize: '0.8rem',
-                fontWeight: 700,
-                fontFamily: 'var(--font-sans)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid rgba(139,92,246,0.4)',
-                background: 'linear-gradient(135deg, rgba(139,92,246,0.12), rgba(56,189,248,0.12))',
-                color: '#a78bfa',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                color: '#ffffff',
                 cursor: bulkDetecting ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.4rem',
-                transition: 'all 0.2s',
+                boxShadow: '0 3px 10px rgba(124, 58, 237, 0.25)',
+                transition: 'all 0.15s ease',
                 opacity: bulkDetecting ? 0.6 : 1
               }}
             >
               {bulkDetecting ? (
                 <><RefreshCw size={14} className="spin-loader" /> Processing...</>
               ) : (
-                <><span style={{ fontSize: '1rem' }}>🎨</span> Auto-set All Colours</>
+                <><span style={{ fontSize: '0.9rem' }}>🎨</span> Auto-set All Colours</>
               )}
             </button>
-            <button className="btn-primary" onClick={openNew} style={{ padding: '0.55rem 1.25rem' }}>
-              <PlusCircle size={15} /> New Design
+
+            {department === 'stitching' && (
+              <button
+                type="button"
+                onClick={() => setShowPKDImportModal(true)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 3px 10px rgba(16, 185, 129, 0.25)'
+                }}
+              >
+                📥 Import PKD Orders
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={openNew}
+              style={{
+                padding: '0.5rem 1.15rem',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 3px 12px rgba(37, 99, 235, 0.3)'
+              }}
+            >
+              <PlusCircle size={15} />
+              <span>New Design</span>
             </button>
           </div>
         </div>
+
+        {/* Divider Line */}
+        <div style={{ height: '1px', background: 'var(--border-light)', width: '100%', margin: '0.2rem 0' }} />
+
+        {/* Bottom Sub-Tab Navigation Bar */}
+        {department !== 'stitching' && (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('catalogue')}
+              style={{
+                padding: '0.45rem 1rem',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: activeSubTab === 'catalogue' ? '1.5px solid #6366f1' : '1px solid var(--border-light)',
+                background: activeSubTab === 'catalogue' ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-card, #ffffff)',
+                color: activeSubTab === 'catalogue' ? '#4f46e5' : 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <BookOpen size={15} />
+              <span>Design Catalog</span>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('master')}
+              style={{
+                padding: '0.45rem 1rem',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: activeSubTab === 'master' ? '1.5px solid #6366f1' : '1px solid var(--border-light)',
+                background: activeSubTab === 'master' ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-card, #ffffff)',
+                color: activeSubTab === 'master' ? '#4f46e5' : 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Layers size={15} />
+              <span>Design Master Details (100 Pic)</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {activeSubTab === 'master' ? (
+        <DesignMaster department={department} />
+      ) : (
+        <>
+          {showPKDImportModal && (
+            <PKDOrdersImportModal
+              onClose={() => setShowPKDImportModal(false)}
+              onImportSuccess={() => {
+                fetchDesigns();
+                fetchCategories();
+              }}
+            />
+          )}
 
       {/* Filter panel */}
       <div className="glass-panel" style={{ padding: '1rem 1.25rem' }}>
@@ -748,10 +961,6 @@ export default function DesignCatalogue() {
           >
             {sortOrder === 'asc' ? '▲ Asc' : '▼ Desc'}
           </button>
-
-          <button onClick={fetchDesigns} className="btn-icon" title="Refresh">
-            <RefreshCw size={14} className={loading ? 'spin-loader' : ''} />
-          </button>
         </div>
       </div>
 
@@ -778,7 +987,9 @@ export default function DesignCatalogue() {
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.2rem' }}>
-            {designs.map(d => {
+            {designs
+              .filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']))
+              .map(d => {
               const mainImg = convertDriveUrl(d.imageUrl);
               const subImg = convertDriveUrl(d.imageUrl2);
 
@@ -843,24 +1054,30 @@ export default function DesignCatalogue() {
                         style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
                         onClick={() => setZoomImg(mainImg)}
                         onError={(e) => {
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'flex';
+                          if (d.imageUrl && !e.target.dataset.retried) {
+                            e.target.dataset.retried = 'true';
+                            if (d.imageUrl.startsWith('data:')) {
+                              e.target.src = d.imageUrl;
+                            } else if (d.imageUrl.includes('drive.google.com')) {
+                              const fileMatch = d.imageUrl.match(/([-\w]{25,})/);
+                              if (fileMatch) e.target.src = `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+                            }
+                          } else {
+                            e.target.style.display = 'none';
+                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                          }
                         }}
                       />
-                    ) : null}
-
-                    {(!mainImg) && (
+                    ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--text-muted)', gap: '0.4rem' }}>
                         <Image size={24} style={{ opacity: 0.3 }} />
                         <span style={{ fontSize: '0.7rem' }}>No Design Image</span>
                       </div>
                     )}
-                    {mainImg && (
-                      <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#000', color: 'var(--text-muted)', gap: '0.4rem' }}>
-                        <Image size={24} style={{ opacity: 0.3 }} />
-                        <span style={{ fontSize: '0.7rem', padding: '0.5rem', textAlign: 'center' }}>🔒 CORS blocked preview</span>
-                      </div>
-                    )}
+                    <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#000', color: 'var(--text-muted)', gap: '0.4rem' }}>
+                      <Image size={24} style={{ opacity: 0.3 }} />
+                      <span style={{ fontSize: '0.7rem', padding: '0.5rem', textAlign: 'center' }}>⚠️ Unable to load image link</span>
+                    </div>
 
                     {/* Small Sub image thumbnail inside card if available */}
                     {subImg && (
@@ -883,22 +1100,28 @@ export default function DesignCatalogue() {
                       <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)' }}>
                         {d.designName}
                       </span>
-                      {d.designerName && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                          By: {d.designerName}
-                        </span>
-                      )}
                     </div>
 
+                    {/* STITCHING ONLY: Party SKU ID badge */}
+                    {department === 'stitching' && d.partySkuId && (
+                      <div style={{ fontSize: '0.73rem', color: '#60a5fa', fontWeight: 800, background: 'rgba(59,130,246,0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)', width: 'fit-content' }}>
+                        Party SKU: {d.partySkuId}
+                      </div>
+                    )}
+
+                    {/* Parameters grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem 0.5rem', fontSize: '0.78rem', borderTop: '1px dashed var(--border-light)', paddingTop: '0.5rem' }}>
-                      {[
+                      {(department === 'stitching' ? [
+                        ['Fabric', d.fabricName],
+                        ['Category', d.category]
+                      ] : [
                         ['Colour Match', d.colourMatching],
                         ['Fabric', d.fabricName],
                         ['Fusing Temp', d.fusingTemp],
                         ['Speed', d.speed],
                         ['Colors', d.colors],
                         ['Panna/Pass', d.panna && d.pass ? `${d.panna}" / ${d.pass}P` : d.panna || d.pass || '—']
-                      ].map(([k, v]) => (
+                      ]).map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', flexDirection: 'column' }}>
                           <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{k}</span>
                           {k === 'Colors' && v ? (
@@ -926,6 +1149,25 @@ export default function DesignCatalogue() {
                         </div>
                       ))}
                     </div>
+
+                    {/* STITCHING ONLY: Size Sales Rates display */}
+                    {department === 'stitching' && d.sizeSalesRates && Object.values(d.sizeSalesRates).some(v => Number(v) > 0) && (
+                      <div style={{ width: '100%', marginTop: '0.4rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.4rem' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>
+                          💰 Size Sales Rates (₹):
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', fontSize: '0.68rem' }}>
+                          {[
+                            ['xs_34','XS'],['s_36','S'],['m_38','M'],['l_40','L'],['xl_42','XL'],
+                            ['xl2_44','2XL'],['xl3_46','3XL'],['xl4_48','4XL'],['xl5_50','5XL'],['xl6_52','6XL']
+                          ].map(([k, lbl]) => Number(d.sizeSalesRates[k]) > 0 ? (
+                            <span key={k} style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', color: '#34d399', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                              {lbl}: ₹{d.sizeSalesRates[k]}
+                            </span>
+                          ) : null)}
+                        </div>
+                      </div>
+                    )}
 
                     {d.notes && (
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', padding: '0.35rem 0.5rem', borderRadius: 4, fontStyle: 'italic' }}>
@@ -956,18 +1198,7 @@ export default function DesignCatalogue() {
             })}
           </div>
 
-          {/* Pagination */}
-          {pages > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="btn-icon">
-                <ChevronLeft size={14} />
-              </button>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Page {page} of {pages}</span>
-              <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages} className="btn-icon">
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
+          {/* Single-Page Infinite Grid */}
         </>
       )}
 
@@ -1004,7 +1235,19 @@ export default function DesignCatalogue() {
                 </div>
               )}
 
-              <FormField label="Design Name (e.g. ED1, ED2)" name="designName" value={formVal.designName} onChange={handleFormChange} required placeholder="ED1" />
+              <FormField
+                label={department === 'stitching' ? "Design Name (e.g. PKD-1001)" : "Design Name (e.g. ED1, ED2)"}
+                name="designName"
+                value={formVal.designName}
+                onChange={handleFormChange}
+                required
+                placeholder={department === 'stitching' ? "PKD-1001" : "ED1"}
+              />
+
+              {department === 'stitching' && (
+                <FormField label="Party SKU ID" name="partySkuId" value={formVal.partySkuId} onChange={handleFormChange} placeholder="e.g. SKU-9042" />
+              )}
+
               {(() => {
                 const nameExists = allDesignsList.some(d => 
                   d.designName.toLowerCase() === formVal.designName.trim().toLowerCase() && 
@@ -1019,161 +1262,190 @@ export default function DesignCatalogue() {
                 }
                 return null;
               })()}
-              <FormField label="Designer Name" name="designerName" value={formVal.designerName} onChange={handleFormChange} options={['', ...(printConfig.designers || [])]} placeholder="e.g. Rahul" />
-              <FormField label="Colour Matching Name" name="colourMatching" value={formVal.colourMatching} onChange={handleFormChange} options={['', ...(printConfig.designers || [])]} placeholder="e.g. Green Matching" />
-              <FormField label="Fabric Name" name="fabricName" value={formVal.fabricName} onChange={handleFormChange} options={['', ...(printConfig.fabrics || [])]} />
-              <FormField label="Paper Type" name="paperType" value={formVal.paperType} onChange={handleFormChange} options={['', ...(printConfig.paperTypes || [])]} />
 
-              {/* Section: Fusing Configuration */}
-              <div style={{
-                fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
-                color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
-                borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
-              }}>
-                🔥 Fusing Configuration
-              </div>
-              <FormField label="Fusing Temperature" name="fusingTemp" value={formVal.fusingTemp} onChange={handleFormChange} options={['', ...(printConfig.temperatures || [])]} />
-              <FormField label="Speed" name="speed" value={formVal.speed} onChange={handleFormChange} options={['', ...(printConfig.speeds || [])]} />
+              {department !== 'stitching' && (
+                <FormField label="Colour Matching Name" name="colourMatching" value={formVal.colourMatching} onChange={handleFormChange} options={['', ...(printConfig.designers || [])]} placeholder="e.g. Green Matching" />
+              )}
 
-              {/* Section: Print Configuration */}
-              <div style={{
-                fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
-                color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
-                borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
-              }}>
-                🖨 Print Configuration
-              </div>
-              <FormField label="Colour" name="colors" value={formVal.colors} onChange={handleFormChange} options={COLOR_NAMES} placeholder="Select or type colour..." />
+              <FormField 
+                label="Fabric Name" 
+                name="fabricName" 
+                value={formVal.fabricName} 
+                onChange={handleFormChange} 
+                options={department === 'stitching' ? ['', ...(printConfig.fabrics?.length ? printConfig.fabrics : ['Cotton', 'Silk', 'Georgette', 'Chiffon', 'Organza', 'Velvet', 'Rayon', 'Crepe'])] : ['', ...(printConfig.fabrics || [])]} 
+              />
 
-              {/* Auto-detect color from image button */}
-              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={handleAutoDetectColor}
-                  disabled={detectingColor || !formVal.imageUrl}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    fontFamily: 'var(--font-sans)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid',
-                    borderColor: !formVal.imageUrl ? 'var(--border-light)' : 'rgba(139,92,246,0.4)',
-                    background: !formVal.imageUrl ? 'rgba(255,255,255,0.02)' : 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(56,189,248,0.15))',
-                    color: !formVal.imageUrl ? 'var(--text-muted)' : '#a78bfa',
-                    cursor: !formVal.imageUrl ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    transition: 'all 0.2s',
-                    width: 'fit-content'
-                  }}
-                  onMouseEnter={e => { if (formVal.imageUrl) { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.7)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(139,92,246,0.2)'; } }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = !formVal.imageUrl ? 'var(--border-light)' : 'rgba(139,92,246,0.4)'; e.currentTarget.style.boxShadow = 'none'; }}
-                >
-                  {detectingColor ? (
-                    <><RefreshCw size={14} className="spin-loader" /> Detecting colours...</>
-                  ) : (
-                    <><span style={{ fontSize: '1rem' }}>🪄</span> Auto-detect Colour from Image</>
-                  )}
-                </button>
+              {department !== 'stitching' && (
+                <FormField label="Paper Type" name="paperType" value={formVal.paperType} onChange={handleFormChange} options={['', ...(printConfig.paperTypes || [])]} />
+              )}
 
-                {!formVal.imageUrl && (
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    Upload or paste an image above first to enable auto-detection
-                  </span>
-                )}
+              <FormField
+                label="Category"
+                name="category"
+                value={formVal.category}
+                onChange={handleFormChange}
+                options={department === 'stitching' ? ['', ...(printConfig.categories?.length ? printConfig.categories : ['SUIT', 'KURTI', 'DUPATTA', 'TOP', 'BOTTOM', 'LEHENGA', 'STITCHING SET', 'KIDS', 'ETHNIC', 'OTHER'])] : ['', ...(printConfig.categories || [])]}
+              />
 
-                {/* Detected colors result swatches */}
-                {detectedColors && detectedColors.length > 0 && (
+              {/* STITCHING ONLY: Dynamic Size-Wise Sales Rates (Dropdown & Grid from Stitching Settings) */}
+              {department === 'stitching' && (
+                <>
                   <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '0.4rem',
-                    background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)',
-                    borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.8rem'
+                    fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
+                    borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'
                   }}>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Detected Colours (click to select)
-                    </span>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {detectedColors.map((c, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setFormVal(prev => ({ ...prev, colors: c.name }))}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '0.4rem',
-                            padding: '0.35rem 0.7rem', borderRadius: 'var(--radius-sm)',
-                            border: formVal.colors === c.name ? '2px solid var(--primary)' : '1px solid var(--border-light)',
-                            background: formVal.colors === c.name ? 'var(--nav-active-bg)' : 'rgba(255,255,255,0.03)',
-                            cursor: 'pointer', transition: 'all 0.15s',
-                            fontFamily: 'var(--font-sans)'
-                          }}
-                        >
-                          <span style={{
-                            width: '16px', height: '16px', borderRadius: '3px',
-                            backgroundColor: c.hex, border: '1px solid rgba(255,255,255,0.2)',
-                            flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                          }} />
-                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {c.name}
-                          </span>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            {c.percentage}%
-                          </span>
-                        </button>
-                      ))}
+                    <span>💰 Size-Wise Sales Rates (₹) — Taken from Stitching Sizes</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <select
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          const sizeKey = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                          const currentVal = (formVal.sizeSalesRates || {})[sizeKey] || '';
+                          const rate = prompt(`Enter Sales Rate (₹) for ${e.target.value}:`, currentVal);
+                          if (rate !== null && rate !== '') handleSizeSalesRateChange(sizeKey, rate);
+                          e.target.value = '';
+                        }}
+                        style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 700, padding: '0.25rem 0.5rem', borderRadius: '4px', cursor: 'pointer', outline: 'none' }}
+                      >
+                        <option value="" style={{ background: '#1e293b', color: '#fff' }}>+ Select Size to Set Rate...</option>
+                        {(printConfig.sizes?.length ? printConfig.sizes : ['XS (34)', 'S (36)', 'M (38)', 'L (40)', 'XL (42)', '2XL (44)', '3XL (46)', '4XL (48)', '5XL (50)', '6XL (52)', 'FREE SIZE', 'UNSTITCHED']).map(sz => (
+                          <option key={sz} value={sz} style={{ background: '#1e293b', color: '#fff' }}>{sz}</option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rate = prompt('Enter Sales Rate (₹) to apply across ALL sizes:');
+                          if (rate !== null && rate !== '') handleApplyAllSalesRates(rate);
+                        }}
+                        style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399', fontSize: '0.68rem', fontWeight: 700, padding: '0.25rem 0.5rem', borderRadius: '4px', cursor: 'pointer' }}
+                      >
+                        ⚡ Set All Sizes Rate
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-              <FormField label="Panna (width)" name="panna" value={formVal.panna} onChange={handleFormChange} options={['', ...(printConfig.widths || [])]} />
-              
-              {printConfig.machines?.map(machine => (
-                <FormField 
-                  key={machine.name}
-                  label={`${machine.name} Profile`} 
-                  name={`profile_${machine.name}`} 
-                  value={(formVal.machineProfiles || {})[machine.name] || ''} 
-                  onChange={e => handleMachineProfileChange(machine.name, e.target.value)} 
-                  options={['', ...(machine.profiles || [])]} 
-                />
-              ))}
 
-              <FormField label="Pass" name="pass" value={formVal.pass} onChange={handleFormChange} options={['', ...printConfig.passes]} />
-              <FormField label="Category" name="category" value={formVal.category} onChange={handleFormChange} options={['', ...printConfig.categories]} />
+                  <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))', gap: '0.6rem' }}>
+                    {(printConfig.sizes?.length ? printConfig.sizes : ['XS (34)', 'S (36)', 'M (38)', 'L (40)', 'XL (42)', '2XL (44)', '3XL (46)', '4XL (48)', '5XL (50)', '6XL (52)', 'FREE SIZE', 'UNSTITCHED']).map(sz => {
+                      const key = sz.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                      return (
+                        <div key={sz} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                          <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sz}>
+                            {sz}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={(formVal.sizeSalesRates || {})[key] || ''}
+                            onChange={e => handleSizeSalesRateChange(key, e.target.value)}
+                            placeholder="0.00"
+                            style={{ width: '100%', textAlign: 'center', fontWeight: 700, fontSize: '0.82rem', padding: '0.3rem 0.2rem', background: 'var(--bg-input)', border: '1px solid var(--border-light)', borderRadius: '4px', color: 'var(--text-primary)' }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
-              <DesignImageField label="Primary Design Image URL (Google Drive Share Link)" name="imageUrl" value={formVal.imageUrl} onChange={handleFormChange} placeholder="Paste Drive link..." />
-              {(() => {
-                const imageExists = formVal.imageUrl && allDesignsList.find(d => 
-                  d.imageUrl === formVal.imageUrl && 
-                  (!formDesign || d._id !== formDesign._id)
-                );
-                if (imageExists) {
-                  return (
-                    <div style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: 600, width: '100%', marginTop: '-0.4rem', paddingLeft: '4px' }}>
-                      ⚠️ Notice: This image is already used by design "{imageExists.designName}".
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              <DesignImageField label="Secondary Design Image URL (Optional)" name="imageUrl2" value={formVal.imageUrl2} onChange={handleFormChange} placeholder="Paste Drive link..." />
+              {/* Design Image Field */}
+              <DesignImageField label="Primary Design Image (Upload File or Drive Link)" name="imageUrl" value={formVal.imageUrl} onChange={handleFormChange} placeholder="Paste Drive link or upload file..." />
 
-              {/* Section: 100 Pcs Standards */}
-              <div style={{
-                fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
-                color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
-                borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
-              }}>
-                👗 100 Pcs Standards (for Job Card auto-calculations)
-              </div>
-              <FormField label="Top (100 Pcs)" name="top100" value={formVal.top100} onChange={handleFormChange} type="number" placeholder="e.g. 250" />
-              <FormField label="Sleeve (100 Pcs)" name="sleeve100" value={formVal.sleeve100} onChange={handleFormChange} type="number" placeholder="e.g. 60" />
-              <FormField label="Bottom (100 Pcs)" name="bottom100" value={formVal.bottom100} onChange={handleFormChange} type="number" placeholder="e.g. 200" />
-              <FormField label="Dupatta (100 Pcs)" name="dupatta100" value={formVal.dupatta100} onChange={handleFormChange} type="number" placeholder="e.g. 225" />
-              <FormField label="Cut (100 Pcs)" name="cut100" value={formVal.cut100} onChange={handleFormChange} type="number" placeholder="e.g. 735" />
-              <FormField label="Total Mtr (mtr per 100 pcs)" name="totalMtr100" value={formVal.totalMtr100} onChange={handleFormChange} type="number" placeholder="e.g. 735" />
-              <FormField label="Set Copy (100 Pcs)" name="setCopy100" value={formVal.setCopy100} onChange={handleFormChange} type="number" placeholder="e.g. 100" />
+              {department !== 'stitching' && (
+                <DesignImageField label="Secondary Design Image URL (Optional)" name="imageUrl2" value={formVal.imageUrl2} onChange={handleFormChange} placeholder="Paste Drive link..." />
+              )}
+
+              {/* DIGITAL PRINT ONLY SECTIONS */}
+              {department !== 'stitching' && (
+                <>
+                  {/* Section: Fusing Configuration */}
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
+                    borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
+                  }}>
+                    🔥 Fusing Configuration
+                  </div>
+                  <FormField label="Fusing Temperature" name="fusingTemp" value={formVal.fusingTemp} onChange={handleFormChange} options={['', ...(printConfig.temperatures || [])]} />
+                  <FormField label="Speed" name="speed" value={formVal.speed} onChange={handleFormChange} options={['', ...(printConfig.speeds || [])]} />
+
+                  {/* Section: Print Configuration */}
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
+                    borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
+                  }}>
+                    🖨 Print Configuration
+                  </div>
+                  <FormField label="Colour" name="colors" value={formVal.colors} onChange={handleFormChange} options={COLOR_NAMES} placeholder="Select or type colour..." />
+
+                  {/* Auto-detect color from image button */}
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleAutoDetectColor}
+                      disabled={detectingColor || !formVal.imageUrl}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-sans)',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid',
+                        borderColor: !formVal.imageUrl ? 'var(--border-light)' : 'rgba(139,92,246,0.4)',
+                        background: !formVal.imageUrl ? 'rgba(255,255,255,0.02)' : 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(56,189,248,0.15))',
+                        color: !formVal.imageUrl ? 'var(--text-muted)' : '#a78bfa',
+                        cursor: !formVal.imageUrl ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.2s',
+                        width: 'fit-content'
+                      }}
+                    >
+                      {detectingColor ? (
+                        <><RefreshCw size={14} className="spin-loader" /> Detecting colours...</>
+                      ) : (
+                        <><span style={{ fontSize: '1rem' }}>🪄</span> Auto-detect Colour from Image</>
+                      )}
+                    </button>
+                  </div>
+
+                  <FormField label="Panna (width)" name="panna" value={formVal.panna} onChange={handleFormChange} options={['', ...(printConfig.widths || [])]} />
+
+                  {printConfig.machines?.map(machine => (
+                    <FormField 
+                      key={machine.name}
+                      label={`${machine.name} Profile`} 
+                      name={`profile_${machine.name}`} 
+                      value={(formVal.machineProfiles || {})[machine.name] || ''} 
+                      onChange={e => handleMachineProfileChange(machine.name, e.target.value)} 
+                      options={['', ...(machine.profiles || [])]} 
+                    />
+                  ))}
+
+                  <FormField label="Pass" name="pass" value={formVal.pass} onChange={handleFormChange} options={['', ...printConfig.passes]} />
+
+                  {/* Section: 100 Pcs Standards */}
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--primary)', marginBottom: '0.4rem', marginTop: '0.8rem', width: '100%',
+                    borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem'
+                  }}>
+                    👗 100 Pcs Standards (for Job Card auto-calculations)
+                  </div>
+                  <FormField label="Top (100 Pcs)" name="top100" value={formVal.top100} onChange={handleFormChange} type="number" placeholder="e.g. 250" />
+                  <FormField label="Sleeve (100 Pcs)" name="sleeve100" value={formVal.sleeve100} onChange={handleFormChange} type="number" placeholder="e.g. 60" />
+                  <FormField label="Bottom (100 Pcs)" name="bottom100" value={formVal.bottom100} onChange={handleFormChange} type="number" placeholder="e.g. 200" />
+                  <FormField label="Dupatta (100 Pcs)" name="dupatta100" value={formVal.dupatta100} onChange={handleFormChange} type="number" placeholder="e.g. 225" />
+                  <FormField label="Cut (100 Pcs)" name="cut100" value={formVal.cut100} onChange={handleFormChange} type="number" placeholder="e.g. 735" />
+                  <FormField label="Total Mtr (mtr per 100 pcs)" name="totalMtr100" value={formVal.totalMtr100} onChange={handleFormChange} type="number" placeholder="e.g. 735" />
+                  <FormField label="Set Copy (100 Pcs)" name="setCopy100" value={formVal.setCopy100} onChange={handleFormChange} type="number" placeholder="e.g. 100" />
+                </>
+              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', width: '100%' }}>
                 <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Notes / Printing Instructions</label>
@@ -1336,6 +1608,8 @@ export default function DesignCatalogue() {
           </button>
           <img src={zoomImg} alt="Zoomed view" style={{ maxWidth: '94%', maxHeight: '90%', objectFit: 'contain', borderRadius: '4px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
         </div>
+      )}
+        </>
       )}
     </div>
   );

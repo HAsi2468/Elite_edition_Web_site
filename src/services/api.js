@@ -4,9 +4,12 @@ const DEFAULT_URL = '/v1';
 export const getBaseUrl = () => {
   const stored = localStorage.getItem('elite_api_base_url');
   if (stored) {
+    if (stored.includes('3.7.174.180')) {
+      localStorage.removeItem('elite_api_base_url');
+      return DEFAULT_URL;
+    }
     return stored;
   }
-  // Fallback to default URL
   return DEFAULT_URL;
 };
 
@@ -21,27 +24,67 @@ export const setBaseUrl = (url) => {
   localStorage.setItem('elite_api_base_url', cleaned);
 };
 
-// Generic request wrapper
+// Generic request wrapper with Timeout & Safe Error Parser
 const request = async (path, options = {}) => {
   const baseUrl = getBaseUrl();
   const token = localStorage.getItem('elite_auth_token');
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Network offline. Please check your internet connection.');
+  }
   
+  const userStr = localStorage.getItem('elite_user');
+  let currUser = null;
+  if (userStr) {
+    try { currUser = JSON.parse(userStr); } catch (e) {}
+  }
+  const uId = currUser?.id || currUser?._id || '';
+  const uName = currUser?.name || currUser?.fullName || currUser?.username || '';
+
   const headers = {
     ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(uId ? { 'X-User-Id': uId } : {}),
+    ...(uName ? { 'X-User-Name': uName } : {}),
     ...options.headers,
   };
   
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...options,
-    headers,
-  });
+  const timeoutMs = options.timeout || 30000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw new Error(err.message || 'Server connection failed. Please check network.');
+  } finally {
+    clearTimeout(timeoutId);
+  }
   
   if (!response.ok) {
-    let errMsg = 'API Request Failed';
+    let errMsg = `Server returned status ${response.status}`;
     try {
-      const data = await response.json();
-      errMsg = data.message || data.error || errMsg;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        errMsg = data.message || data.error || data.err || errMsg;
+        if (typeof errMsg === 'object') {
+          errMsg = JSON.stringify(errMsg);
+        }
+      } else {
+        const text = await response.text();
+        if (text && text.length < 150) {
+          errMsg = text.replace(/<[^>]*>/g, '').trim() || errMsg;
+        }
+      }
     } catch (e) {}
     throw new Error(errMsg);
   }
@@ -82,6 +125,23 @@ export const api = {
     } catch (e) {
       return null;
     }
+  },
+
+  async refreshCurrentUser() {
+    const user = this.getCurrentUser();
+    if (!user) return null;
+    const userId = user.id || user._id;
+    if (!userId) return user;
+    try {
+      const res = await request(`/users/${userId}`);
+      if (res && res.user) {
+        localStorage.setItem('elite_user', JSON.stringify(res.user));
+        return res.user;
+      }
+    } catch (e) {
+      console.warn('Failed to refresh current user profile:', e);
+    }
+    return user;
   },
 
   isAuthenticated() {
@@ -456,6 +516,33 @@ export const api = {
     window.URL.revokeObjectURL(url);
   },
 
+  async downloadSalesReturnsRatioReport(dateStart, dateEnd, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const headers = {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+    const query = new URLSearchParams({ type: 'sales-returns-ratio', dateStart, dateEnd });
+
+    const response = await fetch(`${baseUrl}/salesList/report/pdf?${query.toString()}`, {
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate sales & returns ratio report PDF');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
   // Raw Report Data
   async getStockValueReportData() {
     return request('/inventory/report/stock-value-data');
@@ -480,6 +567,43 @@ export const api = {
     if (dateStart) url += `dateStart=${dateStart}&`;
     if (dateEnd) url += `dateEnd=${dateEnd}&`;
     return request(url);
+  },
+
+  async getSalesReturnsRatioReport(dateStart, dateEnd) {
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    return request(`/analytics/sales-returns-ratio?${query.toString()}`);
+  },
+
+  async downloadElitePrintReport(dateStart, dateEnd, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const headers = {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+
+    const response = await fetch(`${baseUrl}/department-reports/elite-print/pdf${queryString}`, {
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate Elite Print report PDF');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
   },
 
   async getBrandReportData(dateStart, dateEnd, searchCode = '') {
@@ -510,12 +634,108 @@ export const api = {
   async deleteJobCard(id) {
     return request(`/jobCards/${id}`, { method: 'DELETE' });
   },
+  async downloadJobCardPdf(id, jobNo = '') {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token') || localStorage.getItem('token');
+    const response = await fetch(`${baseUrl}/jobCards/pdf/${id}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to download Job Card PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `JobCard_${jobNo || 'preview'}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    if (link.parentNode) link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+  async downloadBulkJobCardPdf(ids = [], fileName = 'Combined_Job_Cards.pdf') {
+    if (!ids || ids.length === 0) return;
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token') || localStorage.getItem('token');
+    const response = await fetch(`${baseUrl}/jobCards/bulk-pdf?ids=${ids.join(',')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate combined Job Cards PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    if (link.parentNode) link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
   async getNextJobCardNo() {
     return request('/jobCards/next-number');
   },
   async calcExpTime(panna, pass, totalMtr, machineName) {
     const q = new URLSearchParams({ panna, pass, totalMtr, machineName });
     return request(`/jobCards/calc-exp-time?${q.toString()}`);
+  },
+  async calculatePrintCost(data) {
+    return request('/jobCards/calc-cost', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async updateJobStage(id, data) {
+    return request(`/jobCards/${id}/stage`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+  async updateJobProofing(id, data) {
+    return request(`/jobCards/${id}/proofing`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+
+  // ─── Garment Manufacturing ERP (Elite Stitching) ─────────────────────────
+  async getGarmentJobCards(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/garment-jobcards${qs}`);
+  },
+  async getGarmentJobCardById(id) {
+    return request(`/garment-jobcards/${id}`);
+  },
+  async createGarmentJobCard(payload) {
+    return request('/garment-jobcards', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async updateGarmentJobCard(id, payload) {
+    return request(`/garment-jobcards/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async advanceGarmentJobCardStage(id, payload = {}) {
+    return request(`/garment-jobcards/${id}/advance-stage`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async deleteGarmentJobCard(id) {
+    return request(`/garment-jobcards/${id}`, { method: 'DELETE' });
+  },
+  async getNextGarmentJobNumber() {
+    return request('/garment-jobcards/next-number');
+  },
+  async getGarmentJobCardAnalytics(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/garment-jobcards/analytics${qs}`);
+  },
+
+  // ─── Machine Print Logs ──────────────────────────────────────────────────
+  async createJobPrintLog(data) {
+    return request('/jobPrintLogs', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async getJobPrintLogs(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/jobPrintLogs${qs}`);
+  },
+  async getJobCardPrintLogs(jobNoOrId) {
+    return request(`/jobPrintLogs/job/${jobNoOrId}`);
+  },
+  async updateJobPrintLog(id, data) {
+    return request(`/jobPrintLogs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+  async deleteJobPrintLog(id) {
+    return request(`/jobPrintLogs/${id}`, { method: 'DELETE' });
   },
 
   // ─── Design Catalogue ──────────────────────────────────────────────────────
@@ -551,6 +771,81 @@ export const api = {
   },
   async getDesignCategories() {
     return request('/designs/categories');
+  },
+  async getNextDesignNumber(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/designs/next-number${qs}`);
+  },
+  async importPKDOrders(items) {
+    return request('/designs/import-pkd-orders', { method: 'POST', body: JSON.stringify({ items }) });
+  },
+
+  // ─── Complaints Module ──────────────────────────────────────────────────────
+  async getComplaints(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/complaints${qs}`);
+  },
+  async getNextComplaintNumber(companyEntity) {
+    const qs = companyEntity ? `?companyEntity=${encodeURIComponent(companyEntity)}` : '';
+    return request(`/complaints/next-number${qs}`);
+  },
+  async getComplaintAnalytics(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/complaints/analytics${qs}`);
+  },
+  async createComplaint(payload) {
+    return request('/complaints', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async updateComplaint(id, payload) {
+    return request(`/complaints/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async deleteComplaint(id) {
+    return request(`/complaints/${id}`, { method: 'DELETE' });
+  },
+  async clearAllComplaints() {
+    return request('/complaints/clear-all', { method: 'DELETE' });
+  },
+  async getComplaintById(id) {
+    return request(`/complaints/${id}`);
+  },
+  async lookupOrderDetails(searchTerm) {
+    return request(`/complaints/lookup-order?query=${encodeURIComponent(searchTerm)}`);
+  },
+  async addComplaintComment(id, payload) {
+    return request(`/complaints/${id}/comments`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  // ─── Department Expense Module ──────────────────────────────────────────────
+  async getExpenses(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/expenses${qs}`);
+  },
+  async getExpenseAnalytics(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/expenses/analytics${qs}`);
+  },
+  async getNextExpenseVoucherNo(companyEntity) {
+    const qs = companyEntity ? `?companyEntity=${encodeURIComponent(companyEntity)}` : '';
+    return request(`/expenses/next-number${qs}`);
+  },
+  async createExpense(payload) {
+    return request('/expenses', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async updateExpense(id, payload) {
+    return request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async deleteExpense(id) {
+    return request(`/expenses/${id}`, { method: 'DELETE' });
   },
 
   // ─── Analytics ──────────────────────────────────────────────────────────────
@@ -656,6 +951,18 @@ export const api = {
     });
   },
 
+  // --- Stitching Settings Engine ---
+  async getStitchingConfig() {
+    return request('/stitching-config');
+  },
+
+  async updateStitchingConfig(data) {
+    return request('/stitching-config/update', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   // --- Workspace (Chat & Task) ---
   async getRooms(userId) {
     const url = userId ? `/workspace/rooms?userId=${userId}` : '/workspace/rooms';
@@ -666,6 +973,12 @@ export const api = {
     return request('/workspace/rooms', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  async broadcastTodayData() {
+    return request('/workspace/broadcast-today-data', {
+      method: 'POST'
     });
   },
 
@@ -706,12 +1019,18 @@ export const api = {
   },
 
   // Fabric Inventory
-  async getFabricTransactions() {
-    return request('/fabric/transactions');
+  async getFabricTransactions(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/fabric/transactions${qs}`);
   },
   
-  async getFabricStock() {
-    return request('/fabric/stock');
+  async getFabricStock(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/fabric/stock${qs}`);
   },
   
   async createFabricInward(payload) {
@@ -729,13 +1048,39 @@ export const api = {
   },
   
   async getFabricLotStock(params = {}) {
-    const { fabricQuality } = params;
-    const qs = fabricQuality ? `?fabricQuality=${encodeURIComponent(fabricQuality)}` : '';
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
     return request(`/fabric/lot-stock${qs}`);
   },
 
-  async getFabricStockByPanna() {
-    return request('/fabric/stock-panna');
+  async getFabricStockByPanna(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/fabric/stock-panna${qs}`);
+  },
+
+  async downloadFabricLotWisePdf(dateStart = '', dateEnd = '', fileName = 'Fabric_LotWise_Stock_Report.pdf') {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric/report/lotwise-pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate lot-wise fabric PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
   },
 
   async getFabricRequirement() {
@@ -847,6 +1192,133 @@ export const api = {
     });
   },
 
+  async getFabricInwardReportData(dateStart, dateEnd) {
+    const q = new URLSearchParams();
+    if (dateStart) q.append('dateStart', dateStart);
+    if (dateEnd) q.append('dateEnd', dateEnd);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request(`/fabric/report/inward-data${qs}`);
+  },
+
+  async getFabricOutwardReportData(dateStart, dateEnd) {
+    const q = new URLSearchParams();
+    if (dateStart) q.append('dateStart', dateStart);
+    if (dateEnd) q.append('dateEnd', dateEnd);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request(`/fabric/report/outward-data${qs}`);
+  },
+
+  async getFabricLotWiseReportData(dateStart, dateEnd) {
+    const q = new URLSearchParams();
+    if (dateStart) q.append('dateStart', dateStart);
+    if (dateEnd) q.append('dateEnd', dateEnd);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request(`/fabric/report/lotwise-data${qs}`);
+  },
+
+  async downloadFabricInwardReportPdf(dateStart, dateEnd, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric/report/inward-pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Fabric Inward PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadFabricOutwardReportPdf(dateStart, dateEnd, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric/report/outward-pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Fabric Outward PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadFabricLotWiseReportPdf(dateStart, dateEnd, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric/report/lotwise-pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Lot-Wise Fabric PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadFabricCombinedReportPdf(dateStart, dateEnd, reportsArray, fileName, filters = {}) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    if (reportsArray && reportsArray.length > 0) query.append('reports', reportsArray.join(','));
+    if (filters.machineName) query.append('machineName', filters.machineName);
+    if (filters.shift) query.append('shift', filters.shift);
+    if (filters.operatorName || filters.operator) query.append('operator', filters.operatorName || filters.operator);
+    if (filters.pass) query.append('pass', filters.pass);
+    if (filters.startTime) query.append('startTime', filters.startTime);
+    if (filters.stopTime) query.append('stopTime', filters.stopTime);
+
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric/report/combined-pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      let errText = 'Failed to generate Combined Multi-Report PDF';
+      try {
+        const errJson = await response.json();
+        if (errJson && (errJson.message || errJson.error)) errText = errJson.message || errJson.error;
+      } catch (e) {}
+      throw new Error(errText);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName || 'Elite_Digital_Prints_Combined_Report.pdf');
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
   async getInfraBills() {
     return request('/infra-bills', { method: 'GET' });
   },
@@ -875,6 +1347,7 @@ export const api = {
     if (params.dateStart) q.append('dateStart', params.dateStart);
     if (params.dateEnd) q.append('dateEnd', params.dateEnd);
     if (params.search) q.append('search', params.search);
+    if (params.status && params.status !== 'All') q.append('status', params.status);
     const qs = q.toString() ? `?${q.toString()}` : '';
     return request(`/fabric-challan${qs}`);
   },
@@ -914,6 +1387,48 @@ export const api = {
     link.parentNode.removeChild(link);
   },
 
+  async downloadBulkFabricChallanPdf(ids = [], fileName = 'Combined_Fabric_Challans.pdf') {
+    if (!ids || ids.length === 0) return;
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const response = await fetch(`${baseUrl}/fabric-challan/bulk-pdf?ids=${ids.join(',')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate combined Fabric Challans PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadChallanReportPdf(dateStart, dateEnd, search, fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const query = new URLSearchParams();
+    if (dateStart) query.append('dateStart', dateStart);
+    if (dateEnd) query.append('dateEnd', dateEnd);
+    if (search) query.append('search', search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${baseUrl}/fabric-challan/report/pdf${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Fabric Challan report PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
   async getNextChallanNo() {
     return request('/fabric-challan/next-no');
   },
@@ -921,4 +1436,375 @@ export const api = {
   async getFabricLotInfo(lotNo) {
     return request(`/fabric-challan/lot-info/${lotNo}`);
   },
+
+  // ── Stitching Challan (PCH-1) ──────────────────────────────────────────────
+  async getStitchingChallans(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/stitching-challan${qs}`);
+  },
+  async createStitchingChallan(data) {
+    return request('/stitching-challan', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async updateStitchingChallan(id, data) {
+    return request(`/stitching-challan/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+  async deleteStitchingChallan(id) {
+    return request(`/stitching-challan/${id}`, { method: 'DELETE' });
+  },
+  async getNextStitchingChallanNo() {
+    return request('/stitching-challan/next-no');
+  },
+  async downloadStitchingChallanPdf(id, challanNo) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const response = await fetch(`${baseUrl}/stitching-challan/${id}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Stitching Challan PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Stitching_Challan_${challanNo || 'PCH'}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadBulkStitchingChallanPdf(ids = [], fileName = 'Combined_Stitching_Challans.pdf') {
+    if (!ids || ids.length === 0) return;
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const response = await fetch(`${baseUrl}/stitching-challan/bulk-pdf?ids=${ids.join(',')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate combined Stitching Challans PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  // ── Stock Adjustment (SA) ──────────────────────────────────────────────
+  async getStockAdjustments() {
+    return request('/fabric/stock-adjustment');
+  },
+
+  async createStockAdjustment(data) {
+    return request('/fabric/stock-adjustment', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateStockAdjustment(id, data) {
+    return request(`/fabric/stock-adjustment/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteStockAdjustment(id) {
+    return request(`/fabric/stock-adjustment/${id}`, { method: 'DELETE' });
+  },
+
+  async downloadStockAdjustmentPdf(id, saNo) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const response = await fetch(`${baseUrl}/fabric/stock-adjustment/${id}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Stock Adjustment PDF');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Stock_Adjustment_${saNo || 'Voucher'}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+  },
+
+  // ── Lot Transfer ───────────────────────────────────────────────────────
+  async getLotTransfers() {
+    return request('/fabric/lot-transfer');
+  },
+
+  async createLotTransfer(data) {
+    return request('/fabric/lot-transfer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async autoLotTransfer() {
+    return request('/fabric/auto-lot-transfer', {
+      method: 'POST',
+    });
+  },
+
+  // ── Billing & Invoicing Department ───────────────────────────────────────
+  async getBillingDashboardStats(companyEntity = 'Elite Online') {
+    return request(`/billing/dashboard-stats?companyEntity=${encodeURIComponent(companyEntity)}`);
+  },
+
+  async getBillingInvoices(params = {}) {
+    const query = new URLSearchParams(params);
+    return request(`/billing/invoices?${query.toString()}`);
+  },
+
+  async getNextInvoiceNo(companyEntity = 'Elite Online') {
+    return request(`/billing/invoices/next-no?companyEntity=${encodeURIComponent(companyEntity)}`);
+  },
+
+  async getBillingInvoiceById(id) {
+    return request(`/billing/invoices/${id}`);
+  },
+
+  async createBillingInvoice(data) {
+    return request('/billing/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async mergeChallansToInvoice(challanIds) {
+    return request('/billing/merge-challans', {
+      method: 'POST',
+      body: JSON.stringify({ challanIds }),
+    });
+  },
+
+  async updateBillingInvoice(id, data) {
+    return request(`/billing/invoices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteBillingInvoice(id) {
+    return request(`/billing/invoices/${id}`, { method: 'DELETE' });
+  },
+
+  async recordInvoicePayment(id, data) {
+    return request(`/billing/invoices/${id}/payment`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async downloadInvoicePdf(id, invoiceNo, duplicate = false) {
+    const t0 = performance.now();
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const url = `${baseUrl}/billing/invoices/${id}/pdf${duplicate ? '?duplicate=true' : ''}`;
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate Invoice PDF');
+    const blob = await response.blob();
+    const objUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objUrl;
+    link.setAttribute('download', `Tax_Invoice_${invoiceNo || 'Draft'}${duplicate ? '_with_Duplicate' : ''}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(objUrl);
+    console.log(`[PDF Download] Generated & downloaded in ${(performance.now() - t0).toFixed(0)}ms`);
+  },
+
+  async downloadBulkInvoicesPdf(ids = [], fileName = 'Combined_Invoices.pdf') {
+    if (!ids || ids.length === 0) return;
+    const t0 = performance.now();
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const url = `${baseUrl}/billing/invoices-bulk-pdf?ids=${ids.join(',')}`;
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to generate combined Invoices PDF');
+    const blob = await response.blob();
+    const objUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objUrl;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(objUrl);
+    console.log(`[Bulk PDF Download] Generated & downloaded combined PDF in ${(performance.now() - t0).toFixed(0)}ms`);
+  },
+
+  // Billing Customers
+  async getBillingCustomers(companyEntity = 'Elite Online') {
+    return request(`/billing/customers?companyEntity=${encodeURIComponent(companyEntity)}`);
+  },
+
+  async createBillingCustomer(data) {
+    return request('/billing/customers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateBillingCustomer(id, data) {
+    return request(`/billing/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteBillingCustomer(id) {
+    return request(`/billing/customers/${id}`, { method: 'DELETE' });
+  },
+
+  // Billing Items
+  async getBillingItems(companyEntity = 'Elite Online') {
+    return request(`/billing/items?companyEntity=${encodeURIComponent(companyEntity)}`);
+  },
+
+  async createBillingItem(data) {
+    return request('/billing/items', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateBillingItem(id, data) {
+    return request(`/billing/items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteBillingItem(id) {
+    return request(`/billing/items/${id}`, { method: 'DELETE' });
+  },
+
+  // Company Settings
+  async getCompanySettings(companyEntity = 'Elite Online') {
+    return request(`/billing/company-settings?companyEntity=${encodeURIComponent(companyEntity)}`);
+  },
+
+  async updateCompanySettings(data) {
+    return request('/billing/company-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Data Backup
+  async downloadDataBackup({ startDate, endDate, department, format = 'json' }) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const params = new URLSearchParams({
+      ...(startDate ? { startDate } : {}),
+      ...(endDate ? { endDate } : {}),
+      ...(department ? { department } : {}),
+      format
+    });
+    const res = await fetch(`${baseUrl}/backup/download?${params.toString()}`, {
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    });
+    if (!res.ok) {
+      throw new Error('Failed to generate data backup');
+    }
+    const blob = await res.blob();
+    const filename = `Elite_Edition_Backup_${department || 'All'}_${startDate || 'Start'}_to_${endDate || 'End'}.${format === 'csv' ? 'csv' : 'json'}`;
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // ── Authority-Based Inter-Department Communication ───────────────────────
+  async getCommunicationGroups() {
+    const user = this.getCurrentUser();
+    const uId = user ? (user._id || user.id) : '';
+    const qs = uId ? `?userId=${uId}` : '';
+    return request(`/communication/groups${qs}`);
+  },
+
+  async getCommunicationMessages(groupId, params = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') queryParams.append(k, v); });
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return request(`/communication/groups/${groupId}/messages${qs}`);
+  },
+
+  async getCommunicationMembers(groupId) {
+    return request(`/communication/groups/${groupId}/members`);
+  },
+
+  async syncCommunicationGroups() {
+    return request('/communication/groups/sync', { method: 'POST' });
+  },
+
+  async postActivityEvent(data) {
+    return request('/communication/activity', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async acknowledgeCommunicationMessage(messageId, action = 'acknowledged', userData = {}) {
+    return request(`/communication/messages/${messageId}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ action, ...userData }),
+    });
+  },
+
+  async getCommunicationUsers() {
+    const user = this.getCurrentUser();
+    const uId = user ? (user._id || user.id) : '';
+    const qs = uId ? `?userId=${uId}` : '';
+    return request(`/communication/users${qs}`);
+  },
+
+  async createOrGetDirectRoom(targetUserId, currentUserId) {
+    const user = this.getCurrentUser();
+    const uId = currentUserId || (user ? (user._id || user.id) : '');
+    return request('/communication/direct', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, userId: uId }),
+    });
+  },
+
+  async createCommunicationGroup(data) {
+    return request('/communication/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteCommunicationGroup(groupId) {
+    return request(`/communication/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async forceReloadAllUsers() {
+    return request('/communication/force-reload-all', {
+      method: 'POST',
+    });
+  },
 };
+
+
+
+

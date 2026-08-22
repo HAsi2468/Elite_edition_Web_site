@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { triggerPushNotification } from './NotificationToast';
+import { matchSearchQuery } from '../utils/searchUtils';
+import PrintSettings from './PrintSettings';
 import {
   UserPlus,
   ShieldAlert,
@@ -17,37 +20,28 @@ import {
   Coins,
   CreditCard,
   DollarSign,
-  FileText
+  FileText,
+  Database,
+  Calendar,
+  Layers,
+  Download,
+  FileSpreadsheet,
+  Search,
+  Settings
 } from 'lucide-react';
-
-const AVAILABLE_SCREENS = [
-  { id: 'dashboard', label: 'Dashboard Overview' },
-  { id: 'inventory', label: 'Store Inventory' },
-  { id: 'catalog', label: 'Product Catalog' },
-  { id: 'returns', label: 'Returns Department' },
-  { id: 'sales', label: 'Sales Orders Department' },
-  { id: 'reports', label: 'Reports Center' },
-  { id: 'unicommerce', label: 'Uniware Integrations' },
-  { id: 'myntra', label: 'Myntra Integrations' },
-  { id: 'jobcards', label: 'Elite Prints: Dashboard' },
-  { id: 'jobcards_list', label: 'Elite Prints: Job Card' },
-  { id: 'jobcards_catalogue', label: 'Elite Prints: Design Catalog' },
-  { id: 'jobcards_tracking', label: 'Elite Prints: Job Card Tracking' },
-  { id: 'jobcards_master', label: 'Elite Prints: Design Master' },
-  { id: 'jobcards_fabric', label: 'Elite Prints: Fabric Management' },
-  { id: 'jobcards_raw_materials', label: 'Elite Prints: Raw Materials' },
-  { id: 'jobcards_settings', label: 'Elite Prints: Settings' },
-];
+import { AVAILABLE_SCREENS } from '../config/screensConfig';
 
 export default function AdminPanel() {
   const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('All');
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   // Sub Tab Navigation
-  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' or 'billing'
+  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users', 'billing', 'backup'
   const [bills, setBills] = useState([]);
   const [billsLoading, setBillsLoading] = useState(false);
   const [billFormData, setBillFormData] = useState({
@@ -58,13 +52,25 @@ export default function AdminPanel() {
   });
   const [editingBill, setEditingBill] = useState(null); // null means "Add Mode"
 
-  // Form State
+  // Data Backup Form State
+  const [backupForm, setBackupForm] = useState({
+    startDate: '',
+    endDate: '',
+    department: 'all',
+    format: 'json'
+  });
+  const [backupLoading, setBackupLoading] = useState(false);
+
+  // Form & Modal State
+  const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null); // null means "Add Mode"
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     role: 'user',
+    isMainAdmin: false,
+    allowedCompanies: ['Elite Online', 'Elite Digital Print', 'Elite Stitching', 'Elite Edition', 'Elite Fabtex'],
     permissions: []
   });
 
@@ -166,6 +172,27 @@ export default function AdminPanel() {
     }
   };
 
+  const handleDownloadBackup = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setBackupLoading(true);
+    try {
+      await api.downloadDataBackup({
+        startDate: backupForm.startDate,
+        endDate: backupForm.endDate,
+        department: backupForm.department,
+        format: backupForm.format
+      });
+      setSuccess('Full data backup archive generated and downloaded successfully!');
+      triggerPushNotification('Data Backup Complete', 'Backup file downloaded to your system.');
+    } catch (err) {
+      setError(err.message || 'Failed to generate data backup.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -198,7 +225,6 @@ export default function AdminPanel() {
     setFormData(prev => ({
       ...prev,
       role: roleValue,
-      // If admin, auto-select all screen permissions, otherwise empty them
       permissions: roleValue === 'admin' ? AVAILABLE_SCREENS.map(s => s.id) : []
     }));
   };
@@ -219,26 +245,50 @@ export default function AdminPanel() {
     });
   };
 
+  const ALL_COMPANY_NAMES = ['Elite Online', 'Elite Digital Print', 'Elite Stitching', 'Elite Edition', 'Elite Fabtex'];
+
   const handleEditClick = (user) => {
     setEditingUser(user);
     setFormData({
       name: user.name || '',
       email: user.email || '',
-      password: '', // Don't prefill password
+      password: '',
       role: user.role || (user.permissions?.length === AVAILABLE_SCREENS.length ? 'admin' : 'user'),
+      isMainAdmin: Boolean(user.isMainAdmin || user.email === 'harshitsidapara2468@gmail.com'),
+      allowedCompanies: Array.isArray(user.allowedCompanies) && user.allowedCompanies.length > 0 ? user.allowedCompanies : ALL_COMPANY_NAMES,
       permissions: user.permissions || []
     });
     setError('');
     setSuccess('');
+    setShowUserModal(true);
   };
 
-  const handleCancelEdit = () => {
+  const handleCreateNewClick = () => {
     setEditingUser(null);
     setFormData({
       name: '',
       email: '',
       password: '',
       role: 'user',
+      isMainAdmin: false,
+      allowedCompanies: ALL_COMPANY_NAMES,
+      permissions: []
+    });
+    setError('');
+    setSuccess('');
+    setShowUserModal(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUser(null);
+    setShowUserModal(false);
+    setFormData({
+      name: '',
+      email: '',
+      password: '',
+      role: 'user',
+      isMainAdmin: false,
+      allowedCompanies: ALL_COMPANY_NAMES,
       permissions: []
     });
     setError('');
@@ -263,31 +313,45 @@ export default function AdminPanel() {
     setSubmitLoading(true);
     try {
       if (editingUser) {
-        // Update user payload
         const updatePayload = {
           name: formData.name.trim(),
           email: formData.email.trim(),
           role: formData.role,
+          isMainAdmin: formData.isMainAdmin,
+          allowedCompanies: formData.allowedCompanies,
           permissions: formData.permissions
         };
         if (formData.password) {
           updatePayload.password = formData.password;
         }
 
-        await api.updateUser(editingUser.id, updatePayload);
-        setSuccess(`User "${formData.name}" updated successfully.`);
+        const updatedRes = await api.updateUser(editingUser.id || editingUser._id, updatePayload);
+        const loggedUser = api.getCurrentUser();
+        if (loggedUser && (loggedUser.id === editingUser.id || loggedUser._id === editingUser.id)) {
+          if (updatedRes && updatedRes.user) {
+            localStorage.setItem('elite_user', JSON.stringify(updatedRes.user));
+          } else {
+            localStorage.setItem('elite_user', JSON.stringify({ ...loggedUser, ...updatePayload }));
+          }
+        }
+
+        setSuccess(`User "${formData.name}" credentials & company permissions updated successfully.`);
+        triggerPushNotification('👤 User Updated', `User "${formData.name}" updated successfully!`, 'info');
       } else {
-        // Create user payload
         await api.createUser({
           name: formData.name.trim(),
           email: formData.email.trim(),
           password: formData.password,
           role: formData.role,
+          isMainAdmin: formData.isMainAdmin,
+          allowedCompanies: formData.allowedCompanies,
           permissions: formData.permissions
         });
         setSuccess(`User "${formData.name}" created successfully.`);
+        triggerPushNotification('👤 User Account Created', `User "${formData.name}" added successfully!`, 'success');
       }
 
+      setShowUserModal(false);
       handleCancelEdit();
       fetchUsers();
     } catch (err) {
@@ -328,19 +392,23 @@ export default function AdminPanel() {
           <ShieldAlert size={22} color="var(--primary)" />
           <div>
             <h2 style={styles.pageTitle}>
-              {activeSubTab === 'users' ? 'Admin User Management' : 'Infrastructure Billing Management'}
+              {activeSubTab === 'users' ? 'Admin User Management' : activeSubTab === 'billing' ? 'Infrastructure Billing Management' : activeSubTab === 'backup' ? 'System Data Backup & Export' : 'Department Expense Settings'}
             </h2>
             <p style={styles.pageSubtitle}>
               {activeSubTab === 'users'
                 ? 'Create system users, set passwords, and manage screen-by-screen functionality credentials.'
-                : 'Track monthly cloud bills for AWS and MongoDB to monitor hosting costs.'}
+                : activeSubTab === 'billing'
+                ? 'Track monthly cloud bills for AWS and MongoDB to monitor hosting costs.'
+                : activeSubTab === 'backup'
+                ? 'Export comprehensive system data filtered by department and custom date ranges.'
+                : 'Configure Cash IN categories, Cash OUT categories, and Payment Modes for department expense entry forms.'}
             </p>
           </div>
         </div>
       </div>
 
       {/* Sub Tabs Selection */}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <button
           onClick={() => { setActiveSubTab('users'); setError(''); setSuccess(''); }}
           className={activeSubTab === 'users' ? 'btn-primary' : 'btn-secondary'}
@@ -349,25 +417,112 @@ export default function AdminPanel() {
           <User size={16} /> User Accounts
         </button>
         <button
+          onClick={() => { setActiveSubTab('settings'); setError(''); setSuccess(''); }}
+          className={activeSubTab === 'settings' ? 'btn-primary' : 'btn-secondary'}
+          style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <Settings size={16} /> Expense Settings
+        </button>
+        <button
           onClick={() => { setActiveSubTab('billing'); setError(''); setSuccess(''); }}
           className={activeSubTab === 'billing' ? 'btn-primary' : 'btn-secondary'}
           style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem' }}
         >
           <CreditCard size={16} /> Infrastructure Billing
         </button>
+        <button
+          onClick={() => { setActiveSubTab('backup'); setError(''); setSuccess(''); }}
+          className={activeSubTab === 'backup' ? 'btn-primary' : 'btn-secondary'}
+          style={{ padding: '0.5rem 1.2rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <Database size={16} /> Data Backup
+        </button>
       </div>
 
       {error && <div style={styles.errorBox}>{error}</div>}
       {success && <div style={styles.successBox}>{success}</div>}
 
-      {activeSubTab === 'users' ? (
-        <div style={styles.contentLayout}>
-          {/* Left Side: Users List */}
-          <div className="glass-panel" style={styles.tablePanel}>
+      {activeSubTab === 'users' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Summary Metric Cards Header */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', borderLeft: '4px solid #2563eb' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <User size={20} color="#2563eb" />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Registered Accounts</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>{users.length} Users</div>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', borderLeft: '4px solid #dc2626' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ShieldAlert size={20} color="#dc2626" />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Administrator Roles</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#dc2626', marginTop: 2 }}>
+                  {users.filter(u => u.role === 'admin' || (u.permissions && u.permissions.length === AVAILABLE_SCREENS.length)).length} Admins
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.85rem', borderLeft: '4px solid #16a34a' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <UserPlus size={20} color="#16a34a" />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Standard Accounts</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a', marginTop: 2 }}>
+                  {users.filter(u => u.role !== 'admin' && (u.permissions?.length !== AVAILABLE_SCREENS.length)).length} Standard Users
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 100% Full-Width Users Table Panel */}
+          <div className="glass-panel" style={{ ...styles.tablePanel, width: '100%' }}>
             <div style={styles.panelHeader}>
               <Sliders size={16} color="var(--primary)" />
-              <h3 style={styles.panelTitle}>Active Accounts</h3>
-              {loading && <RotateCw size={14} className="spin-loader" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }} />}
+              <h3 style={styles.panelTitle}>Active User Accounts ({users.length})</h3>
+              {loading && <RotateCw size={14} className="spin-loader" style={{ marginLeft: '0.5rem', color: 'var(--text-muted)' }} />}
+              <button
+                type="button"
+                onClick={handleCreateNewClick}
+                className="btn-primary"
+                style={{ marginLeft: 'auto', padding: '0.45rem 1rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: '8px' }}
+              >
+                <UserPlus size={15} />
+                <span>Add New User</span>
+              </button>
+            </div>
+
+            {/* Live Search & Per-Company Scope Filter */}
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1 1 240px' }}>
+                <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                <input
+                  type="text"
+                  placeholder="Filter users by name, email, or role..."
+                  value={userSearch}
+                  onChange={e => setUserSearch(e.target.value)}
+                  style={{ width: '100%', paddingLeft: 34, fontSize: '0.85rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px' }}
+                />
+              </div>
+
+              <select
+                value={selectedCompanyFilter}
+                onChange={e => setSelectedCompanyFilter(e.target.value)}
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <option value="All">🌐 All Companies Scope ({users.length})</option>
+                <option value="Elite Edition">🏢 Elite Edition ({users.filter(u => u.allowedCompanies?.includes('Elite Edition')).length})</option>
+                <option value="Elite Fabtex">🏢 Elite Fabtex ({users.filter(u => u.allowedCompanies?.includes('Elite Fabtex')).length})</option>
+                <option value="Elite Online">🏪 Elite Online ({users.filter(u => u.allowedCompanies?.includes('Elite Online')).length})</option>
+                <option value="Elite Stitching">🏭 Elite Stitching ({users.filter(u => u.allowedCompanies?.includes('Elite Stitching')).length})</option>
+                <option value="Elite Digital Print">🖨️ Elite Digital Print ({users.filter(u => u.allowedCompanies?.includes('Elite Digital Print')).length})</option>
+              </select>
             </div>
 
             <div className="table-container" style={styles.tableWrap}>
@@ -385,212 +540,527 @@ export default function AdminPanel() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Name</th>
+                      <th>Account</th>
                       <th>Email</th>
-                      <th>Role</th>
-                      <th>Allowed Screens</th>
+                      <th>Role & Hierarchy</th>
+                      <th>Allocated Companies</th>
+                      <th>Allowed Functionalities</th>
                       <th className="text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((u) => {
-                      const checkAdmin = u.role === 'admin' || (u.permissions && u.permissions.length === AVAILABLE_SCREENS.length);
+                    {users
+                      .filter(u => {
+                        const matchesSearch = matchSearchQuery(u, userSearch, ['name', 'email', 'role']);
+                        const matchesCompany = selectedCompanyFilter === 'All' || (Array.isArray(u.allowedCompanies) && u.allowedCompanies.includes(selectedCompanyFilter));
+                        return matchesSearch && matchesCompany;
+                      })
+                      .map((u) => {
+                        const isMain = Boolean(u.isMainAdmin || u.email === 'harshitsidapara2468@gmail.com');
+                        const checkAdmin = u.role === 'admin' || isMain;
+                        const isCurrentlyEditing = editingUser && (editingUser.id === u.id || editingUser._id === u.id);
+                        const userCompanies = Array.isArray(u.allowedCompanies) && u.allowedCompanies.length > 0
+                          ? u.allowedCompanies
+                          : ALL_COMPANY_NAMES;
 
-                      return (
-                        <tr key={u.id}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={styles.avatar(checkAdmin)}>
-                                {u.name ? u.name[0].toUpperCase() : 'U'}
+                        return (
+                          <tr key={u.id || u._id} style={{ background: isCurrentlyEditing ? '#eff6ff' : 'transparent', transition: 'background 0.15s' }}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                                <div style={styles.avatar(checkAdmin)}>
+                                  {u.name ? u.name[0].toUpperCase() : 'U'}
+                                </div>
+                                <div>
+                                  <span style={{ fontWeight: '700', color: '#0f172a', display: 'block', fontSize: '0.88rem' }}>
+                                    {u.name} {isMain && <span title="Super Master Admin">👑</span>}
+                                  </span>
+                                  {isCurrentlyEditing && (
+                                    <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 800 }}>[Editing Now]</span>
+                                  )}
+                                </div>
                               </div>
-                              <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{u.name}</span>
-                            </div>
-                          </td>
-                          <td>{u.email}</td>
-                          <td>
-                            <span className={`badge ${checkAdmin ? 'badge-danger' : 'badge-success'}`}>
-                              {checkAdmin ? 'ADMIN' : 'USER'}
-                            </span>
-                          </td>
-                          <td>
-                            <div style={styles.permissionsList}>
-                              {checkAdmin ? (
-                                <span style={styles.adminAllBadge}>ALL SCREENS</span>
-                              ) : u.permissions && u.permissions.length > 0 ? (
-                                u.permissions.map(p => {
-                                  const screenObj = AVAILABLE_SCREENS.find(s => s.id === p);
-                                  return (
-                                    <span key={p} style={styles.permissionBadge}>
-                                      {screenObj ? screenObj.label : p}
-                                    </span>
-                                  );
-                                })
-                              ) : (
-                                <span style={styles.noScreensBadge}>NO SCREENS</span>
-                              )}
-                            </div>
-                          </td>
-                          <td>
-                            <div style={styles.actionsCell}>
-                              <button
-                                onClick={() => handleEditClick(u)}
-                                className="btn-icon"
-                                title="Edit Credentials"
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(u)}
-                                className="btn-icon"
-                                style={styles.trashBtn}
-                                title="Delete User"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td style={{ color: '#334155', fontWeight: 500, fontSize: '0.82rem' }}>{u.email}</td>
+                            <td>
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                padding: '3px 9px',
+                                borderRadius: '6px',
+                                textTransform: 'uppercase',
+                                background: isMain ? '#fef3c7' : checkAdmin ? '#fee2e2' : '#dbeafe',
+                                color: isMain ? '#92400e' : checkAdmin ? '#dc2626' : '#1d4ed8',
+                                border: `1px solid ${isMain ? '#fcd34d' : checkAdmin ? '#fca5a5' : '#93c5fd'}`
+                              }}>
+                                {isMain ? '👑 MAIN ADMIN' : checkAdmin ? '🛡️ COMPANY ADMIN' : '👤 USER'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {isMain ? (
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#047857', background: '#d1fae5', padding: '2px 7px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                                    🌐 ALL COMPANIES (MASTER)
+                                  </span>
+                                ) : userCompanies.map(c => (
+                                  <span key={c} style={{ fontSize: '0.68rem', fontWeight: 700, color: '#334155', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={styles.permissionsList}>
+                                {checkAdmin ? (
+                                  <span style={styles.adminAllBadge}>⚡ FULL SYSTEM ACCESS</span>
+                                ) : u.permissions && u.permissions.length > 0 ? (
+                                  u.permissions.map(p => {
+                                    const screenObj = AVAILABLE_SCREENS.find(s => s.id === p);
+                                    return (
+                                      <span key={p} style={styles.permissionBadge}>
+                                        {screenObj ? screenObj.label : p}
+                                      </span>
+                                    );
+                                  })
+                                ) : (
+                                  <span style={styles.noScreensBadge}>NO ACCESS GRANTED</span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={styles.actionsCell}>
+                                <button
+                                  onClick={() => handleEditClick(u)}
+                                  style={{
+                                    padding: '0.4rem 0.75rem',
+                                    background: '#eff6ff',
+                                    border: '1px solid #bfdbfe',
+                                    color: '#2563eb',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px'
+                                  }}
+                                  title="Edit Credentials"
+                                >
+                                  <Edit2 size={14} /> Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(u)}
+                                  style={{
+                                    padding: '0.4rem 0.75rem',
+                                    background: '#fef2f2',
+                                    border: '1px solid #fecaca',
+                                    color: '#dc2626',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px'
+                                  }}
+                                  title="Delete User"
+                                >
+                                  <Trash2 size={14} /> Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               )}
             </div>
           </div>
 
-          {/* Right Side: Create/Edit Form */}
-          <div className="glass-panel" style={styles.formPanel}>
-            <div style={styles.panelHeader}>
-              <UserPlus size={16} color="var(--primary)" />
-              <h3 style={styles.panelTitle}>
-                {editingUser ? `Edit User Credentials — ${editingUser.name}` : 'Create New User'}
-              </h3>
-            </div>
+          {/* 🌟 FLOATING MODAL OVERLAY FOR USER FORM 🌟 */}
+          {showUserModal && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem',
+              animation: 'fadeIn 0.2s ease-out'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                width: '100%',
+                maxWidth: '680px',
+                maxHeight: '90vh',
+                borderRadius: '14px',
+                boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.3)',
+                border: '1px solid #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}>
+                {/* Modal Header */}
+                <div style={{
+                  padding: '1.1rem 1.5rem',
+                  background: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: '#eff6ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <UserPlus size={18} color="#2563eb" />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                        {editingUser ? `Edit Account — ${editingUser.name}` : 'Create New Account'}
+                      </h3>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                        {editingUser ? 'Update user role, credentials, and screen access permissions.' : 'Configure credentials and assign operational screen permissions.'}
+                      </p>
+                    </div>
+                  </div>
 
-            <form onSubmit={handleSubmit} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Full Name *</label>
-                <div style={styles.inputWrapper}>
-                  <User size={14} style={styles.inputIcon} />
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder="Enter user's name..."
-                    required
-                    style={styles.formInput}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Email Address *</label>
-                <div style={styles.inputWrapper}>
-                  <Mail size={14} style={styles.inputIcon} />
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="user@elite.com..."
-                    required
-                    style={styles.formInput}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>
-                  {editingUser ? 'New Password (leave blank to keep current)' : 'Password *'}
-                </label>
-                <div style={styles.inputWrapper}>
-                  <Lock size={14} style={styles.inputIcon} />
-                  <input
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    placeholder={editingUser ? 'Enter new password...' : 'Enter password...'}
-                    required={!editingUser}
-                    style={styles.formInput}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Account Role *</label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleRoleChange}
-                  style={styles.selectInput}
-                >
-                  <option value="user">User (Restricted Access)</option>
-                  <option value="admin">Admin (Full Access)</option>
-                </select>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Functionality Access (Allowed Screens)</label>
-                <p style={styles.helpText}>
-                  Select which screens and operational tabs this user is permitted to see.
-                </p>
-                <div style={styles.checkboxGrid}>
-                  {AVAILABLE_SCREENS.map(screen => {
-                    const isChecked = formData.permissions.includes(screen.id);
-                    return (
-                      <label
-                        key={screen.id}
-                        style={{
-                          ...styles.checkboxLabel,
-                          ...(formData.role === 'admin' ? styles.checkboxLabelDisabled : {})
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          disabled={formData.role === 'admin'}
-                          onChange={() => handlePermissionCheckbox(screen.id)}
-                          style={styles.checkbox}
-                        />
-                        <span style={{ fontSize: '0.85rem' }}>{screen.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={styles.formActions}>
-                {editingUser && (
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="btn-secondary"
-                    style={styles.btn}
+                    style={{
+                      background: '#f1f5f9',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: 32,
+                      height: 32,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#475569',
+                      cursor: 'pointer'
+                    }}
                   >
-                    <X size={14} />
-                    <span>Cancel</span>
+                    <X size={18} />
                   </button>
-                )}
-                <button
-                  type="submit"
-                  className="btn-success"
-                  style={{ ...styles.btn, ...styles.submitBtn }}
-                  disabled={submitLoading}
-                >
-                  {submitLoading ? (
-                    <RotateCw size={14} className="spin-loader" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  <span>{editingUser ? 'Save Credentials' : 'Create User'}</span>
-                </button>
+                </div>
+
+                {/* Modal Form Body */}
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
+                  <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Full Name *</label>
+                      <div style={styles.inputWrapper}>
+                        <User size={15} style={styles.inputIcon} />
+                        <input
+                          type="text"
+                          name="name"
+                          value={formData.name}
+                          onChange={handleInputChange}
+                          placeholder="e.g. Rahul Sharma"
+                          required
+                          style={styles.formInput}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Email Address *</label>
+                      <div style={styles.inputWrapper}>
+                        <Mail size={15} style={styles.inputIcon} />
+                        <input
+                          type="email"
+                          name="email"
+                          value={formData.email}
+                          onChange={handleInputChange}
+                          placeholder="rahul@elite.com"
+                          required
+                          style={styles.formInput}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>
+                        {editingUser ? 'New Password (leave blank to keep current)' : 'Password *'}
+                      </label>
+                      <div style={styles.inputWrapper}>
+                        <Lock size={15} style={styles.inputIcon} />
+                        <input
+                          type="password"
+                          name="password"
+                          value={formData.password}
+                          onChange={handleInputChange}
+                          placeholder={editingUser ? 'Enter new password...' : 'Enter password...'}
+                          required={!editingUser}
+                          style={styles.formInput}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Account Role & Hierarchy *</label>
+                      <select
+                        name="role"
+                        value={formData.isMainAdmin ? 'main_admin' : formData.role}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'main_admin') {
+                            setFormData(prev => ({
+                              ...prev,
+                              role: 'admin',
+                              isMainAdmin: true,
+                              allowedCompanies: ALL_COMPANY_NAMES,
+                              permissions: AVAILABLE_SCREENS.map(s => s.id)
+                            }));
+                          } else if (val === 'admin') {
+                            setFormData(prev => ({
+                              ...prev,
+                              role: 'admin',
+                              isMainAdmin: false,
+                              permissions: AVAILABLE_SCREENS.map(s => s.id)
+                            }));
+                          } else {
+                            setFormData(prev => ({
+                              ...prev,
+                              role: 'user',
+                              isMainAdmin: false
+                            }));
+                          }
+                        }}
+                        style={styles.selectInput}
+                      >
+                        <option value="user">👤 Standard User (Restricted Screen Access)</option>
+                        <option value="admin">🛡️ Company Admin (Allocated Company Authority)</option>
+                        <option value="main_admin">👑 Main Admin / Super Admin (Hasi Master Control)</option>
+                      </select>
+                    </div>
+
+                    {/* Allocated Companies Checkbox Grid */}
+                    <div style={styles.formGroup}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                        <label style={styles.label}>🏢 Allocated Companies (Admin Entity Access)</label>
+                        {!formData.isMainAdmin && (
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => setFormData(p => ({ ...p, allowedCompanies: ALL_COMPANY_NAMES }))}
+                              className="btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormData(p => ({ ...p, allowedCompanies: [] }))}
+                              className="btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}
+                            >
+                              Clear All
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p style={styles.helpText}>
+                        Select which company entities this Admin user is authorized to manage and access in the top company bar.
+                      </p>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                        {ALL_COMPANY_NAMES.map(comp => {
+                          const isChecked = formData.allowedCompanies.includes(comp);
+                          return (
+                            <label
+                              key={comp}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: `1px solid ${isChecked ? '#2563eb' : '#cbd5e1'}`,
+                                background: isChecked ? '#eff6ff' : '#ffffff',
+                                cursor: formData.isMainAdmin ? 'not-allowed' : 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: isChecked ? 700 : 500,
+                                color: isChecked ? '#1d4ed8' : '#334155'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked || formData.isMainAdmin}
+                                disabled={formData.isMainAdmin}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setFormData(prev => {
+                                    const nextComps = checked
+                                      ? Array.from(new Set([...prev.allowedCompanies, comp]))
+                                      : prev.allowedCompanies.filter(c => c !== comp);
+                                    return { ...prev, allowedCompanies: nextComps };
+                                  });
+                                }}
+                              />
+                              <span>{comp}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                        <label style={styles.label}>Functionality Access (Allowed Screens)</label>
+                        {formData.role !== 'admin' && (
+                          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => setFormData(p => ({ ...p, permissions: AVAILABLE_SCREENS.map(s => s.id) }))}
+                              className="btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormData(p => ({ ...p, permissions: [] }))}
+                              className="btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}
+                            >
+                              Clear All
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p style={styles.helpText}>
+                        Select which operational modules and screens this user is authorized to open.
+                      </p>
+
+                      {Array.from(new Set(AVAILABLE_SCREENS.map(s => s.category))).map(cat => {
+                        const catScreens = AVAILABLE_SCREENS.filter(s => s.category === cat);
+                        const allChecked = catScreens.every(s => formData.permissions.includes(s.id));
+                        const catTitle = cat === 'General' ? '⚙️ Core & General' :
+                                         cat === 'Elite Edition' ? '🛍️ Elite Edition (E-Commerce)' :
+                                         cat === 'Elite Digital Print' ? '🖨️ Elite Digital Print' :
+                                         cat === 'Elite Stitching' ? '✂️ Elite Stitching' : `📁 ${cat}`;
+
+                        return (
+                          <div key={cat} style={{ marginBottom: '0.85rem', background: '#f8fafc', padding: '0.65rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                {catTitle}
+                              </span>
+                              {formData.role !== 'admin' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ids = catScreens.map(s => s.id);
+                                    setFormData(prev => {
+                                      const hasAll = ids.every(id => prev.permissions.includes(id));
+                                      const updated = hasAll
+                                        ? prev.permissions.filter(id => !ids.includes(id))
+                                        : Array.from(new Set([...prev.permissions, ...ids]));
+                                      return { ...prev, permissions: updated };
+                                    });
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 700, textDecoration: 'underline' }}
+                                >
+                                  {allChecked ? 'Deselect Category' : 'Select Category'}
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={styles.checkboxGrid}>
+                              {catScreens.map(screen => {
+                                const isChecked = formData.permissions.includes(screen.id);
+                                return (
+                                  <label
+                                    key={screen.id}
+                                    style={{
+                                      ...styles.checkboxLabel,
+                                      background: isChecked ? '#eff6ff' : '#ffffff',
+                                      borderColor: isChecked ? '#2563eb' : '#e2e8f0',
+                                      ...(formData.role === 'admin' ? styles.checkboxLabelDisabled : {})
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      disabled={formData.role === 'admin'}
+                                      onChange={() => handlePermissionCheckbox(screen.id)}
+                                      style={styles.checkbox}
+                                    />
+                                    <span style={{ fontSize: '0.82rem', fontWeight: isChecked ? 700 : 500, color: isChecked ? '#1d4ed8' : '#334155' }}>{screen.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Modal Footer Actions */}
+                  <div style={{
+                    padding: '1rem 1.5rem',
+                    background: '#f8fafc',
+                    borderTop: '1px solid #e2e8f0',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '0.75rem'
+                  }}>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="btn-secondary"
+                      style={{ padding: '0.55rem 1.2rem', fontSize: '0.85rem', fontWeight: 700, borderRadius: '6px' }}
+                    >
+                      <X size={15} />
+                      <span>Cancel</span>
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-success"
+                      style={{
+                        padding: '0.55rem 1.4rem',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem'
+                      }}
+                      disabled={submitLoading}
+                    >
+                      {submitLoading ? (
+                        <RotateCw size={15} className="spin-loader" />
+                      ) : (
+                        <Save size={15} />
+                      )}
+                      <span>{editingUser ? 'Save Credentials' : 'Create User Account'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
+            </div>
+          )}
         </div>
-      ) : (
+      )}
+
+      {activeSubTab === 'billing' && (
         <div style={styles.contentLayout}>
           {/* Left Side: Bills List */}
           <div className="glass-panel" style={styles.tablePanel}>
@@ -772,6 +1242,106 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+
+      {activeSubTab === 'backup' && (
+        <div className="glass-panel" style={{ padding: '1.75rem', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
+            <Database size={24} color="var(--primary)" />
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>System Data Backup & Export</h3>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+                Export comprehensive system data filtered by department and custom start/end date ranges.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleDownloadBackup} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginTop: '1rem' }}>
+            {/* Start Date */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Start Date (Optional)</label>
+              <div style={styles.inputWrapper}>
+                <Calendar size={14} style={styles.inputIcon} />
+                <input
+                  type="date"
+                  value={backupForm.startDate}
+                  onChange={(e) => setBackupForm(prev => ({ ...prev, startDate: e.target.value }))}
+                  style={styles.formInput}
+                />
+              </div>
+            </div>
+
+            {/* End Date */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>End Date (Optional)</label>
+              <div style={styles.inputWrapper}>
+                <Calendar size={14} style={styles.inputIcon} />
+                <input
+                  type="date"
+                  value={backupForm.endDate}
+                  onChange={(e) => setBackupForm(prev => ({ ...prev, endDate: e.target.value }))}
+                  style={styles.formInput}
+                />
+              </div>
+            </div>
+
+            {/* Department Select */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Select Department *</label>
+              <div style={styles.inputWrapper}>
+                <Layers size={14} style={styles.inputIcon} />
+                <select
+                  value={backupForm.department}
+                  onChange={(e) => setBackupForm(prev => ({ ...prev, department: e.target.value }))}
+                  style={styles.formInput}
+                >
+                  <option value="all">⚡ All Departments (Full System Backup)</option>
+                  <option value="billing">🧾 Billing & Invoicing</option>
+                  <option value="design">🎨 Design Room</option>
+                  <option value="digital_printing">🖨️ Digital Printing (Job Cards & Logs)</option>
+                  <option value="fabric">🧵 Fabric Inventory & Stock</option>
+                  <option value="stitching">🪡 Stitching Department</option>
+                  <option value="garment">👔 Garment Job Cards</option>
+                  <option value="sales">🛒 E-Commerce Sales & Catalog</option>
+                  <option value="customers">👥 Customers & Vendors Master</option>
+                </select>
+              </div>
+            </div>
+
+            {/* File Format */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Export File Format *</label>
+              <div style={styles.inputWrapper}>
+                <FileSpreadsheet size={14} style={styles.inputIcon} />
+                <select
+                  value={backupForm.format}
+                  onChange={(e) => setBackupForm(prev => ({ ...prev, format: e.target.value }))}
+                  style={styles.formInput}
+                >
+                  <option value="json">JSON Data Archive (.json)</option>
+                  <option value="csv">CSV Spreadsheet (.csv)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Download Button */}
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={backupLoading}
+                style={{ padding: '0.7rem 1.8rem', fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                {backupLoading ? <RotateCw size={16} className="spin-loader" /> : <Download size={16} />}
+                <span>{backupLoading ? 'Generating Backup File...' : 'Download Data Backup'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {activeSubTab === 'settings' && (
+        <PrintSettings expenseOnly={true} />
+      )}
     </div>
   );
 }
@@ -843,49 +1413,53 @@ const styles = {
     flex: 1
   },
   avatar: (isAdmin) => ({
-    width: '28px',
-    height: '28px',
+    width: '32px',
+    height: '32px',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '0.8rem',
-    fontWeight: 'bold',
-    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+    fontWeight: '800',
+    color: '#ffffff',
+    boxShadow: isAdmin ? '0 2px 8px rgba(220, 38, 38, 0.25)' : '0 2px 8px rgba(37, 99, 235, 0.25)',
     background: isAdmin
-      ? 'linear-gradient(135deg, #ef4444, #b91c1c)'
-      : 'linear-gradient(135deg, var(--primary), #0891b2)'
+      ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+      : 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
   }),
   permissionsList: {
     display: 'flex',
-    gap: '0.25rem',
+    gap: '0.3rem',
     flexWrap: 'wrap',
-    maxWidth: '300px'
+    maxWidth: '320px'
   },
   permissionBadge: {
     fontSize: '0.7rem',
-    background: 'rgba(6, 182, 212, 0.08)',
-    border: '1px solid rgba(6, 182, 212, 0.15)',
-    color: 'var(--primary)',
-    padding: '0.1rem 0.4rem',
+    fontWeight: 600,
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    color: '#1d4ed8',
+    padding: '0.15rem 0.45rem',
     borderRadius: '4px'
   },
   adminAllBadge: {
-    fontSize: '0.7rem',
-    background: 'rgba(239, 68, 68, 0.08)',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    color: '#fca5a5',
-    padding: '0.1rem 0.4rem',
+    fontSize: '0.72rem',
+    background: '#fee2e2',
+    border: '1px solid #fca5a5',
+    color: '#dc2626',
+    padding: '0.15rem 0.55rem',
     borderRadius: '4px',
-    fontWeight: 'bold'
+    fontWeight: '800',
+    letterSpacing: '0.02em'
   },
   noScreensBadge: {
     fontSize: '0.7rem',
-    background: 'rgba(255, 255, 255, 0.04)',
-    border: '1px solid var(--border-light)',
-    color: 'var(--text-muted)',
-    padding: '0.1rem 0.4rem',
-    borderRadius: '4px'
+    background: '#f1f5f9',
+    border: '1px solid #cbd5e1',
+    color: '#64748b',
+    padding: '0.15rem 0.45rem',
+    borderRadius: '4px',
+    fontWeight: 600
   },
   actionsCell: {
     display: 'flex',
@@ -893,8 +1467,9 @@ const styles = {
     justifyContent: 'center'
   },
   trashBtn: {
-    color: '#fca5a5',
-    borderColor: 'rgba(239, 68, 68, 0.1)'
+    color: '#dc2626',
+    borderColor: '#fecaca',
+    background: '#fef2f2'
   },
   emptyState: {
     display: 'flex',
@@ -915,9 +1490,9 @@ const styles = {
     gap: '0.35rem'
   },
   label: {
-    fontSize: '0.8rem',
-    fontWeight: '500',
-    color: '#d1d5db',
+    fontSize: '0.82rem',
+    fontWeight: '700',
+    color: '#1e293b',
     marginLeft: '2px'
   },
   inputWrapper: {
@@ -928,45 +1503,56 @@ const styles = {
   inputIcon: {
     position: 'absolute',
     left: '0.75rem',
-    color: 'var(--text-muted)'
+    color: '#64748b'
   },
   formInput: {
     width: '100%',
-    paddingLeft: '2.2rem'
+    paddingLeft: '2.2rem',
+    background: '#ffffff',
+    border: '1px solid #cbd5e1',
+    color: '#0f172a',
+    borderRadius: '6px',
+    fontSize: '0.88rem'
   },
   formInputWithoutIcon: {
     width: '100%',
+    background: '#ffffff',
+    border: '1px solid #cbd5e1',
+    color: '#0f172a',
+    borderRadius: '6px',
+    fontSize: '0.88rem'
   },
   selectInput: {
     width: '100%',
     padding: '0.65rem 0.75rem',
-    background: 'rgba(17, 24, 39, 0.7)',
-    border: '1px solid var(--border-light)',
-    color: 'var(--text-primary)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: '0.9rem',
+    background: '#ffffff',
+    border: '1px solid #cbd5e1',
+    color: '#0f172a',
+    borderRadius: '6px',
+    fontSize: '0.88rem',
+    fontWeight: 600,
     outline: 'none',
   },
   helpText: {
-    fontSize: '0.7rem',
-    color: 'var(--text-muted)',
-    margin: '0 0 0.25rem 2px'
+    fontSize: '0.72rem',
+    color: '#64748b',
+    margin: '0 0 0.25rem 2px',
+    fontWeight: 500
   },
   checkboxGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: '0.75rem',
-    background: 'rgba(255, 255, 255, 0.02)',
-    border: '1px solid var(--border-light)',
-    padding: '1rem',
-    borderRadius: 'var(--radius-sm)'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+    gap: '0.5rem',
   },
   checkboxLabel: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
     cursor: 'pointer',
-    color: '#d1d5db',
+    padding: '0.45rem 0.6rem',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    transition: 'all 0.15s ease',
     userSelect: 'none'
   },
   checkboxLabelDisabled: {
@@ -974,7 +1560,10 @@ const styles = {
     cursor: 'not-allowed'
   },
   checkbox: {
-    cursor: 'pointer'
+    cursor: 'pointer',
+    accentColor: '#2563eb',
+    width: '15px',
+    height: '15px'
   },
   formActions: {
     display: 'flex',
@@ -987,26 +1576,30 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.4rem',
-    fontSize: '0.85rem'
+    fontSize: '0.85rem',
+    borderRadius: '6px',
+    fontWeight: 700
   },
   submitBtn: {
     flex: 1,
     justifyContent: 'center'
   },
   errorBox: {
-    background: 'rgba(239, 68, 68, 0.08)',
-    border: '1px solid rgba(239, 68, 68, 0.15)',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
     borderRadius: '6px',
     padding: '0.65rem 0.75rem',
-    color: '#fca5a5',
-    fontSize: '0.8rem'
+    color: '#dc2626',
+    fontWeight: 700,
+    fontSize: '0.82rem'
   },
   successBox: {
-    background: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.15)',
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
     borderRadius: '6px',
     padding: '0.65rem 0.75rem',
-    color: '#a7f3d0',
-    fontSize: '0.8rem'
+    color: '#16a34a',
+    fontWeight: 700,
+    fontSize: '0.82rem'
   }
 };

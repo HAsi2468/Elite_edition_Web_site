@@ -3,6 +3,7 @@ import { useSocket } from '../contexts/SocketContext';
 import { api } from '../services/api';
 import { MessageSquare, Send, Users, Hash, Plus, CheckSquare, X, ImagePlus, Loader2, Paperclip, Mic, Pin, Trash2, Edit2, Settings, Volume2 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
+import { triggerPushNotification, triggerGlobalDataRefresh } from './NotificationToast';
 
 const Workspace = ({ currentUser }) => {
   const socket = useSocket();
@@ -76,6 +77,17 @@ const Workspace = ({ currentUser }) => {
   const [slashSearchText, setSlashSearchText] = useState('');
   const [chatFilter, setChatFilter] = useState('all');
   const [isAIProcessing, setIsAIProcessing] = useState(false);
+
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [mobileActiveView, setMobileActiveView] = useState('sidebar'); // 'sidebar' or 'chat'
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -440,80 +452,70 @@ const Workspace = ({ currentUser }) => {
     socket.emit('register-user', userId);
 
     const handleReceiveMessageNotify = (message) => {
-      const isMine = message.senderId?._id === currentUser._id;
+      const senderId = typeof message.senderId === 'object' ? (message.senderId?._id || message.senderId?.id) : message.senderId;
+      const myUserId = currentUser?._id || currentUser?.id;
+      const isMine = String(senderId) === String(myUserId);
+
       const currentActiveRoom = activeRoomRef.current;
       const currentRooms = roomsRef.current;
-      const isActive = currentActiveRoom && (message.roomId === currentActiveRoom._id || message.roomId?._id === currentActiveRoom._id);
+      const msgRoomId = typeof message.roomId === 'object' ? (message.roomId?._id || message.roomId?.id) : message.roomId;
+      const isActive = currentActiveRoom && String(msgRoomId) === String(currentActiveRoom._id);
       
       // Update room updatedAt in state list to trigger unread badge update dynamically
       setRooms(prevRooms => {
         return prevRooms.map(r => {
-          const match = r._id === message.roomId || r._id === message.roomId?._id;
-          if (match) {
+          if (String(r._id) === String(msgRoomId)) {
             return { ...r, updatedAt: message.createdAt || new Date().toISOString() };
           }
           return r;
         });
       });
 
-      // Increment unread counters if not active
+      // Increment unread counters if not active room
       if (!isMine && !isActive) {
-        const targetRoomId = message.roomId?._id || message.roomId;
         setUnreadCounts(prev => ({
           ...prev,
-          [targetRoomId]: (prev[targetRoomId] || 0) + 1
+          [msgRoomId]: (prev[msgRoomId] || 0) + 1
         }));
       }
 
-      if (!isMine && (!isActive || document.hidden)) {
-        const senderName = message.senderId?.name || message.senderId?.username || 'Someone';
-        let title = `New message in #${message.roomId?.name || 'chat'}`;
+      // Trigger Push & Toast Notifications for ALL incoming messages from others
+      if (!isMine) {
+        const senderName = typeof message.senderId === 'object' ? (message.senderId?.name || message.senderId?.username) : 'Team Member';
+        let title = `💬 Message from ${senderName}`;
         
-        // Find if room name is known
-        const targetRoom = currentRooms.find(r => r._id === message.roomId || r._id === message.roomId?._id);
+        const targetRoom = currentRooms.find(r => String(r._id) === String(msgRoomId));
         if (targetRoom) {
           if (targetRoom.type === 'direct') {
-            title = `New message from ${senderName}`;
+            title = `💬 DM from ${senderName}`;
           } else {
-            title = `New message in #${targetRoom.name}`;
+            title = `💬 #${targetRoom.name}`;
           }
-        } else if (message.roomId?.type === 'direct' || message.roomId?.name) {
-          title = message.roomId.type === 'direct' ? `New message from ${senderName}` : `New message in #${message.roomId.name}`;
         }
         
-        // 1. Show HTML5 browser notification
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(title, {
-            body: message.content,
-            icon: '/vite.svg'
-          });
-        }
+        const snippet = message.attachment ? '📎 Sent an attachment' : (message.content || 'Sent a message');
+
+        // Trigger global push notification + persistent history + audio chime + tab flash
+        triggerPushNotification(title, `${senderName}: ${snippet}`, 'info', 'workspace');
         
-        // 2. Show in-app Toast Notification
-        showToast(title, message.content, () => {
-          const matchedRoom = roomsRef.current.find(r => r._id === message.roomId || r._id === message.roomId?._id);
-          if (matchedRoom) {
-            setActiveRoom(matchedRoom);
+        // Also show in-app Toast Notification
+        showToast(title, `${senderName}: ${snippet}`, () => {
+          if (targetRoom) {
+            setActiveRoom(targetRoom);
             setWorkspaceTab('chat');
+            setMobileActiveView('chat');
           }
         });
       }
     };
 
     const handleTaskUpdatedNotify = (task) => {
-      const isAssignedToMe = task.assignees?.some(a => a._id === currentUser._id);
+      const isAssignedToMe = task.assignees?.some(a => (a._id || a) === (currentUser._id || currentUser.id));
       
       if (isAssignedToMe) {
-        // 1. Browser Notification
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(`Task Assignment: ${task.title}`, {
-            body: `Status: ${task.status} · Priority: ${task.priority}`,
-            icon: '/vite.svg'
-          });
-        }
-        
-        // 2. In-App Toast
-        showToast(`Task Updated: ${task.title}`, `Status: ${task.status} · Priority: ${task.priority}`, () => {
+        const taskMsg = `Status: ${task.status} · Priority: ${task.priority}`;
+        triggerPushNotification(`Task Assignment: ${task.title}`, taskMsg, 'info', 'workspace');
+        showToast(`Task Updated: ${task.title}`, taskMsg, () => {
           setWorkspaceTab('tasks');
         });
       }
@@ -1553,55 +1555,160 @@ const Workspace = ({ currentUser }) => {
 
   // --- STYLES ---
   const wsStyles = {
-    container: { display: 'flex', height: 'calc(100vh - 100px)', gap: '20px' },
-    sidebar: { width: '280px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto' },
-    chatArea: { flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-card, #161b26)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' },
-    roomItem: (isActive) => ({ padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', backgroundColor: isActive ? 'var(--primary)' : 'transparent', color: isActive ? 'white' : 'var(--text-primary)', transition: 'all 0.2s', fontWeight: isActive ? '500' : '400' }),
-    header: { padding: '20px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-    messageList: { flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' },
+    container: {
+      display: 'flex',
+      height: isMobile ? 'calc(100dvh - 105px)' : 'calc(100vh - 100px)',
+      gap: isMobile ? '0' : '20px',
+      flexDirection: isMobile ? 'column' : 'row'
+    },
+    sidebar: {
+      width: isMobile ? '100%' : '280px',
+      display: isMobile && mobileActiveView === 'chat' ? 'none' : 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+      overflowY: 'auto',
+      padding: isMobile ? '10px 12px' : '16px'
+    },
+    chatArea: {
+      flex: 1,
+      width: isMobile ? '100%' : 'auto',
+      height: '100%',
+      display: isMobile && mobileActiveView === 'sidebar' ? 'none' : 'flex',
+      flexDirection: 'column',
+      backgroundColor: '#ffffff',
+      borderRadius: isMobile ? '0' : '16px',
+      border: isMobile ? 'none' : '1px solid #e2e8f0',
+      boxShadow: isMobile ? 'none' : '0 4px 20px rgba(15, 23, 42, 0.06)',
+      overflow: 'hidden'
+    },
+    roomItem: (isActive) => ({
+      padding: isMobile ? '12px 14px' : '10px 14px',
+      borderRadius: '12px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      cursor: 'pointer',
+      backgroundColor: isActive
+        ? '#eff6ff'
+        : 'transparent',
+      color: isActive ? '#2563eb' : '#334155',
+      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+      fontWeight: isActive ? '700' : '500',
+      border: isActive
+        ? '1px solid #bfdbfe'
+        : '1px solid transparent',
+      boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.1)' : 'none'
+    }),
+    header: {
+      padding: isMobile ? '12px 16px' : '16px 24px',
+      borderBottom: '1px solid #e2e8f0',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: '#ffffff',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      zIndex: 10
+    },
+    messageList: {
+      flex: 1,
+      padding: isMobile ? '14px 12px' : '24px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: isMobile ? '14px' : '16px',
+      backgroundColor: '#f8fafc'
+    },
     messageBubble: (isMine, isTask) => ({
       position: 'relative',
-      maxWidth: isTask ? '400px' : '70%',
+      maxWidth: isTask ? '420px' : isMobile ? '86%' : '72%',
       width: isTask ? '100%' : 'auto',
-      padding: isTask ? '0' : '12px 16px',
-      borderRadius: '12px',
-      backgroundColor: isTask ? 'var(--bg-card, #161b26)' : isMine ? 'var(--primary)' : 'var(--bg-main)',
-      color: isTask ? 'var(--text-primary)' : isMine ? 'white' : 'var(--text-primary)',
-      borderBottomRightRadius: isMine ? '4px' : '12px',
-      borderBottomLeftRadius: !isMine ? '4px' : '12px',
+      padding: isTask ? '0' : isMobile ? '11px 15px' : '13px 18px',
+      borderRadius: '18px',
+      backgroundColor: isTask
+        ? '#ffffff'
+        : isMine
+          ? '#2563eb'
+          : '#ffffff',
+      backgroundImage: isMine && !isTask
+        ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
+        : 'none',
+      color: isTask ? '#0f172a' : isMine ? '#ffffff' : '#0f172a',
+      borderBottomRightRadius: isMine ? '4px' : '18px',
+      borderBottomLeftRadius: !isMine ? '4px' : '18px',
       alignSelf: isMine ? 'flex-end' : 'flex-start',
-      boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-      border: isTask ? '1px solid var(--border-light)' : 'none'
+      boxShadow: isMine
+        ? '0 4px 14px rgba(37, 99, 235, 0.25)'
+        : '0 2px 8px rgba(15, 23, 42, 0.05)',
+      border: isTask
+        ? '1px solid #e2e8f0'
+        : !isMine
+          ? '1px solid #e2e8f0'
+          : 'none',
+      fontSize: isMobile ? '0.9rem' : '0.95rem',
+      lineHeight: '1.5'
     }),
     taskCard: {
-      header: { padding: '12px 16px', borderBottom: '1px solid var(--border-light)', backgroundColor: 'rgba(0,0,0,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTopLeftRadius: '12px', borderTopRightRadius: '12px' },
-      body: { padding: '16px', fontSize: '0.9rem', color: 'var(--text-secondary)' },
-      footer: { padding: '12px 16px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+      header: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTopLeftRadius: '12px', borderTopRightRadius: '12px' },
+      body: { padding: '16px', fontSize: '0.9rem', color: '#334155' },
+      footer: { padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
       statusSelect: (status) => ({
         padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', outline: 'none',
-        backgroundColor: status === 'Done' ? 'var(--success)' : status === 'In Progress' ? 'var(--warning)' : 'var(--bg-main)',
-        color: status === 'To Do' ? 'var(--text-primary)' : 'white'
+        backgroundColor: status === 'Done' ? '#16a34a' : status === 'In Progress' ? '#d97706' : '#f1f5f9',
+        color: status === 'To Do' ? '#0f172a' : 'white'
       }),
       priorityBadge: (priority) => ({
         padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 'bold',
         backgroundColor: priority === 'high' ? 'rgba(239, 68, 68, 0.1)' : priority === 'medium' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-        color: priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#10b981'
+        color: priority === 'high' ? '#dc2626' : priority === 'medium' ? '#d97706' : '#16a34a'
       })
     },
-    messageSender: (isMine) => ({ fontSize: '0.75rem', color: isMine ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)', marginBottom: '4px', display: 'flex', gap: '8px', justifyContent: isMine ? 'flex-end' : 'flex-start' }),
-    inputArea: { padding: '20px', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-main)' },
-    inputForm: { display: 'flex', gap: '10px' },
-    inputField: { flex: 1, padding: '12px 20px', borderRadius: '24px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-input, #0b0f19)', color: 'var(--text-primary)', outline: 'none' },
-    sendBtn: { padding: '12px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    createTaskChip: {
-      position: 'absolute', top: '-15px', right: '-10px', backgroundColor: 'var(--accent)', color: 'white', padding: '4px 10px', borderRadius: '16px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 10, border: 'none'
+    messageSender: (isMine) => ({ fontSize: '0.75rem', color: '#64748b', marginBottom: '4px', display: 'flex', gap: '8px', justifyContent: isMine ? 'flex-end' : 'flex-start', fontWeight: '600' }),
+    inputArea: {
+      padding: isMobile ? '10px 12px' : '14px 24px',
+      borderTop: '1px solid #e2e8f0',
+      backgroundColor: '#ffffff',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      position: isMobile ? 'sticky' : 'relative',
+      bottom: 0,
+      zIndex: 20
     },
-    modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(3, 7, 18, 0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(5px)' },
-    modalContent: { width: '450px', backgroundColor: '#161b26', border: '1px solid var(--border-light, rgba(255,255,255,0.08))', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)', color: 'var(--text-primary)' },
-    modalContentLarge: { width: '800px', maxWidth: '90%', backgroundColor: '#161b26', border: '1px solid var(--border-light, rgba(255,255,255,0.08))', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', maxHeight: '90vh', overflowY: 'auto' },
+    inputForm: { display: 'flex', gap: '10px', alignItems: 'center' },
+    inputField: {
+      flex: 1,
+      padding: isMobile ? '12px 18px' : '12px 20px',
+      borderRadius: '24px',
+      border: '1px solid #cbd5e1',
+      backgroundColor: '#f8fafc',
+      color: '#0f172a',
+      outline: 'none',
+      fontSize: isMobile ? '0.92rem' : '0.95rem',
+      transition: 'border-color 0.2s, box-shadow 0.2s'
+    },
+    sendBtn: {
+      padding: isMobile ? '11px' : '12px',
+      borderRadius: '50%',
+      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+      color: 'white',
+      border: 'none',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+      transition: 'transform 0.15s ease'
+    },
+    createTaskChip: {
+      position: 'absolute', top: '-15px', right: '-10px', backgroundColor: '#2563eb', color: 'white', padding: '4px 10px', borderRadius: '16px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 10, border: 'none'
+    },
+    modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(5px)' },
+    modalContent: { width: '450px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', color: '#0f172a' },
+    modalContentLarge: { width: '800px', maxWidth: '90%', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', color: '#0f172a', display: 'flex', flexDirection: 'column', maxHeight: '90vh', overflowY: 'auto' },
     kanbanContainer: { display: 'flex', gap: '20px', height: '100%', overflowX: 'auto', paddingBottom: '20px' },
-    kanbanColumn: { flex: '1', minWidth: '300px', backgroundColor: 'rgba(22, 27, 38, 0.65)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' },
-    kanbanColHeader: { padding: '15px 20px', fontWeight: 'bold', fontSize: '1rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'rgba(0,0,0,0.02)' },
+    kanbanColumn: { flex: '1', minWidth: '300px', backgroundColor: '#f8fafc', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e2e8f0' },
+    kanbanColHeader: { padding: '15px 20px', fontWeight: 'bold', fontSize: '1rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#0f172a' },
     kanbanColBody: { padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto', flex: 1 }
   };
 
@@ -1911,6 +2018,31 @@ const Workspace = ({ currentUser }) => {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
+  const formatMessageTimestamp = (dateInput) => {
+    if (!dateInput) return '';
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (isToday) {
+      return `Today at ${timeStr}`;
+    }
+    if (isYesterday) {
+      return `Yesterday at ${timeStr}`;
+    }
+
+    const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${dateStr}, ${timeStr}`;
+  };
+
   const filteredTasks = boardTasks.filter(t => {
     if (taskFilter === 'my-tasks') {
       if (!t.assignees?.some(a => a._id === currentUser._id)) return false;
@@ -1924,7 +2056,7 @@ const Workspace = ({ currentUser }) => {
     return true;
   });
 
-  const groupRooms = rooms.filter(r => r.type !== 'direct');
+  const groupRooms = rooms.filter(r => r.type !== 'direct').filter((r, idx, arr) => arr.findIndex(t => t.name?.toLowerCase() === r.name?.toLowerCase() || t._id === r._id) === idx);
   const otherUsers = allUsers.filter(u => u._id !== currentUser._id);
   
   // Message content formatter for Markdown & Download Links
@@ -2121,10 +2253,10 @@ const Workspace = ({ currentUser }) => {
   };
 
   return (
-    <div style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: isMobile ? '4px 0' : '20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
       
       {/* Top Header & Tab Toggles */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: isMobile ? '10px' : '20px', justifyContent: 'space-between', padding: isMobile ? '0 8px' : '0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <MessageSquare size={24} color="var(--primary)" /> Team Workspace
@@ -2134,38 +2266,66 @@ const Workspace = ({ currentUser }) => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', backgroundColor: 'var(--bg-card, #161b26)', padding: '4px', borderRadius: '24px', border: '1px solid var(--border-light)' }}>
+        <div style={{ display: 'flex', gap: '6px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '24px', border: '1px solid #cbd5e1' }}>
           <button 
             onClick={() => setWorkspaceTab('chat')} 
-            style={{ padding: '8px 24px', borderRadius: '20px', border: 'none', background: workspaceTab === 'chat' ? 'var(--primary)' : 'transparent', color: workspaceTab === 'chat' ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
+            style={{ padding: '8px 24px', borderRadius: '20px', border: 'none', background: workspaceTab === 'chat' ? '#2563eb' : 'transparent', color: workspaceTab === 'chat' ? 'white' : '#475569', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
           >
             Chat Rooms
           </button>
           <button 
             onClick={() => setWorkspaceTab('tasks')} 
-            style={{ padding: '8px 24px', borderRadius: '20px', border: 'none', background: workspaceTab === 'tasks' ? 'var(--primary)' : 'transparent', color: workspaceTab === 'tasks' ? 'white' : 'var(--text-secondary)', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
+            style={{ padding: '8px 24px', borderRadius: '20px', border: 'none', background: workspaceTab === 'tasks' ? '#2563eb' : 'transparent', color: workspaceTab === 'tasks' ? 'white' : '#475569', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
           >
             Task Board
           </button>
         </div>
       </div>
 
-      <div style={wsStyles.container}>
+      <div style={wsStyles.container} className="workspace-main-container">
         
         {workspaceTab === 'chat' && (
           <>
             {/* Left Sidebar: Channels & DMs */}
-            <div className="glass-panel" style={wsStyles.sidebar}>
+            <div className={`glass-panel workspace-sidebar-panel ${isMobile && mobileActiveView === 'chat' ? 'ws-hide-mobile' : ''}`} style={wsStyles.sidebar}>
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>Channels</h3>
-                  <button onClick={() => setShowCreateRoomModal(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><Plus size={16} /></button>
+                  <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>Channels & Groups</h3>
+                  <button onClick={() => setShowCreateRoomModal(true)} title="Create New Channel / Group" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)' }}><Plus size={18} /></button>
                 </div>
+
+                <button
+                  onClick={() => setShowCreateRoomModal(true)}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.85rem',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(124, 58, 237, 0.15))',
+                    border: '1px dashed var(--primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'center',
+                    gap: '6px',
+                    margin: '0.2rem 0 0.8rem 0',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Plus size={15} color="var(--primary)" />
+                  <span>➕ Create Custom Channel / Group</span>
+                </button>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   {groupRooms.map(room => (
-                    <div key={room._id} style={wsStyles.roomItem(activeRoom?._id === room._id)} onClick={() => setActiveRoom(room)}>
-                      <Hash size={18} /><span>{room.name}</span>
+                    <div key={room._id} style={wsStyles.roomItem(activeRoom?._id === room._id)} onClick={() => { setActiveRoom(room); setMobileActiveView('chat'); }}>
+                      <Hash size={18} />
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{room.name}</span>
+                        {room.description && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{room.description}</span>}
+                      </div>
                       {unreadCounts[room._id] > 0 && (
                         <div style={{
                           marginLeft: 'auto',
@@ -2197,7 +2357,7 @@ const Workspace = ({ currentUser }) => {
                     const isActive = existingRoom && activeRoom?._id === existingRoom._id;
                     const isOnline = onlineUsers.includes(user._id);
                     return (
-                      <div key={user._id} style={wsStyles.roomItem(isActive)} onClick={() => handleUserDMClick(user)}>
+                      <div key={user._id} style={wsStyles.roomItem(isActive)} onClick={() => { handleUserDMClick(user); setMobileActiveView('chat'); }}>
                         <div style={{
                           width: '8px',
                           height: '8px',
@@ -2229,6 +2389,7 @@ const Workspace = ({ currentUser }) => {
 
             {/* Right Area: Chat Stream */}
             <div 
+              className={`workspace-chat-panel ${isMobile && mobileActiveView === 'sidebar' ? 'ws-hide-mobile' : ''}`}
               style={{ ...wsStyles.chatArea, position: 'relative' }}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -2259,6 +2420,28 @@ const Workspace = ({ currentUser }) => {
                   {/* Header */}
                   <div style={wsStyles.header}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {isMobile && (
+                        <button
+                          type="button"
+                          onClick={() => setMobileActiveView('sidebar')}
+                          style={{
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            border: '1px solid var(--primary)',
+                            color: 'var(--primary)',
+                            borderRadius: '8px',
+                            padding: '4px 10px',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginRight: '6px'
+                          }}
+                        >
+                          ← Chats
+                        </button>
+                      )}
                       {activeRoom.type === 'direct' ? <Users size={24} color="var(--primary)" /> : <Hash size={24} color="var(--primary)" />}
                       <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{getActiveRoomName()}</h3>
                     </div>
@@ -2273,11 +2456,11 @@ const Workspace = ({ currentUser }) => {
                           onChange={(e) => setSearchQuery(e.target.value)} 
                           style={{
                             width: '100%',
-                            padding: '6px 12px',
+                            padding: '6px 14px',
                             borderRadius: '16px',
-                            border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-                            backgroundColor: 'var(--bg-input, #0b0f19)',
-                            color: 'var(--text-primary)',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#f8fafc',
+                            color: '#0f172a',
                             fontSize: '0.85rem',
                             outline: 'none'
                           }} 
@@ -2354,32 +2537,32 @@ const Workspace = ({ currentUser }) => {
                   </div>
 
                   {/* Timeline Categories Filters */}
-                  <div style={{ display: 'flex', gap: '8px', padding: '10px 20px', borderBottom: '1px solid var(--border-light, rgba(255,255,255,0.08))', backgroundColor: 'rgba(0,0,0,0.15)', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', padding: '10px 20px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#ffffff', flexWrap: 'wrap' }}>
                     <button 
                       type="button"
                       onClick={() => setChatFilter('all')}
-                      style={{ padding: '6px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: chatFilter === 'all' ? 'var(--primary)' : 'transparent', color: chatFilter === 'all' ? '#0b0f19' : 'var(--text-secondary)' }}
+                      style={{ padding: '6px 14px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', border: chatFilter === 'all' ? 'none' : '1px solid #cbd5e1', cursor: 'pointer', backgroundColor: chatFilter === 'all' ? '#2563eb' : '#f1f5f9', color: chatFilter === 'all' ? '#ffffff' : '#475569', boxShadow: chatFilter === 'all' ? '0 2px 8px rgba(37,99,235,0.2)' : 'none' }}
                     >
                       All Messages
                     </button>
                     <button 
                       type="button"
                       onClick={() => setChatFilter('voice')}
-                      style={{ padding: '6px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: chatFilter === 'voice' ? 'var(--primary)' : 'transparent', color: chatFilter === 'voice' ? '#0b0f19' : 'var(--text-secondary)' }}
+                      style={{ padding: '6px 14px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', border: chatFilter === 'voice' ? 'none' : '1px solid #cbd5e1', cursor: 'pointer', backgroundColor: chatFilter === 'voice' ? '#2563eb' : '#f1f5f9', color: chatFilter === 'voice' ? '#ffffff' : '#475569', boxShadow: chatFilter === 'voice' ? '0 2px 8px rgba(37,99,235,0.2)' : 'none' }}
                     >
                       🎙️ Memos
                     </button>
                     <button 
                       type="button"
                       onClick={() => setChatFilter('task')}
-                      style={{ padding: '6px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: chatFilter === 'task' ? 'var(--primary)' : 'transparent', color: chatFilter === 'task' ? '#0b0f19' : 'var(--text-secondary)' }}
+                      style={{ padding: '6px 14px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', border: chatFilter === 'task' ? 'none' : '1px solid #cbd5e1', cursor: 'pointer', backgroundColor: chatFilter === 'task' ? '#2563eb' : '#f1f5f9', color: chatFilter === 'task' ? '#ffffff' : '#475569', boxShadow: chatFilter === 'task' ? '0 2px 8px rgba(37,99,235,0.2)' : 'none' }}
                     >
                       📋 Tasks
                     </button>
                     <button 
                       type="button"
                       onClick={() => setChatFilter('file')}
-                      style={{ padding: '6px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: chatFilter === 'file' ? 'var(--primary)' : 'transparent', color: chatFilter === 'file' ? '#0b0f19' : 'var(--text-secondary)' }}
+                      style={{ padding: '6px 14px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', border: chatFilter === 'file' ? 'none' : '1px solid #cbd5e1', cursor: 'pointer', backgroundColor: chatFilter === 'file' ? '#2563eb' : '#f1f5f9', color: chatFilter === 'file' ? '#ffffff' : '#475569', boxShadow: chatFilter === 'file' ? '0 2px 8px rgba(37,99,235,0.2)' : 'none' }}
                     >
                       📁 Attachments
                     </button>
@@ -2413,25 +2596,61 @@ const Workspace = ({ currentUser }) => {
                           return <div style={{ margin: 'auto', color: 'var(--text-secondary)' }}>No matching messages found.</div>;
                         }
 
-                        return filteredMessages.map(msg => {
+                        let lastMsgDateStr = '';
+
+                        return filteredMessages.map((msg, idx) => {
                           const isMine = msg.senderId?._id === currentUser._id;
                           const isTask = msg.type === 'task-card';
                           
+                          // Format Date Header Divider
+                          const msgDate = new Date(msg.createdAt);
+                          const dateKey = !isNaN(msgDate.getTime()) ? msgDate.toDateString() : '';
+                          const showDateHeader = dateKey && dateKey !== lastMsgDateStr;
+                          if (showDateHeader) {
+                            lastMsgDateStr = dateKey;
+                          }
+
+                          // Readable Date Divider Text
+                          let dateHeaderLabel = '';
+                          if (showDateHeader) {
+                            const now = new Date();
+                            const yesterday = new Date(now);
+                            yesterday.setDate(yesterday.getDate() - 1);
+                            if (msgDate.toDateString() === now.toDateString()) {
+                              dateHeaderLabel = 'Today';
+                            } else if (msgDate.toDateString() === yesterday.toDateString()) {
+                              dateHeaderLabel = 'Yesterday';
+                            } else {
+                              dateHeaderLabel = msgDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                            }
+                          }
+
                           return (
-                            <div key={msg._id} id={`msg-${msg._id}`} style={{ display: 'flex', flexDirection: 'column', transition: 'background-color 0.5s ease', borderRadius: '8px' }}>
-                              <div style={wsStyles.messageSender(isMine && !isTask)}>
-                                <span>{msg.senderId?.name || msg.senderId?.username || 'System'}</span>
-                                <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  {renderReadReceipt(msg)}
-                                </span>
-                              </div>
-                              
-                              <div 
-                                style={wsStyles.messageBubble(isMine, isTask)}
-                                onMouseEnter={() => !isTask && setHoveredMessageId(msg._id)}
-                                onMouseLeave={() => !isTask && setHoveredMessageId(null)}
-                              >
+                            <React.Fragment key={msg._id || idx}>
+                              {showDateHeader && (
+                                <div style={{ display: 'flex', alignItems: 'center', margin: '1.25rem 0 0.65rem 0', gap: '1rem' }}>
+                                  <div style={{ flex: 1, height: '1px', background: 'var(--border-light, rgba(255,255,255,0.1))' }} />
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a78bfa', background: 'rgba(167, 139, 250, 0.12)', padding: '0.25rem 0.85rem', borderRadius: '12px', letterSpacing: '0.04em' }}>
+                                    📅 {dateHeaderLabel}
+                                  </span>
+                                  <div style={{ flex: 1, height: '1px', background: 'var(--border-light, rgba(255,255,255,0.1))' }} />
+                                </div>
+                              )}
+
+                              <div id={`msg-${msg._id}`} style={{ display: 'flex', flexDirection: 'column', transition: 'background-color 0.5s ease', borderRadius: '8px' }}>
+                                <div style={wsStyles.messageSender(isMine && !isTask)}>
+                                  <span>{msg.senderId?.name || msg.senderId?.username || 'System'}</span>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', opacity: 0.88 }}>
+                                    <span>📅 {formatMessageTimestamp(msg.createdAt)}</span>
+                                    {renderReadReceipt(msg)}
+                                  </span>
+                                </div>
+                                
+                                <div 
+                                  style={wsStyles.messageBubble(isMine, isTask)}
+                                  onMouseEnter={() => !isTask && setHoveredMessageId(msg._id)}
+                                  onMouseLeave={() => !isTask && setHoveredMessageId(null)}
+                                >
                                 {/* TASK CARD RENDERING in CHAT */}
                                 {isTask && msg.taskId ? (
                                    <div>
@@ -2720,6 +2939,7 @@ const Workspace = ({ currentUser }) => {
                                 )}
                               </div>
                             </div>
+                          </React.Fragment>
                           );
                         });
                       })()
@@ -3830,31 +4050,53 @@ const Workspace = ({ currentUser }) => {
         <div style={wsStyles.modalOverlay}>
           <div style={wsStyles.modalContent}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0 }}>Create Channel</h3>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={20} color="var(--primary)" /> Create Custom Channel / Group
+              </h3>
               <button onClick={() => setShowCreateRoomModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X size={20} /></button>
             </div>
             
             <form onSubmit={handleCreateRoomSubmit}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Channel Name</label>
-                <input required autoFocus type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none' }} placeholder="e.g. general-discussions" />
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Channel / Group Name</label>
+                <input required autoFocus type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem' }} placeholder="e.g. urgent-orders, printing-issues, sales-leads" />
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Select Members to Invite</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Select Members to Invite</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newRoomMembers.length === otherUsers.length) {
+                        setNewRoomMembers([]);
+                      } else {
+                        setNewRoomMembers(otherUsers.map(u => u._id));
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}
+                  >
+                    {newRoomMembers.length === otherUsers.length ? 'Deselect All' : 'Select All Members'}
+                  </button>
+                </div>
+
                 <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: 'var(--bg-main)' }}>
-                  {otherUsers.map(u => (
-                    <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                      <input type="checkbox" checked={newRoomMembers.includes(u._id)} onChange={() => handleRoomMemberToggle(u._id)} />
-                      <span>{u.name || u.username} ({u.email})</span>
-                    </label>
-                  ))}
+                  {otherUsers.length === 0 ? (
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center', padding: '8px' }}>No other team members found.</span>
+                  ) : (
+                    otherUsers.map(u => (
+                      <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', color: 'var(--text-primary)', padding: '4px', borderRadius: '4px' }}>
+                        <input type="checkbox" checked={newRoomMembers.includes(u._id)} onChange={() => handleRoomMemberToggle(u._id)} />
+                        <span>{u.name || u.username} ({u.email || u.role || 'Staff'})</span>
+                      </label>
+                    ))
+                  )}
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" onClick={() => setShowCreateRoomModal(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'transparent', color: 'var(--text-primary)', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary)', color: '#0b0f19', cursor: 'pointer', fontWeight: 'bold' }}>Create Room</button>
+                <button type="submit" style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary)', color: '#0b0f19', cursor: 'pointer', fontWeight: 'bold' }}>Create Channel</button>
               </div>
             </form>
           </div>

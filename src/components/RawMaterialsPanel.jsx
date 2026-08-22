@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import {
   RefreshCw, PlusCircle, ArrowDownToLine, ArrowUpFromLine,
   Layers, Database, Settings, Trash2, FileDown, Search, X,
@@ -935,9 +936,6 @@ export default function RawMaterialsPanel() {
         <button onClick={() => setIsPdfFilterOpen(true)} className="btn-secondary" title="Download Ledger PDF" style={{ gap: '0.4rem' }}>
           <FileDown size={16} /> PDF Report
         </button>
-        <button onClick={fetchData} className="btn-icon" title="Refresh Data">
-          <RefreshCw size={18} className={loading ? 'spin-loader' : ''} />
-        </button>
       </div>
 
       {error && <div style={{ color: 'red', padding: '1rem', background: '#ffebeb', borderRadius: '8px' }}>{error}</div>}
@@ -1143,7 +1141,7 @@ export default function RawMaterialsPanel() {
                   ) : (
                     inwardTx.map(t => (
                       <tr key={t._id}>
-                        <td>{new Date(t.date).toLocaleDateString('en-IN')}</td>
+                        <td>{formatDateDDMMYYYY(t.date)}</td>
                         <td><strong>{t.challanNo || '-'}</strong></td>
                         <td>{renderMaterialCell(t)}</td>
                         <td>{t.vendorName || '-'}</td>
@@ -1290,7 +1288,7 @@ export default function RawMaterialsPanel() {
                   ) : (
                     outwardTx.map(t => (
                       <tr key={t._id}>
-                        <td>{new Date(t.date).toLocaleDateString('en-IN')}</td>
+                        <td>{formatDateDDMMYYYY(t.date)}</td>
                         <td><span className="badge badge-info">{t.jobNo || '-'}</span></td>
                         <td>{renderMaterialCell(t)}</td>
                         <td>{t.partyName || '-'}</td>

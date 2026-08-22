@@ -13,11 +13,34 @@ export const SocketProvider = ({ children }) => {
     // Get the base API URL and format it to target the socket server
     // (If API is http://3.7.174.180:3001/v1, socket server is on http://3.7.174.180:3001)
     const apiUrl = getBaseUrl();
-    const socketUrl = apiUrl.replace(/\/v1\/?$/, '');
+    let socketUrl = apiUrl.replace(/\/v1\/?$/, '');
+    if (!socketUrl || !socketUrl.startsWith('http')) {
+      socketUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    }
 
     const newSocket = io(socketUrl, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 3000,
+      timeout: 10000
+    });
+
+    newSocket.on('connect_error', () => {
+      // Suppress noisy console error logs when socket is offline or reconnecting
+    });
+
+    newSocket.on('force-system-reload', (data) => {
+      console.log('⚡ Force system reload signal received:', data);
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          for (let name of names) caches.delete(name);
+        });
+      }
+      setTimeout(() => {
+        window.location.reload(true);
+      }, 300);
     });
 
     setSocket(newSocket);

@@ -19,6 +19,7 @@ import {
   Send,
   X
 } from 'lucide-react';
+import DateRangePicker from './DateRangePicker';
 
 export default function ReportsCenter({ department }) {
   const [activeDepartment, setActiveDepartment] = useState(() => {
@@ -29,8 +30,12 @@ export default function ReportsCenter({ department }) {
     if (department === 'elite-online') return 'sales';
     return 'smart-dashboard';
   }); 
-  const [dateStart, setDateStart] = useState(() => new Date().toISOString().split('T')[0]);
-  const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [datePreset, setDatePreset] = useState('today');
+  const [dateStart, setDateStart] = useState(todayStr);
+  const [dateEnd, setDateEnd] = useState(todayStr);
+  const [customDateStart, setCustomDateStart] = useState('');
+  const [customDateEnd, setCustomDateEnd] = useState('');
   const [timeStart, setTimeStart] = useState('00:00');
   const [timeEnd, setTimeEnd] = useState('23:59');
   const [searchCode, setSearchCode] = useState('');
@@ -85,8 +90,8 @@ export default function ReportsCenter({ department }) {
     setError('');
     try {
       let data = null;
-      const combinedStart = `${dateStart}T${timeStart}:00`;
-      const combinedEnd = `${dateEnd}T${timeEnd}:59`;
+      const combinedStart = dateStart ? `${dateStart}T${timeStart || '00:00'}:00` : '';
+      const combinedEnd = dateEnd ? `${dateEnd}T${timeEnd || '23:59'}:59` : '';
 
       if (activeDepartment === 'elite-print') {
         const res = await api.getElitePrintReports(combinedStart, combinedEnd);
@@ -128,9 +133,9 @@ export default function ReportsCenter({ department }) {
         return;
       }
       
-      const combinedStart = `${dateStart}T${timeStart}:00`;
-      const combinedEnd = `${dateEnd}T${timeEnd}:59`;
-      const dateText = `${combinedStart} to ${combinedEnd}`;
+      const combinedStart = dateStart ? `${dateStart}T${timeStart || '00:00'}:00` : '';
+      const combinedEnd = dateEnd ? `${dateEnd}T${timeEnd || '23:59'}:59` : '';
+      const dateText = (dateStart || dateEnd) ? `${combinedStart || 'Start'} to ${combinedEnd || 'Today'}` : 'All Time';
       const reportTitle = getReportTitle();
       const apiBase = getBaseUrl();
       const fullBase = apiBase.startsWith('http') ? apiBase : `${window.location.origin}${apiBase}`;
@@ -194,13 +199,15 @@ export default function ReportsCenter({ department }) {
     setDownloading(true);
     setError('');
     try {
-      const combinedStart = `${dateStart}T${timeStart}:00`;
-      const combinedEnd = `${dateEnd}T${timeEnd}:59`;
+      const combinedStart = dateStart ? `${dateStart}T${timeStart || '00:00'}:00` : '';
+      const combinedEnd = dateEnd ? `${dateEnd}T${timeEnd || '23:59'}:59` : '';
       
-      const formattedDateStart = combinedStart.replace(/:/g, '-');
-      const formattedDateEnd = combinedEnd.replace(/:/g, '-');
+      const formattedDateStart = dateStart ? dateStart : 'all';
+      const formattedDateEnd = dateEnd ? dateEnd : 'all';
       
-      if (activeReportTab === 'stock-value') {
+      if (activeDepartment === 'elite-print') {
+        await api.downloadElitePrintReport(combinedStart, combinedEnd, `Elite_Print_Department_Report_${formattedDateStart}_to_${formattedDateEnd}.pdf`);
+      } else if (activeReportTab === 'stock-value') {
         await api.downloadInventoryReport('stock-value', combinedStart, combinedEnd, `Stock_Value_Report_${formattedDateStart}.pdf`);
       } else if (activeReportTab === 'stock-inward') {
         await api.downloadInventoryReport('stock-inward', combinedStart, combinedEnd, `Stock_Inward_Report_${formattedDateStart}_to_${formattedDateEnd}.pdf`);
@@ -371,42 +378,42 @@ export default function ReportsCenter({ department }) {
       <div className="glass-panel" style={styles.filterCard}>
         <div style={styles.filterRow}>
           {activeReportTab !== 'stock-value' && (
-            <>
-              <div style={styles.filterItem}>
-                <label style={styles.label}><Calendar size={13} /> Start Date</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <input 
-                    type="date" 
-                    value={dateStart} 
-                    onChange={(e) => setDateStart(e.target.value)} 
-                    style={styles.input} 
-                  />
-                  <input 
-                    type="time" 
-                    value={timeStart} 
-                    onChange={(e) => setTimeStart(e.target.value)} 
-                    style={{ ...styles.input, width: '90px' }} 
-                  />
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <DateRangePicker
+                preset={datePreset}
+                onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+                  setDatePreset(p);
+                  if (ds) setDateStart(ds);
+                  if (de) setDateEnd(de);
+                }}
+                customStart={customDateStart}
+                customEnd={customDateEnd}
+                onCustomChange={(s, e) => {
+                  setCustomDateStart(s);
+                  setCustomDateEnd(e);
+                }}
+              />
+              
+              {/* Stable Time Window Selector */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.4rem 0.75rem', height: '38px', boxShadow: '0 2px 6px rgba(15, 23, 42, 0.04)' }}>
+                <Clock size={15} color="#4f46e5" style={{ flexShrink: 0 }} />
+                <input 
+                  type="time" 
+                  value={timeStart} 
+                  onChange={(e) => setTimeStart(e.target.value)} 
+                  style={{ border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: '700', color: '#0f172a', width: '105px', minWidth: '105px', outline: 'none', cursor: 'pointer' }} 
+                  title="Report Start Time"
+                />
+                <span style={{ color: '#64748b', fontSize: '0.78rem', fontWeight: '800', flexShrink: 0 }}>to</span>
+                <input 
+                  type="time" 
+                  value={timeEnd} 
+                  onChange={(e) => setTimeEnd(e.target.value)} 
+                  style={{ border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: '700', color: '#0f172a', width: '105px', minWidth: '105px', outline: 'none', cursor: 'pointer' }} 
+                  title="Report End Time"
+                />
               </div>
-              <div style={styles.filterItem}>
-                <label style={styles.label}><Calendar size={13} /> End Date</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <input 
-                    type="date" 
-                    value={dateEnd} 
-                    onChange={(e) => setDateEnd(e.target.value)} 
-                    style={styles.input} 
-                  />
-                  <input 
-                    type="time" 
-                    value={timeEnd} 
-                    onChange={(e) => setTimeEnd(e.target.value)} 
-                    style={{ ...styles.input, width: '90px' }} 
-                  />
-                </div>
-              </div>
-            </>
+            </div>
           )}
 
           {(activeReportTab === 'sales' || activeReportTab === 'brand' || activeReportTab === 'brand-hourly') && (
@@ -434,7 +441,7 @@ export default function ReportsCenter({ department }) {
             </button>
             <button 
               onClick={handleDownloadPdf} 
-              disabled={loading || downloading || !reportData} 
+              disabled={loading || downloading} 
               className="btn-primary" 
               style={{ ...styles.actionBtn, background: 'var(--primary)', color: '#000' }}
             >
@@ -469,24 +476,31 @@ export default function ReportsCenter({ department }) {
               {activeReportTab === 'smart-dashboard' && (
                 <>
                   <div className="glass-panel" style={styles.summaryCard}>
-                    <Clock size={20} color="var(--primary)" />
+                    <IndianRupee size={20} color="var(--primary)" />
+                    <div>
+                      <div style={styles.summaryValue}>{formatPrice(reportData.stockValuation?.grandTotalStockValue || 0)}</div>
+                      <div style={styles.summaryLabel}>Total Printing Inventory Value</div>
+                    </div>
+                  </div>
+                  <div className="glass-panel" style={styles.summaryCard}>
+                    <Layers3 size={20} color="#38bdf8" />
+                    <div>
+                      <div style={styles.summaryValue}>{(reportData.stockValuation?.totalFabricMtr || 0).toLocaleString('en-IN')} m</div>
+                      <div style={styles.summaryLabel}>Fabric Stock Available</div>
+                    </div>
+                  </div>
+                  <div className="glass-panel" style={styles.summaryCard}>
+                    <IndianRupee size={20} color="var(--success)" />
+                    <div>
+                      <div style={styles.summaryValue}>{formatPrice(reportData.stockValuation?.totalFabricValue || 0)}</div>
+                      <div style={styles.summaryLabel}>Fabric Stock Value</div>
+                    </div>
+                  </div>
+                  <div className="glass-panel" style={styles.summaryCard}>
+                    <Clock size={20} color="#a78bfa" />
                     <div>
                       <div style={styles.summaryValue}>{reportData.avgPrintToDelivery || 0} Days</div>
                       <div style={styles.summaryLabel}>Avg Print-to-Delivery Time</div>
-                    </div>
-                  </div>
-                  <div className="glass-panel" style={styles.summaryCard}>
-                    <AlertCircle size={20} color={reportData.lowStockAlerts?.length > 0 ? '#ef4444' : 'var(--success)'} />
-                    <div>
-                      <div style={styles.summaryValue}>{reportData.lowStockAlerts?.length || 0} Items</div>
-                      <div style={styles.summaryLabel}>Low Stock Alerts</div>
-                    </div>
-                  </div>
-                  <div className="glass-panel" style={styles.summaryCard}>
-                    <Activity size={20} color={reportData.delayedCards?.length > 0 ? '#fbbf24' : 'var(--success)'} />
-                    <div>
-                      <div style={styles.summaryValue}>{reportData.delayedCards?.length || 0} Cards</div>
-                      <div style={styles.summaryLabel}>Delayed Job Cards (&gt;7 Days)</div>
                     </div>
                   </div>
                 </>
@@ -750,6 +764,57 @@ export default function ReportsCenter({ department }) {
                   </div>
                 )}
 
+                {/* 1.5. STOCK VALUATION IN VALUES (RUPEES ₹) */}
+                {reportData.stockValuation && (
+                  <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <IndianRupee size={18} color="var(--primary)" /> Printing Inventory Stock Valuation (Fabric in ₹ Values)
+                      </h4>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '6px', padding: '0.25rem 0.65rem' }}>
+                        Total Fabric Valuation: {formatPrice(reportData.stockValuation.totalFabricValue)}
+                      </span>
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-light)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                            <th style={{ padding: '0.5rem' }}>#</th>
+                            <th style={{ padding: '0.5rem' }}>Fabric Quality</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'right' }}>Available Stock</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'right' }}>Est. Rate (₹/m)</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'right' }}>Valuation Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(!reportData.stockValuation.fabricValuationDetails || reportData.stockValuation.fabricValuationDetails.length === 0) ? (
+                            <tr><td colSpan="5" style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No active fabric stock recorded.</td></tr>
+                          ) : (
+                            reportData.stockValuation.fabricValuationDetails.map((f, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                <td style={{ padding: '0.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>{f.fabricQuality}</td>
+                                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 700, color: '#38bdf8' }}>{f.currentStock.toFixed(2)} mtr</td>
+                                <td style={{ padding: '0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>₹{f.rate.toFixed(2)}</td>
+                                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 800, color: '#34d399' }}>{formatPrice(f.totalValue)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: '2px solid var(--border-light)', fontWeight: 800 }}>
+                            <td colSpan="2" style={{ padding: '0.65rem 0.5rem', color: 'var(--text-primary)' }}>Total Fabric Inventory</td>
+                            <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', color: '#38bdf8' }}>{reportData.stockValuation.totalFabricMtr.toFixed(2)} mtr</td>
+                            <td style={{ padding: '0.65rem 0.5rem' }}></td>
+                            <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', color: '#34d399', fontSize: '0.95rem' }}>{formatPrice(reportData.stockValuation.totalFabricValue)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* 2. Timeline Flow & Urgent Delayed Cards Row */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
                   {/* Timeline Flow */}
@@ -904,12 +969,12 @@ export default function ReportsCenter({ department }) {
                   <div className="table-container" style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.6rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700 }}>Fabric Quality</th>
-                          <th style={{ padding: '0.6rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'right' }}>Current Stock</th>
-                          <th style={{ padding: '0.6rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'right' }}>7-Day Forecasted Demand</th>
-                          <th style={{ padding: '0.6rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'right' }}>30-Day Forecasted Demand</th>
-                          <th style={{ padding: '0.6rem 0.5rem', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center' }}>Safety Status</th>
+                        <tr style={{ background: '#0f172a', borderBottom: '1px solid var(--border-light)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.65rem 0.5rem', color: '#ffffff', fontWeight: 800 }}>Fabric Quality</th>
+                          <th style={{ padding: '0.65rem 0.5rem', color: '#ffffff', fontWeight: 800, textAlign: 'right' }}>Current Stock</th>
+                          <th style={{ padding: '0.65rem 0.5rem', color: '#ffffff', fontWeight: 800, textAlign: 'right' }}>7-Day Forecasted Demand</th>
+                          <th style={{ padding: '0.65rem 0.5rem', color: '#ffffff', fontWeight: 800, textAlign: 'right' }}>30-Day Forecasted Demand</th>
+                          <th style={{ padding: '0.65rem 0.5rem', color: '#ffffff', fontWeight: 800, textAlign: 'center' }}>Safety Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -920,27 +985,32 @@ export default function ReportsCenter({ department }) {
                             </td>
                           </tr>
                         ) : (
-                          reportData.fabricForecasts.map((forecast, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                              <td style={{ padding: '0.6rem 0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{forecast.fabricQuality}</td>
-                              <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: 700 }}>{forecast.currentStock} mtr</td>
-                              <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', color: 'var(--primary)' }}>{forecast.demand7Days} mtr</td>
-                              <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', color: 'var(--text-light)' }}>{forecast.demand30Days} mtr</td>
-                              <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
-                                <span style={{
-                                  background: forecast.status === 'Safe' ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.12)',
-                                  color: forecast.status === 'Safe' ? '#34d399' : '#f87171',
-                                  padding: '0.15rem 0.55rem',
-                                  borderRadius: '999px',
-                                  fontSize: '0.68rem',
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase'
-                                }}>
-                                  {forecast.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                          reportData.fabricForecasts.map((forecast, i) => {
+                            const isSafe = forecast.status === 'Safe' && Number(forecast.currentStock) > 0;
+                            const statusLabel = isSafe ? 'Safe' : (Number(forecast.currentStock) <= 0 ? 'Critical Shortage' : 'Shortage');
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                <td style={{ padding: '0.6rem 0.5rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase' }}>{forecast.fabricQuality}</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: 800, color: Number(forecast.currentStock) <= 0 ? '#f87171' : 'inherit' }}>{forecast.currentStock} mtr</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', color: 'var(--primary)', fontWeight: 700 }}>{forecast.demand7Days} mtr</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', color: 'var(--text-light)', fontWeight: 700 }}>{forecast.demand30Days} mtr</td>
+                                <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
+                                  <span style={{
+                                    background: isSafe ? 'rgba(52,211,153,0.15)' : 'rgba(239,68,68,0.2)',
+                                    color: isSafe ? '#34d399' : '#f87171',
+                                    border: isSafe ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(239,68,68,0.4)',
+                                    padding: '0.2rem 0.65rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 800,
+                                    textTransform: 'uppercase'
+                                  }}>
+                                    {statusLabel}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1984,8 +2054,8 @@ const styles = {
   },
   label: {
     fontSize: '0.75rem',
-    fontWeight: '600',
-    color: 'var(--text-muted)',
+    fontWeight: '800',
+    color: '#334155',
     display: 'flex',
     alignItems: 'center',
     gap: '0.3rem',
@@ -1995,6 +2065,11 @@ const styles = {
     width: '100%',
     padding: '0.5rem 0.75rem',
     fontSize: '0.85rem',
+    color: '#0f172a',
+    background: '#ffffff',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    fontWeight: '700'
   },
   actionsGroup: {
     display: 'flex',
@@ -2012,7 +2087,7 @@ const styles = {
     border: '1px solid rgba(239, 68, 68, 0.2)',
     borderRadius: 'var(--radius-sm)',
     padding: '0.75rem 1rem',
-    color: '#fca5a5',
+    color: '#dc2626',
     fontSize: '0.8rem',
     display: 'flex',
     alignItems: 'center',
@@ -2028,18 +2103,22 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '1rem',
+    background: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)'
   },
   summaryValue: {
-    fontSize: '1.2rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
+    fontSize: '1.3rem',
+    fontWeight: '800',
+    color: '#0f172a',
   },
   summaryLabel: {
-    fontSize: '0.7rem',
-    color: 'var(--text-muted)',
+    fontSize: '0.72rem',
+    color: '#475569',
     marginTop: '2px',
     textTransform: 'uppercase',
-    fontWeight: '500',
+    fontWeight: '800',
   },
   tableCard: {
     padding: '1.5rem',

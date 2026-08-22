@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { Search, RefreshCw, Save, Check, Clipboard, ChevronLeft, ChevronRight } from 'lucide-react';
+import JobCardTooltip from './JobCardTooltip';
+import DateRangePicker from './DateRangePicker';
 
 export default function JobCardTracking({ onPreview }) {
   const [cards, setCards] = useState([]);
@@ -9,8 +11,11 @@ export default function JobCardTracking({ onPreview }) {
   const [search, setSearch] = useState('');
   
   // Date range filters
+  const [datePreset, setDatePreset] = useState('all');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
+  const [customDateStart, setCustomDateStart] = useState('');
+  const [customDateEnd, setCustomDateEnd] = useState('');
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -52,8 +57,13 @@ export default function JobCardTracking({ onPreview }) {
 
   useEffect(() => {
     fetchCards();
-    const interval = setInterval(fetchCards, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchCards, 10000);
+    const handleDataRefresh = () => fetchCards();
+    window.addEventListener('elite-data-refresh', handleDataRefresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('elite-data-refresh', handleDataRefresh);
+    };
   }, [fetchCards]);
 
   // Handle local cell modifications
@@ -157,10 +167,16 @@ export default function JobCardTracking({ onPreview }) {
 
   // Get value for a cell, merging backend value with any local modifications
   const getValue = (card, field) => {
+    let val = card[field] ?? '';
     if (modifiedCards[card._id] && modifiedCards[card._id][field] !== undefined) {
-      return modifiedCards[card._id][field];
+      val = modifiedCards[card._id][field];
     }
-    return card[field] ?? '';
+    if ((field === 'printDate' || field === 'fusingDate' || field === 'deliveryDate') && val) {
+      if (typeof val === 'string' && val.includes('T')) {
+        return val.split('T')[0];
+      }
+    }
+    return val;
   };
 
   return (
@@ -198,29 +214,21 @@ export default function JobCardTracking({ onPreview }) {
             />
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: '0 1 auto' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>From:</span>
-            <input
-              type="date"
-              value={dateStart}
-              onChange={e => { setDateStart(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.6rem', fontSize: '0.82rem', width: '135px' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: '0 1 auto' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>To:</span>
-            <input
-              type="date"
-              value={dateEnd}
-              onChange={e => { setDateEnd(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.6rem', fontSize: '0.82rem', width: '135px' }}
-            />
-          </div>
-
-          <button onClick={fetchCards} className="btn-icon" title="Refresh">
-            <RefreshCw size={14} className={loading ? 'spin-loader' : ''} />
-          </button>
+          <DateRangePicker
+            preset={datePreset}
+            onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+              setDatePreset(p);
+              setDateStart(ds);
+              setDateEnd(de);
+              setPage(1);
+            }}
+            customStart={customDateStart}
+            customEnd={customDateEnd}
+            onCustomChange={(s, e) => {
+              setCustomDateStart(s);
+              setCustomDateEnd(e);
+            }}
+          />
         </div>
       </div>
 
@@ -331,16 +339,18 @@ export default function JobCardTracking({ onPreview }) {
                   <tr key={c._id} style={{ borderBottom: '1px solid var(--border-light)', background: isModified ? 'rgba(56, 189, 248, 0.03)' : 'transparent' }}>
                     {/* Job Card No (Clickable for print preview) */}
                     <td style={tdStyle}>
-                      <button 
-                        onClick={() => onPreview(c)}
-                        style={{
-                          background: 'none', border: 'none', color: 'var(--primary)',
-                          fontWeight: 800, cursor: 'pointer', padding: 0, textDecoration: 'underline',
-                          fontSize: '0.8rem', outline: 'none'
-                        }}
-                      >
-                        {c.jobNo}
-                      </button>
+                      <JobCardTooltip card={c}>
+                        <button 
+                          onClick={() => onPreview(c)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--primary)',
+                            fontWeight: 800, cursor: 'pointer', padding: 0, textDecoration: 'underline',
+                            fontSize: '0.8rem', outline: 'none'
+                          }}
+                        >
+                          {c.jobNo}
+                        </button>
+                      </JobCardTooltip>
                     </td>
 
                     {/* Party */}
@@ -391,12 +401,13 @@ export default function JobCardTracking({ onPreview }) {
                     {/* Print Mtr */}
                     <td style={tdStyle}>
                       <input
-                        type="number"
+                        type="text"
                         value={getValue(c, 'printMtr')}
-                        onChange={e => handleCellChange(c._id, 'printMtr', parseFloat(e.target.value) || 0)}
-                        onBlur={e => handleAutoSave(c._id, 'printMtr', parseFloat(e.target.value) || 0)}
+                        onChange={e => handleCellChange(c._id, 'printMtr', e.target.value)}
+                        onBlur={e => handleAutoSave(c._id, 'printMtr', e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                        style={{ ...inputStyle, width: '70px' }}
+                        placeholder="0 mtr"
+                        style={{ ...inputStyle, width: '95px', fontWeight: 700, color: '#38bdf8' }}
                       />
                     </td>
 
