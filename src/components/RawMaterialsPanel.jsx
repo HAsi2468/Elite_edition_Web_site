@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import {
-  RefreshCw, PlusCircle, ArrowDownToLine, ArrowUpFromLine,
-  Layers, Database, Settings, Trash2, FileDown, Search, X,
-  CheckCircle, AlertCircle, Calendar, Tag, User, Clipboard, Edit
+  Layers, Database, Settings, Trash2, Search, X, FileDown,
+  Plus, Edit, ArrowDownToLine, ArrowUpFromLine, RefreshCw, FileSpreadsheet, AlertCircle
 } from 'lucide-react';
+import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 
 const parseCanSize = (val) => {
   if (val === undefined || val === null || val === '') return 0;
@@ -20,7 +20,7 @@ const getSelectedCanSize = (currentVal, options) => {
   return match || currentVal;
 };
 
-export default function RawMaterialsPanel() {
+export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print' } = {}) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const currentUser = api.getCurrentUser();
   const isAdmin = currentUser?.role === 'admin';
@@ -36,129 +36,103 @@ export default function RawMaterialsPanel() {
 
   const fileInputRef = useRef(null);
 
-  const handleExportCsv = () => {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const itemsMap = new Map();
-
-    // 1. Gather combinations from transactions
-    transactions.forEach(t => {
-      const mName = String(t.materialName || '').trim();
-      if (!mName) return;
-
-      const panna = String(t.panna || '').trim();
-      const paperQuality = String(t.paperQuality || '').trim();
-      const color = String(t.color || '').trim();
-      const canSize = t.canSize || '';
-      const metersPerRoll = t.metersPerRoll || '';
-
-      const key = `${mName}|||${panna}|||${paperQuality}|||${color}|||${canSize}|||${metersPerRoll}`;
-      if (!itemsMap.has(key)) {
-        itemsMap.set(key, { materialName: mName, panna, paperQuality, color, canSize, metersPerRoll, openingStock: 0, inwardQty: 0, outwardQty: 0, currentStock: 0 });
-      }
-
-      const item = itemsMap.get(key);
-      const qty = Number(t.qty || 0);
-      const tDate = new Date(t.date);
-      const isPrev = tDate < startOfMonth;
-      const isAdj = t.notes && t.notes.includes('Adjustment');
-
-      if (isPrev) {
-        if (t.type === 'INWARD') {
-          item.openingStock += qty;
-        } else {
-          item.openingStock -= qty;
-        }
-      } else {
-        if (t.type === 'INWARD') {
-          if (!isAdj) item.inwardQty += qty;
-        } else {
-          if (!isAdj) item.outwardQty += qty;
-        }
-      }
-    });
-
-    // 2. Add configured base materials from materialsList if not present
-    materialsList.forEach(m => {
-      const mName = String(m || '').trim();
-      if (!mName) return;
-      
-      const isSub = mName.toLowerCase().includes('sublimation');
-      const isButter = mName.toLowerCase().includes('butter');
-      const isInk = mName.toLowerCase().includes('ink');
-      
-      const pannas = (isSub || isButter) && printConfig?.widths?.length > 0 ? printConfig.widths : [''];
-      const paperQualities = isSub && printConfig?.paperTypes?.length > 0 ? printConfig.paperTypes : [''];
-      const colors = isInk && printConfig?.inkColors?.length > 0 ? printConfig.inkColors : [''];
-
-      pannas.forEach(p => {
-        paperQualities.forEach(pq => {
-          colors.forEach(col => {
-            const canSize = isInk ? (mName.toLowerCase().includes('grando') ? 5 : 10) : '';
-            const metersPerRoll = (isSub || isButter) ? 100 : '';
-            const key = `${mName}|||${p}|||${pq}|||${col}|||${canSize}|||${metersPerRoll}`;
-            if (!itemsMap.has(key)) {
-              itemsMap.set(key, { materialName: mName, panna: p, paperQuality: pq, color: col, canSize, metersPerRoll, openingStock: 0, inwardQty: 0, outwardQty: 0, currentStock: 0 });
-            }
-          });
-        });
-      });
-    });
-
-    // 3. Compute final currentStock and format as CSV
-    const rows = [];
-    itemsMap.forEach(item => {
-      let totalIn = 0;
-      let totalOut = 0;
-      transactions.forEach(t => {
-        if (String(t.materialName || '').trim().toLowerCase() === item.materialName.toLowerCase() &&
-            String(t.panna || '').trim() === item.panna &&
-            String(t.paperQuality || '').trim() === item.paperQuality &&
-            String(t.color || '').trim() === item.color &&
-            (t.canSize || '') == item.canSize &&
-            (t.metersPerRoll || '') == item.metersPerRoll) {
-          if (t.type === 'INWARD') totalIn += Number(t.qty || 0);
-          else totalOut += Number(t.qty || 0);
-        }
-      });
-      item.currentStock = totalIn - totalOut;
-      rows.push(item);
-    });
-
-    // Generate CSV string
-    const headers = ['Material Name', 'Panna', 'Paper Quality', 'Color', 'Can Size', 'Meters Per Roll', 'Opening Stock', 'Inward Qty', 'Outward Qty', 'Current Stock', 'Date', 'Challan No', 'Vendor Name', 'Job No', 'Party Name', 'Notes'];
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => [
-        `"${r.materialName}"`,
-        `"${r.panna}"`,
-        `"${r.paperQuality}"`,
-        `"${r.color}"`,
-        r.canSize,
-        r.metersPerRoll,
-        r.openingStock.toFixed(2),
-        r.inwardQty.toFixed(2),
-        r.outwardQty.toFixed(2),
-        r.currentStock.toFixed(2),
-        '""', // Date
-        '""', // Challan No
-        '""', // Vendor Name
-        '""', // Job No
-        '""', // Party Name
-        '""'  // Notes
-      ].join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const downloadCsvFile = (csvContent, fileName) => {
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `raw-materials-stock-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const formatMaterialDetailsString = (t) => {
+    if (!t.materialName) return '-';
+    const nameLower = t.materialName.toLowerCase();
+    const details = [];
+    if (nameLower.includes('sublimation')) {
+      if (t.panna) details.push(`Panna: ${t.panna}`);
+      if (t.paperQuality) details.push(`Qual: ${t.paperQuality}`);
+      if (t.metersPerRoll) details.push(`${t.metersPerRoll}m`);
+    } else if (nameLower.includes('butter')) {
+      if (t.panna) details.push(`Panna: ${t.panna}`);
+      if (t.metersPerRoll) details.push(`${t.metersPerRoll}m`);
+    } else if (nameLower.includes('ink')) {
+      if (t.color) details.push(t.color);
+      if (t.canSize) details.push(`${t.canSize} Ltr`);
+    }
+    return details.length > 0 ? `${t.materialName} (${details.join(', ')})` : t.materialName;
+  };
+
+  const handleExportCsv = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (activeTab === 'inward') {
+      if (inwardTx.length === 0) {
+        alert('No inward transactions to export.');
+        return;
+      }
+      const headers = ['Date', 'Challan No', 'Material Name', 'Vendor Name', 'Qty', 'Unit', 'Notes'];
+      const csvLines = [
+        headers.join(','),
+        ...inwardTx.map(t => [
+          `"${formatDateDDMMYYYY(t.date)}"`,
+          `"${t.challanNo || ''}"`,
+          `"${formatMaterialDetailsString(t)}"`,
+          `"${t.vendorName || ''}"`,
+          t.qty,
+          `"${t.unit || 'Rolls'}"`,
+          `"${(t.notes || '').replace(/"/g, '""')}"`
+        ].join(','))
+      ].join('\n');
+
+      downloadCsvFile(csvLines, `Raw_Materials_Inward_Register_${todayStr}.csv`);
+      return;
+    }
+
+    if (activeTab === 'outward') {
+      if (outwardTx.length === 0) {
+        alert('No outward transactions to export.');
+        return;
+      }
+      const headers = ['Date', 'Job Card No', 'Material Name', 'Party Name', 'Qty', 'Unit', 'Notes'];
+      const csvLines = [
+        headers.join(','),
+        ...outwardTx.map(t => [
+          `"${formatDateDDMMYYYY(t.date)}"`,
+          `"${t.jobNo || ''}"`,
+          `"${formatMaterialDetailsString(t)}"`,
+          `"${t.partyName || ''}"`,
+          t.qty,
+          `"${t.unit || 'Rolls'}"`,
+          `"${(t.notes || '').replace(/"/g, '""')}"`
+        ].join(','))
+      ].join('\n');
+
+      downloadCsvFile(csvLines, `Raw_Materials_Outward_Register_${todayStr}.csv`);
+      return;
+    }
+
+    // Default / Dashboard tab: Export Stock Overview
+    if (filteredStock.length === 0) {
+      alert('No stock data to export.');
+      return;
+    }
+    const headers = ['Material Name', 'Total Inward', 'Total Outward', 'Current Stock', 'Unit'];
+    const csvLines = [
+      headers.join(','),
+      ...filteredStock.map(s => [
+        `"${s.materialName}"`,
+        s.totalInward,
+        s.totalOutward,
+        s.currentStock,
+        `"${s.unit || ''}"`
+      ].join(','))
+    ].join('\n');
+
+    downloadCsvFile(csvLines, `Raw_Materials_Stock_Overview_${todayStr}.csv`);
   };
 
   const handleImportCsv = (e) => {
@@ -175,12 +149,7 @@ export default function RawMaterialsPanel() {
           return;
         }
 
-        const rows = [];
-
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-
+        const parseLine = (line) => {
           const cols = [];
           let insideQuote = false;
           let currentWord = '';
@@ -189,50 +158,63 @@ export default function RawMaterialsPanel() {
             if (char === '"') {
               insideQuote = !insideQuote;
             } else if (char === ',' && !insideQuote) {
-              cols.push(currentWord.trim());
+              cols.push(currentWord.trim().replace(/^"|"$/g, ''));
               currentWord = '';
             } else {
               currentWord += char;
             }
           }
-          cols.push(currentWord.trim());
+          cols.push(currentWord.trim().replace(/^"|"$/g, ''));
+          return cols;
+        };
 
-          const materialName = cols[0];
-          const panna = cols[1];
-          const paperQuality = cols[2];
-          const color = cols[3];
-          const canSize = cols[4];
-          const metersPerRoll = cols[5];
-          const openingStock = cols[6];
-          const inwardQty = cols[7];
-          const outwardQty = cols[8];
-          const currentStock = cols[9];
-          const date = cols[10];
-          const challanNo = cols[11];
-          const vendorName = cols[12];
-          const jobNo = cols[13];
-          const partyName = cols[14];
-          const notes = cols[15];
+        const headers = parseLine(lines[0]).map(h => h.toLowerCase());
+        const getIdx = (name) => headers.findIndex(h => h.includes(name));
 
+        const matIdx = getIdx('material');
+        const pannaIdx = getIdx('panna');
+        const qualIdx = getIdx('paper quality') !== -1 ? getIdx('paper quality') : getIdx('quality');
+        const colorIdx = getIdx('color');
+        const canIdx = getIdx('can size') !== -1 ? getIdx('can size') : getIdx('can');
+        const metersIdx = getIdx('meters') !== -1 ? getIdx('meters') : getIdx('mtr');
+        const openIdx = getIdx('opening');
+        const inIdx = getIdx('inward');
+        const outIdx = getIdx('outward');
+        const currIdx = getIdx('current');
+        const dateIdx = getIdx('date');
+        const challanIdx = getIdx('challan');
+        const vendorIdx = getIdx('vendor');
+        const jobIdx = getIdx('job');
+        const partyIdx = getIdx('party');
+        const notesIdx = getIdx('notes');
+
+        const rows = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          const cols = parseLine(line);
+          const materialName = matIdx !== -1 ? cols[matIdx] : cols[0];
           if (!materialName) continue;
 
           rows.push({
             materialName,
-            panna,
-            paperQuality,
-            color,
-            canSize: canSize !== undefined && canSize !== '' ? parseFloat(canSize) : null,
-            metersPerRoll: metersPerRoll !== undefined && metersPerRoll !== '' ? parseFloat(metersPerRoll) : null,
-            openingStock: openingStock !== undefined && openingStock !== '' ? parseFloat(openingStock) : 0,
-            inwardQty: inwardQty !== undefined && inwardQty !== '' ? parseFloat(inwardQty) : 0,
-            outwardQty: outwardQty !== undefined && outwardQty !== '' ? parseFloat(outwardQty) : 0,
-            currentStock: currentStock !== undefined && currentStock !== '' ? parseFloat(currentStock) : 0,
-            date: date || '',
-            challanNo: challanNo || '',
-            vendorName: vendorName || '',
-            jobNo: jobNo || '',
-            partyName: partyName || '',
-            notes: notes || ''
+            panna: pannaIdx !== -1 ? cols[pannaIdx] : cols[1] || '',
+            paperQuality: qualIdx !== -1 ? cols[qualIdx] : cols[2] || '',
+            color: colorIdx !== -1 ? cols[colorIdx] : cols[3] || '',
+            canSize: canIdx !== -1 && cols[canIdx] ? parseFloat(cols[canIdx]) : (cols[4] ? parseFloat(cols[4]) : null),
+            metersPerRoll: metersIdx !== -1 && cols[metersIdx] ? parseFloat(cols[metersIdx]) : (cols[5] ? parseFloat(cols[5]) : null),
+            openingStock: openIdx !== -1 && cols[openIdx] ? parseFloat(cols[openIdx]) : (cols[6] ? parseFloat(cols[6]) : 0),
+            inwardQty: inIdx !== -1 && cols[inIdx] ? parseFloat(cols[inIdx]) : (cols[7] ? parseFloat(cols[7]) : 0),
+            outwardQty: outIdx !== -1 && cols[outIdx] ? parseFloat(cols[outIdx]) : (cols[8] ? parseFloat(cols[8]) : 0),
+            currentStock: currIdx !== -1 && cols[currIdx] ? parseFloat(cols[currIdx]) : (cols[9] ? parseFloat(cols[9]) : 0),
+            date: dateIdx !== -1 ? cols[dateIdx] : cols[10] || '',
+            challanNo: challanIdx !== -1 ? cols[challanIdx] : cols[11] || '',
+            vendorName: vendorIdx !== -1 ? cols[vendorIdx] : cols[12] || '',
+            jobNo: jobIdx !== -1 ? cols[jobIdx] : cols[13] || '',
+            partyName: partyIdx !== -1 ? cols[partyIdx] : cols[14] || '',
+            notes: notesIdx !== -1 ? cols[notesIdx] : cols[15] || ''
           });
         }
 
@@ -268,21 +250,28 @@ export default function RawMaterialsPanel() {
 
   const [inwardDateStart, setInwardDateStart] = useState('');
   const [inwardDateEnd, setInwardDateEnd] = useState('');
+  const [inwardPreset, setInwardPreset] = useState('all');
+  const [customInwardStart, setCustomInwardStart] = useState('');
+  const [customInwardEnd, setCustomInwardEnd] = useState('');
+  const [inwardMaterialType, setInwardMaterialType] = useState('All');
   const [inwardSortBy, setInwardSortBy] = useState('date');
   const [inwardSortOrder, setInwardSortOrder] = useState('desc');
 
   const [outwardDateStart, setOutwardDateStart] = useState('');
   const [outwardDateEnd, setOutwardDateEnd] = useState('');
+  const [outwardPreset, setOutwardPreset] = useState('all');
+  const [customOutwardStart, setCustomOutwardStart] = useState('');
+  const [customOutwardEnd, setCustomOutwardEnd] = useState('');
+  const [outwardMaterialType, setOutwardMaterialType] = useState('All');
   const [outwardSortBy, setOutwardSortBy] = useState('date');
   const [outwardSortOrder, setOutwardSortOrder] = useState('desc');
 
-  // PDF download filter state
-  const [pdfFilter, setPdfFilter] = useState({
-    dateStart: '',
-    dateEnd: '',
-    materialName: ''
-  });
-  const [isPdfFilterOpen, setIsPdfFilterOpen] = useState(false);
+  const [stockMaterialType, setStockMaterialType] = useState('All');
+  const [stockDateStart, setStockDateStart] = useState('');
+  const [stockDateEnd, setStockDateEnd] = useState('');
+  const [stockPreset, setStockPreset] = useState('all');
+  const [customStockStart, setCustomStockStart] = useState('');
+  const [customStockEnd, setCustomStockEnd] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
 
   // Delete confirmation
@@ -377,6 +366,27 @@ export default function RawMaterialsPanel() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const fetchStock = async () => {
+      try {
+        const stockParams = {};
+        if (stockPreset && stockPreset !== 'all') {
+          const range = getDatePresetRange(stockPreset, customStockStart, customStockEnd);
+          if (range.dateStart) stockParams.dateStart = range.dateStart;
+          if (range.dateEnd) stockParams.dateEnd = range.dateEnd;
+        } else {
+          if (stockDateStart) stockParams.dateStart = stockDateStart;
+          if (stockDateEnd) stockParams.dateEnd = stockDateEnd;
+        }
+        const stockRes = await api.getRawMaterialStock(stockParams);
+        if (stockRes && stockRes.success) setStock(stockRes.data);
+      } catch (e) {
+        console.warn('Failed to fetch stock for date range:', e);
+      }
+    };
+    fetchStock();
+  }, [stockPreset, stockDateStart, stockDateEnd, customStockStart, customStockEnd]);
 
   // Helper to get defaults for a material
   const getMaterialDefaults = (materialName, configData) => {
@@ -694,24 +704,101 @@ export default function RawMaterialsPanel() {
     }
   };
 
-  const handleDownloadPdf = async (e) => {
-    e.preventDefault();
+  const handleDownloadScreenPdf = async () => {
     try {
       setPdfLoading(true);
-      await api.downloadRawMaterialLedgerPdf(pdfFilter);
-      setIsPdfFilterOpen(false);
+      let ds = '';
+      let de = '';
+      let mat = '';
+      let typeVal = 'All';
+      let searchVal = '';
+
+      if (activeTab === 'inward') {
+        typeVal = 'INWARD';
+        if (inwardPreset && inwardPreset !== 'all') {
+          const range = getDatePresetRange(inwardPreset, customInwardStart, customInwardEnd);
+          ds = range.dateStart || '';
+          de = range.dateEnd || '';
+        } else {
+          ds = inwardDateStart || '';
+          de = inwardDateEnd || '';
+        }
+        mat = inwardMaterialType !== 'All' ? inwardMaterialType : '';
+        searchVal = inwardSearch || '';
+      } else if (activeTab === 'outward') {
+        typeVal = 'OUTWARD';
+        if (outwardPreset && outwardPreset !== 'all') {
+          const range = getDatePresetRange(outwardPreset, customOutwardStart, customOutwardEnd);
+          ds = range.dateStart || '';
+          de = range.dateEnd || '';
+        } else {
+          ds = outwardDateStart || '';
+          de = outwardDateEnd || '';
+        }
+        mat = outwardMaterialType !== 'All' ? outwardMaterialType : '';
+        searchVal = outwardSearch || '';
+      } else if (activeTab === 'dashboard') {
+        typeVal = 'All';
+        if (stockPreset && stockPreset !== 'all') {
+          const range = getDatePresetRange(stockPreset, customStockStart, customStockEnd);
+          ds = range.dateStart || '';
+          de = range.dateEnd || '';
+        } else {
+          ds = stockDateStart || '';
+          de = stockDateEnd || '';
+        }
+        mat = stockMaterialType !== 'All' ? stockMaterialType : '';
+      }
+
+      await api.downloadRawMaterialLedgerPdf({
+        type: typeVal,
+        materialName: mat,
+        dateStart: ds,
+        dateEnd: de,
+        search: searchVal,
+        companyEntity: companyEntity || 'Elite Digital Print'
+      });
     } catch (err) {
-      alert('Failed to download PDF: ' + err.message);
+      alert('Failed to download PDF report: ' + err.message);
     } finally {
       setPdfLoading(false);
     }
   };
 
   // Filter local registers
+  const toYYYYMMDD = (d) => {
+    if (!d) return '';
+    try {
+      if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.trim())) return d.trim();
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return '';
+      const yr = dt.getFullYear();
+      const mo = String(dt.getMonth() + 1).padStart(2, '0');
+      const dy = String(dt.getDate()).padStart(2, '0');
+      return `${yr}-${mo}-${dy}`;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const matchesMaterialType = (materialName, filterType) => {
+    if (!filterType || filterType === 'All') return true;
+    if (!materialName) return false;
+    const name = String(materialName).trim().toLowerCase();
+    const target = String(filterType).trim().toLowerCase();
+    if (target === 'ink' || target === 'all inks') return name.includes('ink');
+    if (target === 'paper' || target === 'all papers') return name.includes('paper');
+    if (target === 'butter paper' || target === 'butter') return name.includes('butter');
+    if (target === 'sublimation paper' || target === 'sublimation') return name.includes('sublimation');
+    return name.includes(target) || target.includes(name);
+  };
+
   const inwardTx = transactions.filter(t => {
     if (t.type !== 'INWARD') return false;
-    if (inwardDateStart && t.date < inwardDateStart) return false;
-    if (inwardDateEnd && t.date > inwardDateEnd + 'T23:59:59') return false;
+    const tDateYMD = toYYYYMMDD(t.date);
+    if (inwardDateStart && tDateYMD < inwardDateStart) return false;
+    if (inwardDateEnd && tDateYMD > inwardDateEnd) return false;
+    if (!matchesMaterialType(t.materialName, inwardMaterialType)) return false;
     if (!inwardSearch) return true;
     const s = inwardSearch.toLowerCase();
     return (t.materialName || '').toLowerCase().includes(s)
@@ -719,13 +806,14 @@ export default function RawMaterialsPanel() {
       || (t.challanNo || '').toLowerCase().includes(s)
       || (t.panna || '').toLowerCase().includes(s)
       || (t.paperQuality || '').toLowerCase().includes(s)
-      || (t.color || '').toLowerCase().includes(s);
+      || (t.color || '').toLowerCase().includes(s)
+      || (t.notes || '').toLowerCase().includes(s);
   }).sort((a, b) => {
     let valA = a[inwardSortBy];
     let valB = b[inwardSortBy];
     if (inwardSortBy === 'date') {
-      valA = new Date(a.date);
-      valB = new Date(b.date);
+      valA = new Date(a.date).getTime();
+      valB = new Date(b.date).getTime();
     }
     if (valA < valB) return inwardSortOrder === 'asc' ? -1 : 1;
     if (valA > valB) return inwardSortOrder === 'asc' ? 1 : -1;
@@ -734,8 +822,10 @@ export default function RawMaterialsPanel() {
 
   const outwardTx = transactions.filter(t => {
     if (t.type !== 'OUTWARD') return false;
-    if (outwardDateStart && t.date < outwardDateStart) return false;
-    if (outwardDateEnd && t.date > outwardDateEnd + 'T23:59:59') return false;
+    const tDateYMD = toYYYYMMDD(t.date);
+    if (outwardDateStart && tDateYMD < outwardDateStart) return false;
+    if (outwardDateEnd && tDateYMD > outwardDateEnd) return false;
+    if (!matchesMaterialType(t.materialName, outwardMaterialType)) return false;
     if (!outwardSearch) return true;
     const s = outwardSearch.toLowerCase();
     return (t.materialName || '').toLowerCase().includes(s)
@@ -743,18 +833,35 @@ export default function RawMaterialsPanel() {
       || (t.jobNo || '').toLowerCase().includes(s)
       || (t.panna || '').toLowerCase().includes(s)
       || (t.paperQuality || '').toLowerCase().includes(s)
-      || (t.color || '').toLowerCase().includes(s);
+      || (t.color || '').toLowerCase().includes(s)
+      || (t.notes || '').toLowerCase().includes(s);
   }).sort((a, b) => {
     let valA = a[outwardSortBy];
     let valB = b[outwardSortBy];
     if (outwardSortBy === 'date') {
-      valA = new Date(a.date);
-      valB = new Date(b.date);
+      valA = new Date(a.date).getTime();
+      valB = new Date(b.date).getTime();
     }
     if (valA < valB) return outwardSortOrder === 'asc' ? -1 : 1;
     if (valA > valB) return outwardSortOrder === 'asc' ? 1 : -1;
     return 0;
   });
+
+  const stockFilteredTx = transactions.filter(t => {
+    let ds = stockDateStart;
+    let de = stockDateEnd;
+    if (stockPreset && stockPreset !== 'all') {
+      const range = getDatePresetRange(stockPreset, customStockStart, customStockEnd);
+      ds = range.dateStart || '';
+      de = range.dateEnd || '';
+    }
+    const tDateYMD = toYYYYMMDD(t.date);
+    if (ds && tDateYMD < ds) return false;
+    if (de && tDateYMD > de) return false;
+    return true;
+  });
+
+  const filteredStock = stock.filter(item => matchesMaterialType(item.materialName, stockMaterialType));
 
   const renderMaterialCell = (t) => {
     const nameLower = (t.materialName || '').toLowerCase();
@@ -920,21 +1027,15 @@ export default function RawMaterialsPanel() {
             </button>
           ))}
         </div>
-        <button onClick={handleExportCsv} className="btn-secondary" title="Download Raw Materials Stock CSV" style={{ gap: '0.4rem' }}>
-          <FileDown size={16} /> Export CSV
-        </button>
-        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="btn-secondary" title="Upload Raw Materials Stock CSV" style={{ gap: '0.4rem' }}>
-          <ArrowDownToLine size={16} /> Import CSV
-        </button>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleImportCsv}
-          accept=".csv"
-          style={{ display: 'none' }}
-        />
-        <button onClick={() => setIsPdfFilterOpen(true)} className="btn-secondary" title="Download Ledger PDF" style={{ gap: '0.4rem' }}>
-          <FileDown size={16} /> PDF Report
+        <button
+          onClick={handleDownloadScreenPdf}
+          className="btn-secondary"
+          disabled={pdfLoading}
+          title={`Download ${activeTab === 'inward' ? 'Inward Register' : activeTab === 'outward' ? 'Outward Register' : 'Stock Overview'} PDF Report`}
+          style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+        >
+          {pdfLoading ? <RefreshCw className="spin-loader" size={16} /> : <FileDown size={16} />}
+          PDF Report
         </button>
       </div>
 
@@ -946,11 +1047,45 @@ export default function RawMaterialsPanel() {
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Layers size={20} /> Current Raw Material Stock
               </h2>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Material Type / Category Filter */}
+                <select
+                  style={{ ...inputStyle, width: '180px', fontWeight: 700 }}
+                  value={stockMaterialType}
+                  onChange={e => setStockMaterialType(e.target.value)}
+                >
+                  <option value="All">All Material Types</option>
+                  <option value="Ink">All Inks (Grando / Printdot)</option>
+                  <option value="Paper">All Papers (Sublimation / Butter)</option>
+                  <option value="Sublimation Paper">Sublimation Paper</option>
+                  <option value="Butter Paper">Butter Paper</option>
+                  <option value="Grando Ink">Grando Ink</option>
+                  <option value="Printdot Ink">Printdot Ink</option>
+                  {materialsList.filter(m => !['Sublimation Paper', 'Butter Paper', 'Grando Ink', 'Printdot Ink'].includes(m)).map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+
+                {/* Standard ERP DateRangePicker */}
+                <DateRangePicker
+                  preset={stockPreset}
+                  onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+                    setStockPreset(p);
+                    setStockDateStart(ds);
+                    setStockDateEnd(de);
+                  }}
+                  customStart={customStockStart}
+                  customEnd={customStockEnd}
+                  onCustomChange={(s, e) => {
+                    setCustomStockStart(s);
+                    setCustomStockEnd(e);
+                  }}
+                />
+
                 <button onClick={() => { setEditingTransaction(null); setIsInwardOpen(true); handleInwardTabChange('Sublimation Paper'); setInwardItems([]); }} className="btn-primary" style={{ gap: '0.4rem' }}>
                   <ArrowDownToLine size={16} /> Stock Inward
                 </button>
@@ -964,16 +1099,16 @@ export default function RawMaterialsPanel() {
             {stock.length > 0 && (
               <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                 <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Items Configured</span><br /><strong>{materialsList.length}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Active Stock Profiles</span><br /><strong>{stock.length}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Inward Transactions</span><br /><strong style={{ color: 'var(--success)' }}>{transactions.filter(t => t.type === 'INWARD').length}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Outward Transactions</span><br /><strong style={{ color: 'var(--danger)' }}>{transactions.filter(t => t.type === 'OUTWARD').length}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Active Stock Profiles</span><br /><strong>{filteredStock.length} / {stock.length}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Inward Transactions</span><br /><strong style={{ color: 'var(--success)' }}>{stockFilteredTx.filter(t => t.type === 'INWARD').length}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Outward Transactions</span><br /><strong style={{ color: 'var(--danger)' }}>{stockFilteredTx.filter(t => t.type === 'OUTWARD').length}</strong></div>
               </div>
             )}
 
             {/* Materials Stock Cards */}
-            {stock.length === 0 && !loading && <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No stock data logged yet. Click Stock Inward to add items.</p>}
+            {filteredStock.length === 0 && !loading && <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No stock data matching selected material filter.</p>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.2rem' }}>
-              {stock.map((item, idx) => {
+              {filteredStock.map((item, idx) => {
                 const isLow = item.currentStock <= 5;
                 const isEmpty = item.currentStock <= 0;
                 return (
@@ -1040,24 +1175,40 @@ export default function RawMaterialsPanel() {
                   />
                   <Search size={16} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>From:</span>
-                  <input
-                    type="date"
-                    value={inwardDateStart}
-                    onChange={e => setInwardDateStart(e.target.value)}
-                    style={{ ...inputStyle, width: '130px', padding: '0.3rem' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>To:</span>
-                  <input
-                    type="date"
-                    value={inwardDateEnd}
-                    onChange={e => setInwardDateEnd(e.target.value)}
-                    style={{ ...inputStyle, width: '130px', padding: '0.3rem' }}
-                  />
-                </div>
+
+                {/* Material Type / Category Filter */}
+                <select
+                  style={{ ...inputStyle, width: '180px', fontWeight: 700 }}
+                  value={inwardMaterialType}
+                  onChange={e => setInwardMaterialType(e.target.value)}
+                >
+                  <option value="All">All Material Types</option>
+                  <option value="Ink">All Inks (Grando / Printdot)</option>
+                  <option value="Paper">All Papers (Sublimation / Butter)</option>
+                  <option value="Sublimation Paper">Sublimation Paper</option>
+                  <option value="Butter Paper">Butter Paper</option>
+                  <option value="Grando Ink">Grando Ink</option>
+                  <option value="Printdot Ink">Printdot Ink</option>
+                  {materialsList.filter(m => !['Sublimation Paper', 'Butter Paper', 'Grando Ink', 'Printdot Ink'].includes(m)).map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+
+                {/* Standard ERP DateRangePicker */}
+                <DateRangePicker
+                  preset={inwardPreset}
+                  onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+                    setInwardPreset(p);
+                    setInwardDateStart(ds);
+                    setInwardDateEnd(de);
+                  }}
+                  customStart={customInwardStart}
+                  customEnd={customInwardEnd}
+                  onCustomChange={(s, e) => {
+                    setCustomInwardStart(s);
+                    setCustomInwardEnd(e);
+                  }}
+                />
               </div>
             </div>
 
@@ -1187,24 +1338,40 @@ export default function RawMaterialsPanel() {
                   />
                   <Search size={16} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>From:</span>
-                  <input
-                    type="date"
-                    value={outwardDateStart}
-                    onChange={e => setOutwardDateStart(e.target.value)}
-                    style={{ ...inputStyle, width: '130px', padding: '0.3rem' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>To:</span>
-                  <input
-                    type="date"
-                    value={outwardDateEnd}
-                    onChange={e => setOutwardDateEnd(e.target.value)}
-                    style={{ ...inputStyle, width: '130px', padding: '0.3rem' }}
-                  />
-                </div>
+
+                {/* Material Type / Category Filter */}
+                <select
+                  style={{ ...inputStyle, width: '180px', fontWeight: 700 }}
+                  value={outwardMaterialType}
+                  onChange={e => setOutwardMaterialType(e.target.value)}
+                >
+                  <option value="All">All Material Types</option>
+                  <option value="Ink">All Inks (Grando / Printdot)</option>
+                  <option value="Paper">All Papers (Sublimation / Butter)</option>
+                  <option value="Sublimation Paper">Sublimation Paper</option>
+                  <option value="Butter Paper">Butter Paper</option>
+                  <option value="Grando Ink">Grando Ink</option>
+                  <option value="Printdot Ink">Printdot Ink</option>
+                  {materialsList.filter(m => !['Sublimation Paper', 'Butter Paper', 'Grando Ink', 'Printdot Ink'].includes(m)).map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+
+                {/* Standard ERP DateRangePicker */}
+                <DateRangePicker
+                  preset={outwardPreset}
+                  onChange={({ preset: p, dateStart: ds, dateEnd: de }) => {
+                    setOutwardPreset(p);
+                    setOutwardDateStart(ds);
+                    setOutwardDateEnd(de);
+                  }}
+                  customStart={customOutwardStart}
+                  customEnd={customOutwardEnd}
+                  onCustomChange={(s, e) => {
+                    setCustomOutwardStart(s);
+                    setCustomOutwardEnd(e);
+                  }}
+                />
               </div>
             </div>
 
@@ -1925,47 +2092,6 @@ export default function RawMaterialsPanel() {
                 <button type="button" onClick={() => setIsOutwardOpen(false)} className="btn-secondary" style={{ flex: 1 }}>Cancel</button>
                 <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={loading}>
                   {loading ? 'Submitting...' : outwardItems.length > 0 ? `Save Outward (${outwardItems.length})` : 'Save Outward'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── LEDGER PDF DOWNLOAD FILTERS MODAL ─── */}
-      {isPdfFilterOpen && (
-        <div className="modal-backdrop">
-          <div className="modal-content glass-panel" style={{ maxWidth: '400px', padding: '2rem', position: 'relative' }}>
-            <button onClick={() => setIsPdfFilterOpen(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <X size={20} />
-            </button>
-            <h3 style={{ margin: '0 0 1.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FileDown /> Raw Material Ledger Report
-            </h3>
-            <form onSubmit={handleDownloadPdf} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={labelStyle}>Material Item (Optional)</label>
-                <select style={inputStyle} value={pdfFilter.materialName} onChange={e => setPdfFilter(p => ({ ...p, materialName: e.target.value }))}>
-                  <option value="">-- All Materials --</option>
-                  {materialsList.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Start Date (Optional)</label>
-                  <input type="date" style={inputStyle} value={pdfFilter.dateStart} onChange={e => setPdfFilter(p => ({ ...p, dateStart: e.target.value }))} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>End Date (Optional)</label>
-                  <input type="date" style={inputStyle} value={pdfFilter.dateEnd} onChange={e => setPdfFilter(p => ({ ...p, dateEnd: e.target.value }))} />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                <button type="button" onClick={() => setIsPdfFilterOpen(false)} className="btn-secondary" style={{ flex: 1 }}>Cancel</button>
-                <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={pdfLoading}>
-                  {pdfLoading ? <RefreshCw className="spin-loader" /> : 'Download PDF'}
                 </button>
               </div>
             </form>

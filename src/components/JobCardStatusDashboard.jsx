@@ -20,23 +20,22 @@ import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 export default function JobCardStatusDashboard({ onSelectCard, department = 'digital_print' }) {
-  const defaultThisMonth = getDatePresetRange('this_month');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Date range & Filter states
-  const [datePreset, setDatePreset] = useState('this_month');
-  const [dateStart, setDateStart] = useState(defaultThisMonth.dateStart);
-  const [dateEnd, setDateEnd] = useState(defaultThisMonth.dateEnd);
+  // Date range & Filter states - Default to 'all' so no pending job cards are hidden by date filters
+  const [datePreset, setDatePreset] = useState('all');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
 
   const [search, setSearch] = useState('');
   const [activeStageTab, setActiveStageTab] = useState('all_pending'); // 'all_pending' | 'print_pending' | 'fusing_pending' | 'delivery_pending'
 
-  const fetchCards = useCallback(async () => {
-    setLoading(true);
+  const fetchCards = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     setError('');
     try {
       const res = await api.getJobCards({
@@ -54,14 +53,14 @@ export default function JobCardStatusDashboard({ onSelectCard, department = 'dig
       console.error('Error loading status dashboard data:', err);
       setError(err.message || 'Failed to fetch status dashboard metrics.');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [dateStart, dateEnd, department]);
 
   useEffect(() => {
-    fetchCards();
-    const interval = setInterval(fetchCards, 12000);
-    const handleRefresh = () => fetchCards();
+    fetchCards(false);
+    const interval = setInterval(() => fetchCards(true), 30000);
+    const handleRefresh = () => fetchCards(true);
     window.addEventListener('elite-data-refresh', handleRefresh);
     return () => {
       clearInterval(interval);
@@ -360,18 +359,8 @@ export default function JobCardStatusDashboard({ onSelectCard, department = 'dig
             </div>
           </div>
 
-          {/* Quick Refresh & PDF Export Actions */}
+          {/* PDF Export Action */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <button
-              onClick={fetchCards}
-              disabled={loading}
-              title="Refresh Status Metrics"
-              style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', fontWeight: 700, borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <RefreshCw size={14} className={loading ? 'spin-loader' : ''} />
-              <span>Refresh</span>
-            </button>
-
             <button
               onClick={handleDownloadPdfReport}
               title="Download Pending Status PDF Report"

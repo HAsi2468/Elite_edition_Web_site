@@ -517,30 +517,57 @@ export default function DigitalPrintComplainModule({ companyEntity = 'Elite Digi
     }
   };
 
+  const getDepartmentFolder = (coEntity, cat) => {
+    let deptName = 'General';
+    if (cat) {
+      if (cat.includes('Printing') || cat.includes('Color')) deptName = 'Digital_Print';
+      else if (cat.includes('Fabric')) deptName = 'Fabric';
+      else if (cat.includes('Billing')) deptName = 'Billing';
+      else if (cat.includes('Stitching')) deptName = 'Stitching';
+      else if (cat.includes('Garment')) deptName = 'Garment';
+      else if (cat.includes('Delivery') || cat.includes('Quantity')) deptName = 'Logistics';
+    } else if (coEntity) {
+      if (coEntity.includes('Digital')) deptName = 'Digital_Print';
+      else if (coEntity.includes('Fabtex') || coEntity.includes('Fabric')) deptName = 'Fabric';
+      else if (coEntity.includes('Stitching')) deptName = 'Stitching';
+      else if (coEntity.includes('Garment')) deptName = 'Garment';
+    }
+    return deptName;
+  };
+
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
     setUploading(true);
     const uploadedUrls = [...(formVal.photoUrls || [])];
+    const deptName = getDepartmentFolder(companyEntity, formVal.category);
 
     for (let file of files) {
-      if (!file.type.startsWith('image/')) continue;
       try {
-        const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
-        const compressedFile = await imageCompression(file, options);
-        const res = await api.uploadImage(compressedFile);
+        let uploadFile = file;
+        if (file.type && file.type.startsWith('image/')) {
+          try {
+            const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
+            uploadFile = await imageCompression(file, options);
+          } catch (e) {
+            uploadFile = file;
+          }
+        }
+
+        const res = await api.uploadComplaintAttachment(uploadFile, deptName);
         if (res && res.url) {
           uploadedUrls.push(res.url);
         }
       } catch (err) {
-        triggerEliteAlert('Upload Error', 'Failed to upload photo: ' + err.message, 'error');
+        triggerEliteAlert('Upload Error', 'Failed to upload attachment: ' + err.message, 'error');
       }
     }
 
     setFormVal(prev => ({ ...prev, photoUrls: uploadedUrls }));
     setUploading(false);
   };
+
 
   const handleRemovePhoto = (idx) => {
     setFormVal(prev => ({
@@ -1479,10 +1506,71 @@ export default function DigitalPrintComplainModule({ companyEntity = 'Elite Digi
                 <textarea rows={3} placeholder="Describe the defect, shade difference, or customer issue..." value={formVal.description} onChange={e => setFormVal({ ...formVal, description: e.target.value })} style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} />
               </div>
 
-              {/* Attachments Section - Disabled per request */}
-              <div style={{ opacity: 0.5, pointerEvents: 'none', background: 'rgba(255,255,255,0.02)', padding: '0.65rem', borderRadius: '6px', border: '1px dashed var(--border-light)' }}>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>📷 Attachments / Defect Proof (Currently Disabled)</span>
+              {/* Attachments Section - Cloudflare R2 Storage (Complaints/<Department>/) */}
+              <div style={{ background: 'var(--bg-main, #111827)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <ImageIcon size={14} /> Attachments / Defect Proof (Cloudflare R2 Storage)
+                  </label>
+                  <span style={{ fontSize: '0.68rem', color: '#a7f3d0', background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 700 }}>
+                    ☁️ Cloudflare R2: Complaints/{getDepartmentFolder(companyEntity, formVal.category)}/
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+                    onChange={handlePhotoUpload}
+                    disabled={uploading}
+                    id="complaint-file-upload"
+                    style={{ display: 'none' }}
+                  />
+                  <label
+                    htmlFor="complaint-file-upload"
+                    style={{
+                      padding: '0.45rem 1rem', fontSize: '0.8rem', fontWeight: 800, borderRadius: '6px',
+                      background: 'linear-gradient(135deg, #0284c7, #0369a1)', color: '#fff', cursor: uploading ? 'wait' : 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem', border: 'none'
+                    }}
+                  >
+                    {uploading ? <RefreshCw size={14} className="animate-spin" /> : <PlusCircle size={14} />}
+                    {uploading ? 'Uploading to R2...' : '+ Add Files / Photos'}
+                  </label>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Supports Images, PDFs, and Documents</span>
+                </div>
+
+                {/* Uploaded File Previews */}
+                {formVal.photoUrls && formVal.photoUrls.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+                    {formVal.photoUrls.map((url, idx) => {
+                      const isImage = url.match(/\.(jpeg|jpg|png|webp|gif|svg)($|\?)/i) || !url.match(/\.(pdf|doc|docx|xls|xlsx|zip)($|\?)/i);
+                      return (
+                        <div key={idx} style={{ position: 'relative', width: 70, height: 70, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border-light)', background: '#000' }}>
+                          {isImage ? (
+                            <img src={url} alt="Attachment" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#38bdf8', textDecoration: 'none', padding: 4 }}>
+                              <FileText size={22} />
+                              <span style={{ fontSize: '0.55rem', fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>Document</span>
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: '50%', width: 18, height: 18, fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Remove file"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
 
               {/* Status & Resolution for Edit Mode */}
               {editingItem && (
@@ -1586,23 +1674,43 @@ export default function DigitalPrintComplainModule({ companyEntity = 'Elite Digi
                 {showViewModal.description || 'No detailed description provided.'}
               </div>
 
-              {/* Photos Gallery */}
+              {/* Photos Gallery & Document Attachments */}
               {showViewModal.photoUrls && showViewModal.photoUrls.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Uploaded Defect Proof Photos ({showViewModal.photoUrls.length})</div>
-                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-                    {showViewModal.photoUrls.map((url, i) => (
-                      <img
-                        key={i}
-                        src={url}
-                        alt="Defect"
-                        onClick={() => setZoomImg(url)}
-                        style={{ width: 80, height: 80, borderRadius: 6, objectFit: 'cover', cursor: 'zoom-in', border: '1px solid var(--border-light)' }}
-                      />
-                    ))}
+                <div style={{ background: 'var(--bg-main, #111827)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <ImageIcon size={14} /> Uploaded Defect Proof & Attachments ({showViewModal.photoUrls.length})
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    {showViewModal.photoUrls.map((url, i) => {
+                      const isImage = url.match(/\.(jpeg|jpg|png|webp|gif|svg)($|\?)/i) || !url.match(/\.(pdf|doc|docx|xls|xlsx|zip)($|\?)/i);
+                      return isImage ? (
+                        <img
+                          key={i}
+                          src={url}
+                          alt="Defect proof"
+                          onClick={() => setZoomImg(url)}
+                          style={{ width: 85, height: 85, borderRadius: 6, objectFit: 'cover', cursor: 'zoom-in', border: '1px solid var(--border-light)' }}
+                        />
+                      ) : (
+                        <a
+                          key={i}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.9rem',
+                            borderRadius: '6px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)',
+                            color: '#38bdf8', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 700
+                          }}
+                        >
+                          <FileText size={18} /> Open Document Attachment #{i + 1}
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}
+
 
               {/* Action Taken */}
               <div style={{ background: 'rgba(34,197,94,0.06)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)', fontSize: '0.85rem' }}>
@@ -1619,19 +1727,19 @@ export default function DigitalPrintComplainModule({ companyEntity = 'Elite Digi
                 {/* Comments List */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '200px', overflowY: 'auto', marginBottom: '0.75rem', paddingRight: '0.25rem' }}>
                   {!showViewModal.comments || showViewModal.comments.length === 0 ? (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>No remarks or activity comments yet. Add the first comment below.</div>
+                    <div style={{ fontSize: '0.75rem', color: '#475569', fontStyle: 'italic', padding: '0.5rem', background: '#ffffff', borderRadius: '6px', border: '1px solid #e2e8f0' }}>No remarks or activity comments yet. Add the first comment below.</div>
                   ) : (
                     showViewModal.comments.map((cm, idx) => (
-                      <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '0.78rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                          <span style={{ fontWeight: 800, color: cm.userName === 'System' ? '#f59e0b' : '#60a5fa' }}>
+                      <div key={idx} style={{ background: '#ffffff', color: '#000000', padding: '0.6rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontWeight: 800, color: cm.userName === 'System' ? '#d97706' : '#1e40af' }}>
                             👤 {cm.userName}
                           </span>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                          <span style={{ fontSize: '0.68rem', color: '#475569', fontWeight: 600 }}>
                             📅 {cm.createdAt ? new Date(cm.createdAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now'}
                           </span>
                         </div>
-                        <div style={{ color: 'var(--text-primary)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{cm.text}</div>
+                        <div style={{ color: '#000000', fontWeight: 500, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{cm.text}</div>
                       </div>
                     ))
                   )}
@@ -1645,15 +1753,15 @@ export default function DigitalPrintComplainModule({ companyEntity = 'Elite Digi
                     value={newCommentText}
                     onChange={e => setNewCommentText(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddComment(showViewModal._id); }}
-                    style={{ flex: 1, padding: '0.45rem 0.75rem', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                    style={{ flex: 1, padding: '0.55rem 0.85rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#000000', fontWeight: 500 }}
                   />
                   <button
                     type="button"
                     onClick={() => handleAddComment(showViewModal._id)}
                     disabled={postingComment || !newCommentText.trim()}
                     style={{
-                      padding: '0.45rem 1rem', fontSize: '0.75rem', fontWeight: 800, borderRadius: '6px',
-                      background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', color: '#fff', border: 'none',
+                      padding: '0.55rem 1.1rem', fontSize: '0.78rem', fontWeight: 800, borderRadius: '6px',
+                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff', border: 'none',
                       cursor: postingComment || !newCommentText.trim() ? 'not-allowed' : 'pointer', opacity: postingComment || !newCommentText.trim() ? 0.5 : 1
                     }}
                   >

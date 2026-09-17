@@ -77,16 +77,28 @@ export default function ReportsCenter({ department }) {
     fetchReportData();
   }, [activeReportTab, activeDepartment, dateStart, dateEnd, timeStart, timeEnd]);
 
-  // When department changes, set the first sub-tab as active
+  // When department changes from props, set initial sub-tab
   useEffect(() => {
-    if (activeDepartment === 'elite-print') setActiveReportTab('pending-status');
-    else if (activeDepartment === 'sales') setActiveReportTab('sales');
-    else if (activeDepartment === 'inventory') setActiveReportTab('stock-value');
-    else if (activeDepartment === 'returns') setActiveReportTab('returns-analysis');
-    else if (activeDepartment === 'integrations') setActiveReportTab('api-health');
-  }, [activeDepartment]);
+    if (department === 'elite-online') {
+      setActiveDepartment('sales');
+      setActiveReportTab('sales');
+    }
+  }, [department]);
+
+  const handleDepartmentChange = (dept) => {
+    setActiveDepartment(dept);
+    if (dept === 'elite-print') setActiveReportTab('pending-status');
+    else if (dept === 'sales') setActiveReportTab('sales');
+    else if (dept === 'inventory') setActiveReportTab('stock-value');
+    else if (dept === 'returns') setActiveReportTab('returns-analysis');
+    else if (dept === 'integrations') setActiveReportTab('api-health');
+  };
 
   const fetchReportData = async () => {
+    if (activeReportTab === 'pending-status') {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -297,7 +309,7 @@ export default function ReportsCenter({ department }) {
         <div style={styles.tabsContainer}>
           {department !== 'elite-online' && (
             <button
-              onClick={() => setActiveDepartment('elite-print')}
+              onClick={() => handleDepartmentChange('elite-print')}
               style={activeDepartment === 'elite-print' ? styles.tabActive : styles.tab}
             >
               <Layers size={14} />
@@ -305,14 +317,14 @@ export default function ReportsCenter({ department }) {
             </button>
           )}
           <button
-            onClick={() => setActiveDepartment('sales')}
+            onClick={() => handleDepartmentChange('sales')}
             style={activeDepartment === 'sales' ? styles.tabActive : styles.tab}
           >
             <TrendingUp size={14} />
             <span>Sales & Orders</span>
           </button>
           <button
-            onClick={() => setActiveDepartment('inventory')}
+            onClick={() => handleDepartmentChange('inventory')}
             style={activeDepartment === 'inventory' ? styles.tabActive : styles.tab}
           >
             <Briefcase size={14} />
@@ -320,7 +332,7 @@ export default function ReportsCenter({ department }) {
           </button>
           {department !== 'elite-online' && (
             <button
-              onClick={() => setActiveDepartment('returns')}
+              onClick={() => handleDepartmentChange('returns')}
               style={activeDepartment === 'returns' ? styles.tabActive : styles.tab}
             >
               <Activity size={14} />
@@ -329,7 +341,7 @@ export default function ReportsCenter({ department }) {
           )}
           {department !== 'elite-online' && (
             <button
-              onClick={() => setActiveDepartment('integrations')}
+              onClick={() => handleDepartmentChange('integrations')}
               style={activeDepartment === 'integrations' ? styles.tabActive : styles.tab}
             >
               <FileText size={14} />
@@ -1205,41 +1217,51 @@ export default function ReportsCenter({ department }) {
               <table>
                 <thead>
                   <tr>
+                    <th>Date & Time</th>
                     <th>Photo</th>
                     <th>SKU Code</th>
                     <th>Product Name</th>
                     <th>Vendor</th>
-                    <th className="text-center">Sizes & Quantities</th>
-                    <th className="text-center">Total Qty</th>
+                    <th className="text-center">Size & Quantity</th>
+                    <th className="text-center">Qty Inwarded</th>
                     <th className="text-right">Purchase Price (Unit)</th>
                     <th className="text-right">Purchase Value (Total)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reportData.items?.map((item, idx) => (
-                    <tr key={item.sku || idx}>
-                      <td>
-                        {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.sku} style={styles.productImg} onError={(e) => { e.target.style.display = 'none'; }} />
-                        ) : (
-                          <div style={styles.noPhoto}>N/A</div>
-                        )}
-                      </td>
-                      <td style={styles.skuCode}>{item.sku}</td>
-                      <td>{item.itemName}</td>
-                      <td>{item.party}</td>
-                      <td className="text-center">
-                        <div style={styles.sizesGrid}>
-                          {item.sizes?.map(s => (
-                            <span key={s.size} style={styles.sizeTag}>{s.size}: {s.qty}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="text-center" style={{ fontWeight: 'bold' }}>{item.total}</td>
-                      <td className="text-right">{formatPrice(item.purchasePrice)}</td>
-                      <td className="text-right" style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{formatPrice(item.totalPurchaseAmount)}</td>
-                    </tr>
-                  ))}
+                  {reportData.items?.map((item, idx) => {
+                    const dtStr = (item.created_date_time || item.date)
+                      ? new Date(item.created_date_time || item.date).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit', hour12: true
+                        })
+                      : 'N/A';
+                    return (
+                      <tr key={item.id || idx}>
+                        <td style={{ fontSize: '12px', color: '#64748B', whiteSpace: 'nowrap' }}>{dtStr}</td>
+                        <td>
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.sku} style={styles.productImg} onError={(e) => { e.target.style.display = 'none'; }} />
+                          ) : (
+                            <div style={styles.noPhoto}>N/A</div>
+                          )}
+                        </td>
+                        <td style={styles.skuCode}>{item.skuCode || item.sku}</td>
+                        <td style={{ fontWeight: '500' }}>{item.itemName}</td>
+                        <td>{item.party}</td>
+                        <td className="text-center">
+                          <div style={styles.sizesGrid}>
+                            {item.sizes?.map(s => (
+                              <span key={s.size} style={styles.sizeTag}>{s.size}: {s.qty}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="text-center" style={{ fontWeight: 'bold', color: '#2563eb' }}>{item.qty || item.total}</td>
+                        <td className="text-right">{formatPrice(item.purchasePrice)}</td>
+                        <td className="text-right" style={{ color: '#d97706', fontWeight: 'bold' }}>{formatPrice(item.totalPurchaseAmount)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

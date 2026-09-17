@@ -72,7 +72,16 @@ export default function ReturnsManager() {
   // Add inventory list
   const [inventorySkus, setInventorySkus] = useState([]);
   const [partiesList, setPartiesList] = useState([]);
+  const [vendorsList, setVendorsList] = useState([]);
   const [stack, setStack] = useState([]);
+
+  // Bulk Multi-Inward Paste State
+  const [showBulkPasteModal, setShowBulkPasteModal] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+
+  const [displayOrderId, setDisplayOrderId] = useState('');
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupStatus, setLookupStatus] = useState('');
 
   // Auto-fetch party based on selected SKU
   useEffect(() => {
@@ -80,7 +89,7 @@ export default function ReturnsManager() {
       api.getPartyBySku(sku)
         .then(data => {
           if (data && data.party) {
-            setParty(data.party);
+            handlePartySelect(data.party);
           }
         })
         .catch(err => console.error('Failed to fetch party for SKU', err));
@@ -96,24 +105,115 @@ export default function ReturnsManager() {
         console.error('Failed to fetch SKUs', err);
       }
     };
-    const fetchParties = async () => {
+    const fetchPartiesAndVendors = async () => {
       try {
-        const data = await api.getParties();
-        setPartiesList(data || []);
-        if (data && data.length > 0) {
-          setParty(data[0].name);
+        const [partiesData, vendorsData] = await Promise.all([
+          api.getParties().catch(() => []),
+          api.getVendors().catch(() => [])
+        ]);
+        setPartiesList(partiesData || []);
+        setVendorsList(vendorsData || []);
+        if (partiesData && partiesData.length > 0) {
+          handlePartySelect(partiesData[0].name);
         }
       } catch (err) {
-        console.error('Failed to fetch parties', err);
+        console.error('Failed to fetch parties/vendors', err);
       }
     };
     fetchInventory();
-    fetchParties();
+    fetchPartiesAndVendors();
   }, []);
+
+  const handlePartySelect = (selectedVal) => {
+    if (!selectedVal || !selectedVal.trim()) {
+      setParty('');
+      return;
+    }
+    const matchedVendor = vendorsList.find(v => 
+      (v.name && v.name.trim().toLowerCase() === selectedVal.trim().toLowerCase()) ||
+      (v.businessName && v.businessName.trim().toLowerCase() === selectedVal.trim().toLowerCase())
+    );
+    const finalPartyName = matchedVendor && matchedVendor.businessName ? matchedVendor.businessName : selectedVal;
+    setParty(finalPartyName);
+  };
+
+  const handleBulkPasteToStack = () => {
+    if (!bulkPasteText.trim()) {
+      setError('Please enter data to paste into stack.');
+      return;
+    }
+    const lines = bulkPasteText.split(/\r?\n/);
+    const newItems = [];
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.includes('\t') ? trimmed.split('\t') : trimmed.split(',');
+      const refCode = parts[0] ? parts[0].trim() : '';
+      const skuCode = parts[1] ? parts[1].trim() : '';
+      const qtyNum = parts[2] ? parseInt(parts[2].trim(), 10) : 1;
+
+      if (refCode || skuCode) {
+        newItems.push({
+          sku: skuCode || sku || 'GENERAL-SKU',
+          displayOrderId: refCode,
+          referenceId: refCode,
+          quantity: isNaN(qtyNum) || qtyNum <= 0 ? 1 : qtyNum,
+          condition: returnType === 'RTO' ? 'INTACT' : condition,
+          notes
+        });
+      }
+    });
+
+    if (newItems.length > 0) {
+      setStack(prev => [...prev, ...newItems]);
+      setSuccess(`Added ${newItems.length} items to batch stack!`);
+      setBulkPasteText('');
+      setShowBulkPasteModal(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } else {
+      setError('Could not parse any valid lines.');
+    }
+  };
+
+  const handleReferenceChange = (e) => {
+    const val = e.target.value;
+    setReferenceId(val);
+    if (!val || val.trim().length < 3) {
+      setLookupStatus('');
+    }
+  };
+
+  const performUniwareLookup = async (codeToLookup) => {
+    const targetCode = (codeToLookup || referenceId).trim();
+    if (!targetCode) return;
+    setLookupLoading(true);
+    setLookupStatus('');
+    try {
+      const res = await api.lookupUniwareOrder({ code: targetCode, party });
+      if (res && res.data) {
+        if (res.data.displayOrderId) {
+          setDisplayOrderId(res.data.displayOrderId);
+        }
+        if (res.data.sku) {
+          setSku(res.data.sku);
+        }
+        if (res.data.displayOrderId || res.data.sku) {
+          setLookupStatus(`Uniware Matched: Order ${res.data.displayOrderId || targetCode}${res.data.sku ? ` | SKU: ${res.data.sku}` : ''}`);
+        }
+      }
+    } catch (err) {
+      console.warn('Uniware lookup error:', err.message);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   const handleAddToStack = (e) => {
     e.preventDefault();
-    if (!sku) return;
+    if (!sku) {
+      setError('Product SKU is required.');
+      return;
+    }
     
     const finalCondition = returnType === 'RTO' ? 'INTACT' : condition;
     if (returnType === 'CUSTOMER_RETURN' && (finalCondition === 'WRONG_ITEM' || finalCondition === 'DAMAGED') && !notes) {
@@ -121,7 +221,14 @@ export default function ReturnsManager() {
       return;
     }
 
-    setStack([...stack, { sku, quantity: parseInt(quantity, 10), condition: finalCondition, notes }]);
+    setStack([...stack, { 
+      sku, 
+      displayOrderId: displayOrderId || referenceId,
+      referenceId,
+      quantity: parseInt(quantity, 10), 
+      condition: finalCondition, 
+      notes 
+    }]);
     setSku('');
     setQuantity(1);
     setNotes('');
@@ -144,7 +251,8 @@ export default function ReturnsManager() {
         await api.processReturn({
           party,
           returnType,
-          referenceId,
+          referenceId: item.referenceId || referenceId,
+          displayOrderId: item.displayOrderId || displayOrderId || referenceId,
           sku: item.sku,
           quantity: item.quantity,
           condition: item.condition,
@@ -153,12 +261,14 @@ export default function ReturnsManager() {
         count++;
       }
 
-      setSuccess(`Successfully processed ${count} items for ${referenceId}`);
+      setSuccess(`Successfully processed ${count} items for ${party}`);
       setStack([]);
       setReferenceId('');
+      setDisplayOrderId('');
       setSku('');
       setQuantity(1);
       setNotes('');
+      setLookupStatus('');
       if (inputRef.current) {
         inputRef.current.focus();
       }
@@ -186,37 +296,74 @@ export default function ReturnsManager() {
   };
 
   const renderProcessForm = () => (
-    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        <div style={{ padding: '1rem', background: 'rgba(225, 29, 72, 0.1)', borderRadius: 'var(--radius-md)' }}>
-          <Zap size={28} color="#e11d48" />
+    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '850px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ padding: '1rem', background: 'rgba(225, 29, 72, 0.1)', borderRadius: 'var(--radius-md)' }}>
+            <Zap size={28} color="#e11d48" />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)' }}>Rapid Returns & Inward Processing</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Select party/vendor, scan AWB/barcode to auto-fetch Display Order ID & SKU from Uniware.</p>
+          </div>
         </div>
-        <div>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-primary)' }}>Rapid Returns Processing</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Select the mode and scan barcodes to instantly log returns.</p>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowBulkPasteModal(true)}
+          style={{ padding: '0.6rem 1.1rem', background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', borderRadius: 'var(--radius-sm)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
+        >
+          📋 Paste Multi-Inward
+        </button>
       </div>
+
+      {showBulkPasteModal && (
+        <div style={{ marginBottom: '1.5rem', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--primary)', padding: '1.25rem', borderRadius: 'var(--radius-md)' }}>
+          <h4 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '0.95rem', fontWeight: 'bold' }}>⚡ Paste Multiple Inward Items at Once</h4>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+            Paste multi-line text (e.g. <code>AWB/OrderCode, SKU, Qty</code> or 1 AWB per line):
+          </p>
+          <textarea
+            value={bulkPasteText}
+            onChange={e => setBulkPasteText(e.target.value)}
+            rows={5}
+            placeholder="AWB12345, SKU-BLUE-M, 2&#10;AWB67890, SKU-RED-L, 1"
+            style={{ width: '100%', fontFamily: 'monospace', padding: '0.75rem', fontSize: '0.85rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-light)', borderRadius: '4px', color: '#fff' }}
+          />
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setShowBulkPasteModal(false)} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Cancel</button>
+            <button type="button" onClick={handleBulkPasteToStack} className="btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', fontWeight: 'bold' }}>+ Batch Add to Stack</button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleAddToStack} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         
         {/* Core Selectors */}
         <div style={{ display: 'flex', gap: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)' }}>
           <div className="form-group" style={{ flex: 1 }}>
-            <label style={styles.label}>Party / Channel</label>
-            <select style={styles.input} value={party} onChange={e => setParty(e.target.value)}>
-              {partiesList.length > 0 ? (
-                partiesList.map(p => (
-                  <option key={p.id || p._id} value={p.name}>{p.name}</option>
-                ))
-              ) : (
-                <>
-                  <option value="Myntra">Myntra</option>
-                  <option value="Flipkart">Flipkart</option>
-                  <option value="Amazon">Amazon</option>
-                  <option value="Wholesale">Offline Wholesale</option>
-                </>
-              )}
-            </select>
+            <label style={styles.label}>Party / Vendor</label>
+            <input
+              list="party-vendor-list"
+              style={styles.input}
+              value={party}
+              onChange={e => handlePartySelect(e.target.value)}
+              placeholder="Select or type Party/Vendor..."
+            />
+            <datalist id="party-vendor-list">
+              <option value="Myntra">Myntra</option>
+              <option value="Flipkart">Flipkart</option>
+              <option value="Amazon">Amazon</option>
+              <option value="Wholesale">Offline Wholesale</option>
+              {partiesList.map(p => (
+                <option key={p.id || p._id} value={p.name}>{p.name}</option>
+              ))}
+              {vendorsList.map(v => (
+                <option key={v.id || v._id} value={v.businessName || v.name}>
+                  {v.businessName ? `${v.businessName} (Contact: ${v.name})` : v.name}
+                </option>
+              ))}
+            </datalist>
           </div>
           
           <div className="form-group" style={{ flex: 1 }}>
@@ -270,20 +417,37 @@ export default function ReturnsManager() {
           </div>
         )}
 
-        {/* Scanning Area */}
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <div className="form-group" style={{ flex: 2 }}>
-            <label style={styles.label}>AWB / Order ID (Reference)</label>
+        {/* Scanning & Order Information Area */}
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
+            <label style={styles.label}>AWB / Tracking Barcode</label>
+            <div style={{ position: 'relative' }}>
+              <input 
+                ref={inputRef}
+                style={styles.input} 
+                value={referenceId} 
+                onChange={handleReferenceChange} 
+                onBlur={() => performUniwareLookup(referenceId)}
+                placeholder="Scan AWB or enter tracking ID..." 
+                required 
+              />
+              {lookupLoading && (
+                <RefreshCw size={14} className="spin-loader" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary)' }} />
+              )}
+            </div>
+          </div>
+
+          <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
+            <label style={styles.label}>Display Order ID (Uniware)</label>
             <input 
-              ref={inputRef}
-              style={styles.input} 
-              value={referenceId} 
-              onChange={e => setReferenceId(e.target.value)} 
-              placeholder="Scan tracking barcode..." 
-              required 
+              style={{ ...styles.input, fontWeight: 700, color: 'var(--primary)' }} 
+              value={displayOrderId} 
+              onChange={e => setDisplayOrderId(e.target.value)} 
+              placeholder="Display Order ID..." 
             />
           </div>
-          <div className="form-group" style={{ flex: 2 }}>
+
+          <div className="form-group" style={{ flex: 2, minWidth: '180px' }}>
             <label style={styles.label}>Product SKU</label>
             <input 
               list="inventory-skus"
@@ -297,7 +461,8 @@ export default function ReturnsManager() {
               {inventorySkus.map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
-          <div className="form-group" style={{ flex: 1 }}>
+
+          <div className="form-group" style={{ flex: 1, minWidth: '80px' }}>
             <label style={styles.label}>Qty</label>
             <input 
               type="number" 
@@ -309,6 +474,12 @@ export default function ReturnsManager() {
             />
           </div>
         </div>
+
+        {lookupStatus && (
+          <div style={{ fontSize: '0.8rem', background: 'rgba(59,130,246,0.1)', color: '#60a5fa', padding: '0.4rem 0.8rem', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.2)' }}>
+            ✓ {lookupStatus}
+          </div>
+        )}
 
         <button 
           type="submit" 
@@ -328,6 +499,8 @@ export default function ReturnsManager() {
           <table style={{ width: '100%', marginBottom: '1rem' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <th style={{ padding: '0.5rem' }}>AWB / Ref</th>
+                <th style={{ padding: '0.5rem' }}>Display Order ID</th>
                 <th style={{ padding: '0.5rem' }}>SKU</th>
                 <th style={{ padding: '0.5rem' }}>Qty</th>
                 <th style={{ padding: '0.5rem' }}>Condition</th>
@@ -337,6 +510,8 @@ export default function ReturnsManager() {
             <tbody>
               {stack.map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <td style={{ padding: '0.5rem', fontWeight: 'bold' }}>{item.referenceId}</td>
+                  <td style={{ padding: '0.5rem', color: 'var(--primary)', fontWeight: 'bold' }}>{item.displayOrderId || '-'}</td>
                   <td style={{ padding: '0.5rem' }}>{item.sku}</td>
                   <td style={{ padding: '0.5rem' }}>{item.quantity}</td>
                   <td style={{ padding: '0.5rem' }}>
@@ -380,6 +555,7 @@ export default function ReturnsManager() {
             <tr>
               <th>Date</th>
               <th>Reference (AWB)</th>
+              <th>Display Order ID</th>
               <th>SKU</th>
               <th>Qty</th>
               <th>Party</th>
@@ -388,12 +564,13 @@ export default function ReturnsManager() {
           </thead>
           <tbody>
             {refinishQueue.length === 0 ? (
-              <tr><td colSpan="6" className="text-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>No items in the refinishing queue!</td></tr>
+              <tr><td colSpan="7" className="text-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>No items in the refinishing queue!</td></tr>
             ) : (
               refinishQueue.map(item => (
                 <tr key={item._id}>
                   <td>{formatDateDDMMYYYY(item.createdAt)}</td>
                   <td style={{ fontWeight: 'bold' }}>{item.referenceId}</td>
+                  <td style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{item.displayOrderId || '-'}</td>
                   <td>{item.sku}</td>
                   <td>{item.quantity}</td>
                   <td>{item.party}</td>
@@ -429,7 +606,8 @@ export default function ReturnsManager() {
           <thead>
             <tr>
               <th>Date</th>
-              <th>AWB / Order ID</th>
+              <th>AWB / Reference</th>
+              <th>Display Order ID</th>
               <th>SKU</th>
               <th>Type</th>
               <th>Condition</th>
@@ -439,12 +617,13 @@ export default function ReturnsManager() {
           </thead>
           <tbody>
             {history.length === 0 ? (
-              <tr><td colSpan="7" className="text-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>No returns history found.</td></tr>
+              <tr><td colSpan="8" className="text-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>No returns history found.</td></tr>
             ) : (
               history.map(item => (
                 <tr key={item._id}>
                   <td>{formatDateTimeDDMMYYYY(item.createdAt)}</td>
                   <td style={{ fontWeight: 'bold' }}>{item.referenceId}</td>
+                  <td style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{item.displayOrderId || '-'}</td>
                   <td>{item.sku}</td>
                   <td>
                     <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: item.returnType === 'RTO' ? 'rgba(59,130,246,0.1)' : 'rgba(245,158,11,0.1)', color: item.returnType === 'RTO' ? '#60a5fa' : '#fcd34d' }}>

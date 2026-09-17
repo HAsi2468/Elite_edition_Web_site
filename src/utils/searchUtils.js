@@ -14,6 +14,32 @@ export function matchSearchQuery(item, searchStr, fields = []) {
   const normQuery = rawQuery.replace(/[^a-z0-9]/gi, '');
   const digitsOnlyQuery = rawQuery.replace(/\D/g, '');
 
+  // Check Brand Codes array or fields if present on item
+  const brandCodeArrays = [
+    item.brandCodes,
+    item.brand_codes,
+    item.brandBarcodes,
+    item.barcodes,
+    item.brandCode
+  ];
+
+  for (const bArr of brandCodeArrays) {
+    if (!bArr) continue;
+    const list = Array.isArray(bArr) ? bArr : [bArr];
+    for (const bc of list) {
+      if (!bc) continue;
+      const codeStr = typeof bc === 'string' ? bc : (bc.code || bc.barcode || bc.val || bc.value || bc.brandCode || '');
+      const brandStr = typeof bc === 'object' ? (bc.brand || bc.brandName || '') : '';
+      
+      if (codeStr && (codeStr.toLowerCase().includes(rawQuery) || (normQuery.length > 0 && codeStr.replace(/[^a-z0-9]/gi, '').toLowerCase().includes(normQuery)))) {
+        return true;
+      }
+      if (brandStr && brandStr.toLowerCase().includes(rawQuery)) {
+        return true;
+      }
+    }
+  }
+
   for (const field of fields) {
     let val = item;
     if (field.includes('.')) {

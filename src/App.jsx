@@ -15,14 +15,18 @@ import StitchingSettings from './components/StitchingSettings';
 import AdminPanel from './components/AdminPanel';
 import Workspace from './components/Workspace';
 import CommunicationPanel from './components/CommunicationPanel';
+import TaskManagerPanel from './components/TaskManagerPanel';
 import EliteModalDialog from './components/EliteModalDialog';
 import CompanySettingsPanel from './components/CompanySettingsPanel';
+import { matchSkuOrBrandCode } from './utils/skuHelper';
 import EliteBillingDepartment from './components/EliteBillingDepartment';
 import CompanyDevelopmentWorkspace from './components/CompanyDevelopmentWorkspace';
 import DigitalPrintComplainModule from './components/DigitalPrintComplainModule';
 import DigitalPrintExpenseModule from './components/DigitalPrintExpenseModule';
 import CompanyDedicatedDashboard from './components/CompanyDedicatedDashboard';
 import GarmentJobCardDashboard from './components/GarmentJobCardDashboard';
+import CrmPanel from './components/CrmPanel';
+import BusinessConnectionPanel from './components/BusinessConnectionPanel';
 import { COMPANIES, getCompanyById } from './config/companiesConfig';
 
 // Code-splitting lazy loads for heavy tab modules
@@ -58,14 +62,22 @@ import {
   Menu,
   X,
   Bell,
+  BellRing,
+  Users,
   Scissors,
   Building,
   Receipt,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Clock,
+  Sparkles,
+  Sliders,
+  Bot
 } from 'lucide-react';
 
 import NotificationToastContainer, { triggerPushNotification, triggerGlobalDataRefresh, requestNotificationPermission, NotificationHistoryDrawer, getNotificationHistory } from './components/NotificationToast';
+import WebDevicePermissionsModal from './components/WebDevicePermissionsModal';
+import { useSocket } from './contexts/SocketContext';
 
 
 
@@ -92,6 +104,7 @@ export default function App() {
   };
 
   const initialNav = getSavedNavState();
+  const socket = useSocket();
   const [isAuthenticated, setIsAuthenticated] = useState(api.isAuthenticated());
   const [currentUser, setCurrentUser] = useState(() => api.getCurrentUser());
   const [activeTab, setActiveTab] = useState(initialNav.tab);
@@ -195,7 +208,7 @@ export default function App() {
   // Department permission helpers
   // Department permission helpers
   const ELITE_ONLINE_PERMISSIONS = ['dashboard', 'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra'];
-  const EDP_PERMISSIONS = ['jobcards', 'jobcards_status_dashboard', 'jobcards_status', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_master', 'jobcards_settings', 'jobcards_raw_materials', 'jobcards_complain', 'jobcards_complaints', 'complaint_dashboard', 'complaint_create', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard', 'expense_create'];
+  const EDP_PERMISSIONS = ['jobcards', 'jobcards_status_dashboard', 'jobcards_status', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_master', 'jobcards_settings', 'jobcards_raw_materials', 'jobcards_complain', 'jobcards_complaints', 'complaint_dashboard', 'complaint_create', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard', 'expense_create', 'jobcards_crm', 'crm_department', 'crm', 'jobcards_master_ai', 'master_ai_agent', 'jobcards_business_connection', 'business_connection'];
   const STITCHING_PERMISSIONS = [
     'stitching_jobcards', 'stitching_design', 'stitching_fabric', 'stitching_settings',
     'jobcards_stitching_challan', 'jobcards_stitching_settings', 'stitching'
@@ -205,12 +218,15 @@ export default function App() {
     if (!currentUser) return false;
     if (currentUser.role === 'admin' || currentUser.isMainAdmin || currentUser.email === 'harshitsidapara2468@gmail.com') return true;
     if (Array.isArray(currentUser.allowedCompanies) && currentUser.allowedCompanies.length > 0) {
+      if (companyName === 'EON' || companyName === 'Elite Online') {
+        return currentUser.allowedCompanies.includes('EON') || currentUser.allowedCompanies.includes('Elite Online');
+      }
       return currentUser.allowedCompanies.includes(companyName);
     }
     return true;
   };
 
-  const hasEliteEditionAccess = !currentUser || currentUser.role === 'admin' || isCompanyAllowed('Elite Online') || (currentUser.permissions && currentUser.permissions.some(p => ELITE_ONLINE_PERMISSIONS.includes(p)));
+  const hasEliteEditionAccess = !currentUser || currentUser.role === 'admin' || isCompanyAllowed('EON') || (currentUser.permissions && currentUser.permissions.some(p => ELITE_ONLINE_PERMISSIONS.includes(p)));
   const hasDigitalPrintAccess = !currentUser || currentUser.role === 'admin' || isCompanyAllowed('Elite Digital Print') || (currentUser.permissions && currentUser.permissions.some(p => (EDP_PERMISSIONS.includes(p) || p.startsWith('jobcards')) && !p.startsWith('stitching_')));
   const hasStitchingAccess = !currentUser || currentUser.role === 'admin' || isCompanyAllowed('Elite Stitching') || (currentUser.permissions && currentUser.permissions.some(p => STITCHING_PERMISSIONS.includes(p) || p.startsWith('stitching_')));
   const hasWorkspaceAccess = !currentUser || currentUser.role === 'admin' || !currentUser.permissions || currentUser.permissions.length === 0 || currentUser.permissions.includes('workspace');
@@ -245,7 +261,7 @@ export default function App() {
       return;
     }
     if (activeDepartment === 'stitching' && (activeTab === 'jobcards_list' || activeTab === 'jobcards_catalogue' || activeTab === 'jobcards_fabric')) return;
-    if (activeTab.startsWith('jobcards')) {
+    if (activeTab.startsWith('jobcards') || activeTab === 'business_connection' || activeTab === 'crm' || activeTab === 'master_ai_agent') {
       setActiveDepartment('digital_print');
     } else if (activeTab.startsWith('ee_')) {
       setActiveDepartment('elite_edition');
@@ -331,14 +347,15 @@ export default function App() {
     if (!isAuthenticated || !currentUser) return;
 
     const ALL_SYSTEM_TABS = [
-      'dashboard', 'workspace', 'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'admin',
+      'dashboard', 'workspace', 'communication', 'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'admin',
       'ee_dashboard', 'ee_invoices', 'ee_settings', 'ee_complaints', 'ee_expenses',
       'ef_dashboard', 'ef_invoices', 'ef_settings', 'ef_complaints', 'ef_expenses',
       'es_dashboard', 'es_settings', 'es_complaints', 'es_expenses', 'eo_complaints', 'eo_expenses',
       'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master', 'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings',
       'jobcards_stitching_challan', 'jobcards_stitching_settings',
       'jobcards_printing_log', 'jobcards_fusing_log', 'jobcards_print_entry', 'jobcards_billing', 'jobcards_engine', 'jobcards_split_view', 'jobcards_challan', 'jobcards_complain', 'jobcards_expense',
-      'jobcards_expenses', 'expense_dashboard', 'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard'
+      'jobcards_expenses', 'expense_dashboard', 'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard', 'jobcards_crm', 'crm_department', 'crm', 'jobcards_master_ai', 'master_ai_agent',
+      'jobcards_business_connection', 'business_connection', 'complaint_dashboard', 'complaint_create'
     ];
 
     if (currentUser.role === 'admin') {
@@ -356,6 +373,8 @@ export default function App() {
         if (activeTab === 'jobcards_catalogue' && (p === 'stitching_design' || p === 'jobcards_catalogue' || p === 'jobcards')) return true;
         if ((activeTab === 'jobcards_stitching_challan' || activeTab === 'jobcards_fabric') && (p === 'stitching_fabric' || p === 'jobcards_stitching_challan' || p === 'jobcards_fabric')) return true;
         if (activeTab === 'jobcards_stitching_settings' && (p === 'stitching_settings' || p === 'jobcards_stitching_settings')) return true;
+        if ((activeTab === 'jobcards_business_connection' || activeTab === 'business_connection') && (p === 'jobcards_business_connection' || p === 'business_connection' || p === 'jobcards_master_ai' || p === 'jobcards')) return true;
+        if ((activeTab === 'jobcards_crm' || activeTab === 'crm_leads') && (p === 'jobcards_crm' || p === 'crm_department' || p === 'crm' || p === 'crm_leads' || p === 'jobcards')) return true;
         if (activeTab.startsWith('jobcards_') && (p === 'jobcards' || p === activeTab)) return true;
         if (activeTab === 'jobcards' && p.startsWith('jobcards')) return true;
         if (activeTab.startsWith('stitching_') && (p.startsWith('stitching_') || p === 'jobcards')) return true;
@@ -383,6 +402,7 @@ export default function App() {
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [formMode, setFormMode] = useState('inventory'); // 'inventory' or 'catalog'
   const [isStockOutOpen, setIsStockOutOpen] = useState(false);
   const [stockOutItem, setStockOutItem] = useState(null);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
@@ -399,6 +419,8 @@ export default function App() {
     return getNotificationHistory().filter(h => !h.read).length;
   });
 
+  const [notificationPerm, setNotificationPerm] = useState(() => ('Notification' in window ? Notification.permission : 'unsupported'));
+
   useEffect(() => {
     const handleNotifUpdate = () => {
       setUnreadNotifCount(getNotificationHistory().filter(h => !h.read).length);
@@ -407,12 +429,49 @@ export default function App() {
     return () => window.removeEventListener('elite-notification-history-update', handleNotifUpdate);
   }, []);
 
+  // Auto-request push notification permission as soon as user logs in or reloads page
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      const askPerm = async () => {
+        try {
+          const res = await requestNotificationPermission();
+          setNotificationPerm(res);
+        } catch (e) {
+          console.warn('Deferred notification prompt:', e);
+        }
+      };
+
+      const handleUserInteraction = () => {
+        askPerm();
+        window.removeEventListener('click', handleUserInteraction);
+        window.removeEventListener('keydown', handleUserInteraction);
+      };
+
+      window.addEventListener('click', handleUserInteraction);
+      window.addEventListener('keydown', handleUserInteraction);
+
+      const timer = setTimeout(() => {
+        if (Notification.permission === 'default') {
+          askPerm();
+        }
+      }, 1500);
+
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('click', handleUserInteraction);
+        window.removeEventListener('keydown', handleUserInteraction);
+      };
+    }
+  }, [isAuthenticated]);
+
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchData();
-      const intervalId = setInterval(() => {
-        fetchData();
-      }, 10000); // 10s auto-sync
+      // NO MORE 60s background polling! 100% Real-time Socket.io events across all screens!
 
       const handleDataRefresh = () => {
         fetchData();
@@ -420,11 +479,145 @@ export default function App() {
       window.addEventListener('elite-data-refresh', handleDataRefresh);
 
       return () => {
-        clearInterval(intervalId);
         window.removeEventListener('elite-data-refresh', handleDataRefresh);
       };
     }
   }, [isAuthenticated]);
+
+  // Global Socket.io Real-Time Push Notification & Multi-Department Listener
+  useEffect(() => {
+    if (!socket || !isAuthenticated) return;
+
+    if (currentUser) {
+      const uId = currentUser.id || currentUser._id;
+      if (uId) {
+        socket.emit('register-user', uId);
+      }
+    }
+
+    const handleReceiveMessage = (msg) => {
+      if (!msg) return;
+      const myId = String(currentUser?._id || currentUser?.id || '');
+      const senderObj = msg.senderId;
+      const senderIdStr = String(typeof senderObj === 'object' ? (senderObj?._id || senderObj?.id || senderObj) : senderObj);
+
+      // Do not trigger notification for messages sent by current user
+      if (myId && senderIdStr === myId) return;
+
+      const senderName = typeof senderObj === 'object' ? (senderObj?.name || senderObj?.username || 'Colleague') : 'Colleague';
+      const msgContent = msg.type === 'record-card' ? `🃏 Shared Record Card: ${msg.content}` : (msg.attachment ? `📎 [${msg.attachment.fileType || 'Attachment'}] ${msg.content}` : msg.content);
+
+      triggerPushNotification(
+        `💬 Chat from ${senderName}`,
+        msgContent,
+        'info',
+        'communication'
+      );
+    };
+
+    const handleActivity = (data) => {
+      console.log('⚡ Real-time Socket Activity:', data);
+      if (data && data.description) {
+        triggerPushNotification(
+          data.title || `⚡ Activity Log (${data.module || 'System'})`,
+          data.description,
+          'info',
+          data.actionTab || 'communication'
+        );
+      }
+      triggerGlobalDataRefresh();
+    };
+
+    const handleOverdue = (data) => {
+      if (data && data.message) {
+        triggerPushNotification('🚨 OVERDUE TASK ALERT', data.message, 'warning', 'communication');
+      }
+      triggerGlobalDataRefresh();
+    };
+
+    const handleMention = (data) => {
+      if (data && data.content) {
+        triggerPushNotification(`💬 Mentioned by ${data.senderName || 'Colleague'}`, data.content, 'info', 'communication');
+      }
+    };
+
+    const handleJobStageUpdate = (data) => {
+      if (data && data.jobNo) {
+        triggerPushNotification('⚙️ Job Stage Updated', `Job #${data.jobNo} moved to '${data.newStage}'`, 'success', 'jobcards_list');
+      }
+      triggerGlobalDataRefresh();
+    };
+
+    const handleDataUpdate = () => {
+      triggerGlobalDataRefresh();
+    };
+
+    socket.on('receive-message', handleReceiveMessage);
+    socket.on('activity-notification', handleActivity);
+    socket.on('overdue-task-alert', handleOverdue);
+    socket.on('mention-notification', handleMention);
+    socket.on('job-stage-updated', handleJobStageUpdate);
+    socket.on('job-updated', handleDataUpdate);
+    socket.on('job-created', handleDataUpdate);
+    socket.on('job-deleted', handleDataUpdate);
+    socket.on('design-updated', handleDataUpdate);
+    socket.on('design-created', handleDataUpdate);
+    socket.on('design-deleted', handleDataUpdate);
+    socket.on('invoice-updated', handleDataUpdate);
+    socket.on('invoice-created', handleDataUpdate);
+    socket.on('invoice-deleted', handleDataUpdate);
+    socket.on('complaint-updated', handleDataUpdate);
+    socket.on('complaint-created', handleDataUpdate);
+    socket.on('complaint-deleted', handleDataUpdate);
+    socket.on('expense-updated', handleDataUpdate);
+    socket.on('expense-created', handleDataUpdate);
+    socket.on('expense-deleted', handleDataUpdate);
+    socket.on('inventory-updated', handleDataUpdate);
+    socket.on('inventory-created', handleDataUpdate);
+    socket.on('inventory-deleted', handleDataUpdate);
+    socket.on('sales-updated', handleDataUpdate);
+    socket.on('sales-created', handleDataUpdate);
+    socket.on('sales-deleted', handleDataUpdate);
+    socket.on('task-updated', handleDataUpdate);
+    socket.on('task-deleted', handleDataUpdate);
+    socket.on('task-created', handleDataUpdate);
+    socket.on('proof-status-updated', handleDataUpdate);
+    socket.on('global-room-updated', handleDataUpdate);
+
+    return () => {
+      socket.off('receive-message', handleReceiveMessage);
+      socket.off('activity-notification', handleActivity);
+      socket.off('overdue-task-alert', handleOverdue);
+      socket.off('mention-notification', handleMention);
+      socket.off('job-stage-updated', handleJobStageUpdate);
+      socket.off('job-updated', handleDataUpdate);
+      socket.off('job-created', handleDataUpdate);
+      socket.off('job-deleted', handleDataUpdate);
+      socket.off('design-updated', handleDataUpdate);
+      socket.off('design-created', handleDataUpdate);
+      socket.off('design-deleted', handleDataUpdate);
+      socket.off('invoice-updated', handleDataUpdate);
+      socket.off('invoice-created', handleDataUpdate);
+      socket.off('invoice-deleted', handleDataUpdate);
+      socket.off('complaint-updated', handleDataUpdate);
+      socket.off('complaint-created', handleDataUpdate);
+      socket.off('complaint-deleted', handleDataUpdate);
+      socket.off('expense-updated', handleDataUpdate);
+      socket.off('expense-created', handleDataUpdate);
+      socket.off('expense-deleted', handleDataUpdate);
+      socket.off('inventory-updated', handleDataUpdate);
+      socket.off('inventory-created', handleDataUpdate);
+      socket.off('inventory-deleted', handleDataUpdate);
+      socket.off('sales-updated', handleDataUpdate);
+      socket.off('sales-created', handleDataUpdate);
+      socket.off('sales-deleted', handleDataUpdate);
+      socket.off('task-updated', handleDataUpdate);
+      socket.off('task-deleted', handleDataUpdate);
+      socket.off('task-created', handleDataUpdate);
+      socket.off('proof-status-updated', handleDataUpdate);
+      socket.off('global-room-updated', handleDataUpdate);
+    };
+  }, [socket, isAuthenticated, currentUser?._id]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -434,7 +627,7 @@ export default function App() {
       const [inventoryResult, catalogResult, salesResult, partiesResult, userResult] = await Promise.allSettled([
         api.getInventory(),
         api.getProductsCatalog(),
-        api.getSales({ limit: 1000 }),
+        api.getSales({ limit: 200 }),
         api.getParties(),
         api.refreshCurrentUser(),
       ]);
@@ -498,33 +691,68 @@ export default function App() {
     }
   };
 
+  // Ensure missing SKU is saved to Master Product Catalog
+  const ensureSkuSavedToCatalog = async (itemOrData) => {
+    try {
+      const skuCode = (itemOrData.skuCode || '').trim();
+      if (!skuCode) return;
+
+      const existsInCatalog = catalogItems.some(c => 
+        (c.skuCode && c.skuCode.trim().toLowerCase() === skuCode.toLowerCase()) ||
+        matchSkuOrBrandCode(c, skuCode)
+      );
+
+      if (!existsInCatalog) {
+        const catPayload = {
+          skuCode: skuCode,
+          description: itemOrData.itemName || itemOrData.description || skuCode,
+          brand: itemOrData.party || itemOrData.brand || 'ELITE EDITION',
+          size: itemOrData.size || '',
+          basePrice: Number(itemOrData.purchasePrice ?? itemOrData.basePrice) || 0.0,
+          price: Number(itemOrData.salePrice ?? itemOrData.price) || 0.0,
+          imageUrl: itemOrData.imageUrl || '',
+          categoryName: itemOrData.categoryName || 'KURTA SET',
+          hsnCode: itemOrData.hsnCode || '',
+          brandCodes: itemOrData.brandCodes || [],
+        };
+        const newCat = await api.createProductCatalog(catPayload).catch(err => null);
+        if (newCat) {
+          setCatalogItems(prev => [newCat, ...prev]);
+        }
+      }
+    } catch (e) {
+      console.warn('ensureSkuSavedToCatalog error:', e);
+    }
+  };
+
   // CRUD Handler Functions
   const handleAddSubmit = async (formData) => {
     setLoading(true);
     try {
-      if (activeTab === 'catalog') {
-        const payload = {
-          skuCode: formData.skuCode,
-          description: formData.itemName,
-          brand: formData.party,
-          size: formData.size,
-          basePrice: formData.purchasePrice,
-          price: formData.salePrice,
-          imageUrl: formData.imageUrl
-        };
-        const newProduct = await api.createProductCatalog(payload);
-        setCatalogItems(prev => [newProduct, ...prev]);
-      } else if (activeTab === 'inventory') {
-        const newItem = await api.createInventory(formData);
-        setItems(prev => [newItem, ...prev]);
+      const payload = {
+        skuCode: formData.skuCode,
+        description: formData.itemName || formData.description || formData.skuCode,
+        brand: formData.party || formData.brand || 'ELITE EDITION',
+        size: formData.size,
+        basePrice: Number(formData.purchasePrice ?? formData.basePrice) || 0.0,
+        price: Number(formData.salePrice ?? formData.price) || 0.0,
+        imageUrl: formData.imageUrl || '',
+        categoryName: formData.categoryName || 'KURTA SET',
+        hsnCode: formData.hsnCode || '',
+        brandCodes: formData.brandCodes || [],
+      };
+      const newProduct = await api.createProductCatalog(payload);
+      if (newProduct) {
+        setCatalogItems(prev => [newProduct, ...prev.filter(c => c._id !== newProduct._id && c.skuCode !== newProduct.skuCode)]);
       }
       setIsFormOpen(false);
       triggerGlobalDataRefresh();
-      fetchData();
+      await fetchData();
     } catch (err) {
-      alert(err.message || 'Failed to create item.');
+      alert(err.message || 'Failed to create product in catalog.');
     } finally {
       setLoading(false);
+      restoreSavedScrollPos();
     }
   };
 
@@ -532,18 +760,22 @@ export default function App() {
     if (!editingItem || !editingItem._id) return;
     setLoading(true);
     try {
-      if (activeTab === 'catalog') {
+      const isCatalog = activeTab === 'catalog' || catalogItems.some(c => c._id === editingItem._id) || 'basePrice' in editingItem;
+      if (isCatalog) {
         const payload = {
           skuCode: formData.skuCode,
-          description: formData.itemName,
-          brand: formData.party,
+          description: formData.itemName || formData.description,
+          brand: formData.party || formData.brand,
           size: formData.size,
-          basePrice: formData.purchasePrice,
-          price: formData.salePrice,
-          imageUrl: formData.imageUrl
+          basePrice: formData.purchasePrice ?? formData.basePrice,
+          price: formData.salePrice ?? formData.price,
+          imageUrl: formData.imageUrl,
+          categoryName: formData.categoryName || '',
+          hsnCode: formData.hsnCode || '',
+          brandCodes: formData.brandCodes || [],
         };
         await api.updateProductCatalog(editingItem._id, payload);
-      } else if (activeTab === 'inventory') {
+      } else {
         const updatedItem = await api.updateInventory(editingItem._id, formData);
         setItems(prev => prev.map(item => item._id === editingItem._id ? { ...item, ...updatedItem } : item));
       }
@@ -555,11 +787,13 @@ export default function App() {
       alert(err.message || 'Failed to update item.');
     } finally {
       setLoading(false);
+      restoreSavedScrollPos();
     }
   };
 
   const handleDeleteItem = async (id) => {
-    if (activeTab === 'catalog') {
+    const isCatalog = activeTab === 'catalog' || catalogItems.some(c => c._id === id);
+    if (isCatalog) {
       if (!window.confirm('Are you sure you want to delete this product from catalog?')) return;
       setLoading(true);
       try {
@@ -570,8 +804,9 @@ export default function App() {
         alert(err.message || 'Failed to delete product from catalog.');
       } finally {
         setLoading(false);
+        restoreSavedScrollPos();
       }
-    } else if (activeTab === 'inventory') {
+    } else {
       if (!window.confirm('Are you sure you want to delete this inventory item?')) return;
       setLoading(true);
       try {
@@ -582,7 +817,19 @@ export default function App() {
         alert(err.message || 'Failed to delete inventory item.');
       } finally {
         setLoading(false);
+        restoreSavedScrollPos();
       }
+    }
+  };
+
+  const handleQuickStockUpdate = async (id, newStock) => {
+    try {
+      await api.updateInventory(id, { currentlyAvailableStock: newStock, qty: newStock });
+      setItems(prev => prev.map(item => item._id === id ? { ...item, currentlyAvailableStock: newStock, qty: newStock } : item));
+      triggerGlobalDataRefresh();
+    } catch (err) {
+      console.error('Failed to update stock:', err);
+      alert(err.message || 'Failed to update stock level.');
     }
   };
 
@@ -590,6 +837,11 @@ export default function App() {
     setLoading(true);
     try {
       const res = await api.bulkInward(parsedItems);
+      if (Array.isArray(parsedItems)) {
+        for (const item of parsedItems) {
+          await ensureSkuSavedToCatalog(item);
+        }
+      }
       alert(res.message || 'Bulk inward completed successfully!');
       setIsBulkInwardOpen(false);
       triggerGlobalDataRefresh();
@@ -598,6 +850,7 @@ export default function App() {
       alert(err.message || 'Failed to process bulk inward.');
     } finally {
       setLoading(false);
+      restoreSavedScrollPos();
     }
   };
 
@@ -612,43 +865,100 @@ export default function App() {
       alert(err.message || 'Failed to submit outward transaction.');
     } finally {
       setLoading(false);
+      restoreSavedScrollPos();
     }
   };
 
+  const savedModalScrollRef = useRef(0);
+
+  // Disable browser automatic scroll restoration & track scroll Y continuously
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+    const handleScroll = () => {
+      if (!isFormOpen && !isStockOutOpen && !isManagerOpen && !isBulkInwardOpen) {
+        const y = window.scrollY || document.documentElement.scrollTop || 0;
+        if (y > 0) {
+          savedModalScrollRef.current = y;
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isFormOpen, isStockOutOpen, isManagerOpen, isBulkInwardOpen]);
+
   const triggerStockOutModal = (item = null) => {
+    savedModalScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0;
     setStockOutItem(item);
     setIsStockOutOpen(true);
   };
 
-  const triggerAddModal = () => {
+  const triggerAddModal = (targetMode) => {
+    savedModalScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0;
     setEditingItem(null);
+    const resolvedMode = (targetMode === 'catalog' || targetMode === 'inventory')
+      ? targetMode
+      : (activeTab === 'catalog' ? 'catalog' : 'inventory');
+    setFormMode(resolvedMode);
     setIsFormOpen(true);
   };
 
   const triggerEditModal = (item) => {
-    if (activeTab === 'catalog') {
+    savedModalScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0;
+    const titleOrDescription = item.description || item.itemName || item.name || item.title || item.productName || item.skuCode || '';
+    const isCatalog = activeTab === 'catalog' || catalogItems.some(c => c._id === item._id) || 'basePrice' in item;
+    setFormMode(isCatalog ? 'catalog' : 'inventory');
+    if (isCatalog) {
       const adapted = {
         _id: item._id,
-        itemName: item.description || '',
-        party: item.brand || 'Uniware',
+        itemName: titleOrDescription,
+        description: titleOrDescription,
+        party: item.brand || item.party || 'ANOUK',
+        brand: item.brand || item.party || 'ANOUK',
         size: Array.isArray(item.size) ? item.size.join(', ') : item.size || '',
-        purchasePrice: item.basePrice || 0.0,
-        salePrice: item.price || 0.0,
-        skuCode: item.skuCode || '',
+        purchasePrice: item.basePrice ?? item.purchasePrice ?? 0.0,
+        salePrice: item.price ?? item.salePrice ?? 0.0,
+        skuCode: item.skuCode || item.sku || '',
         imageUrl: item.imageUrl || '',
-        currentlyAvailableStock: item.inventorySnapshots?.inventory || 0,
-        qty: item.inventorySnapshots?.inventory || 0
+        currentlyAvailableStock: item.inventorySnapshots?.inventory ?? item.currentlyAvailableStock ?? item.qty ?? 0,
+        qty: item.inventorySnapshots?.inventory ?? item.currentlyAvailableStock ?? item.qty ?? 0,
+        brandCodes: item.brandCodes || [],
       };
       setEditingItem(adapted);
     } else {
-      setEditingItem(item);
+      setEditingItem({
+        ...item,
+        itemName: titleOrDescription,
+        description: titleOrDescription,
+      });
     }
     setIsFormOpen(true);
   };
 
   const triggerManagerModal = (tabName = 'vendors') => {
+    savedModalScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0;
     setManagerTab(tabName);
     setIsManagerOpen(true);
+  };
+
+  const restoreSavedScrollPos = (explicitPos = null) => {
+    const targetY = explicitPos !== null ? explicitPos : (savedModalScrollRef.current || 0);
+    if (typeof window === 'undefined') return;
+
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+
+    const doScroll = () => {
+      window.scrollTo({ top: targetY, behavior: 'instant' });
+    };
+
+    doScroll();
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 30);
+    setTimeout(doScroll, 100);
+    setTimeout(doScroll, 300);
   };
 
   // Update server endpoint dynamically
@@ -665,6 +975,55 @@ export default function App() {
 
   return (
     <div style={styles.appContainer} className="app-container">
+      {/* ── Auto Push Notification Request Banner ── */}
+      {isAuthenticated && notificationPerm !== 'granted' && notificationPerm !== 'dismissed' && (
+        <div style={{
+          background: 'linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)',
+          color: '#ffffff',
+          padding: '0.45rem 1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          boxShadow: '0 2px 8px rgba(37,99,235,0.3)',
+          zIndex: 9999,
+          position: 'relative'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <BellRing size={16} color="#ffffff" />
+            <span>Enable Push Notifications to receive real-time Chat, Personal DM, Job Card & Task Alerts instantly!</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={async () => {
+                const res = await requestNotificationPermission();
+                setNotificationPerm(res);
+              }}
+              style={{
+                background: '#ffffff',
+                color: '#2563eb',
+                border: 'none',
+                padding: '0.3rem 0.8rem',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+              }}
+            >
+              Enable Notifications Now 🔔
+            </button>
+            <button
+              onClick={() => setNotificationPerm('dismissed')}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.75)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <header className="glass-panel app-header" style={styles.header}>
         <div style={styles.headerLeft} className="header-left-wrap">
@@ -681,44 +1040,63 @@ export default function App() {
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {/* Interactive Company Switcher Pill (Option 1 & Option 3 Combined) */}
-          <div 
-            onClick={() => setShowCompanyQuickSheet(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              cursor: 'pointer',
-              padding: '0.25rem 0.55rem',
-              borderRadius: '8px',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-              background: 'rgba(99, 102, 241, 0.08)',
-              transition: 'all 0.15s ease'
-            }}
-            title="Tap to quick-switch company (or hold hamburger button)"
-          >
-            <div style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '6px',
-              background: 'linear-gradient(135deg, var(--primary, #6366f1), #0891b2)',
-              color: '#fff',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '0.78rem',
-              letterSpacing: '0.02em',
-              flexShrink: 0,
-              boxShadow: '0 2px 6px rgba(99,102,241,0.25)'
-            }}>
-              {activeTab === 'workspace' ? 'WS' : (getCompanyById(activeDepartment)?.code || 'EO')}
-            </div>
-            <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-              {activeTab === 'workspace' ? 'Workspace' : (getCompanyById(activeDepartment)?.name || 'Elite Online')}
-            </span>
-            <ChevronDown size={14} color="#6366f1" style={{ flexShrink: 0 }} />
-          </div>
+          {/* Interactive Company Switcher Pill */}
+          {(() => {
+            const activeComp = getCompanyById(activeDepartment);
+            const ActiveIcon = activeComp?.iconName === 'Store' ? Store : activeComp?.iconName === 'Printer' ? Printer : activeComp?.iconName === 'Scissors' ? Scissors : Building;
+            const brandColor = activeComp?.iconColor || '#6366f1';
+
+            return (
+              <div 
+                onClick={() => setShowCompanyQuickSheet(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  padding: '0.3rem 0.65rem 0.3rem 0.4rem',
+                  borderRadius: '10px',
+                  border: `1px solid ${brandColor}40`,
+                  background: `${brandColor}12`,
+                  transition: 'all 0.15s ease'
+                }}
+                title="Tap to switch active company entity workspace"
+              >
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '7px',
+                  background: activeComp?.gradient || 'linear-gradient(135deg, #6366f1, #0891b2)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: `0 2px 6px ${brandColor}40`
+                }}>
+                  <ActiveIcon size={15} color="#ffffff" />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                    {activeTab === 'workspace' ? 'Workspace' : (activeComp?.name || 'Elite Online')}
+                  </span>
+                  <span style={{
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                    background: `${brandColor}25`,
+                    color: brandColor,
+                    lineHeight: 1.2
+                  }}>
+                    {activeComp?.code || 'EO'}
+                  </span>
+                </div>
+                <ChevronDown size={14} color={brandColor} style={{ flexShrink: 0 }} />
+              </div>
+            );
+          })()}
 
           {/* Master Company Switcher Buttons */}
           <div className="dept-switcher-header">
@@ -737,9 +1115,10 @@ export default function App() {
                   key={company.id}
                   onClick={() => handleSwitchDepartment(company.id)}
                   className={`dept-switch-btn ${isActive ? 'active' : ''}`}
+                  style={isActive ? { background: company.gradient, boxShadow: `0 2px 10px ${company.iconColor}40` } : {}}
                   title={`Switch to ${company.name} Workspace (${company.type})`}
                 >
-                  <IconComponent size={15} />
+                  <IconComponent size={15} color={isActive ? '#ffffff' : (company.iconColor || 'currentColor')} />
                   <span>{company.name}</span>
                 </button>
               );
@@ -787,8 +1166,21 @@ export default function App() {
             )}
           </button>
 
-          <button onClick={fetchData} className="btn-icon" title="Reload Data">
-            <RefreshCw size={15} className={loading ? 'spin-loader' : ''} />
+          <button onClick={() => setShowPermissionsModal(true)} className="btn-icon" title="Device Hardware & Web API Permissions Hub">
+            <Sliders size={15} color="var(--primary)" />
+          </button>
+
+          <button
+            onClick={() => {
+              fetchData();
+              if (typeof window !== 'undefined' && window.showToast) {
+                window.showToast('🔄 Live data refreshed across all departments', 'info');
+              }
+            }}
+            className={`btn-icon master-refresh-btn ${loading ? 'is-refreshing' : ''}`}
+            title="Master Refresh — Re-sync all live socket data"
+          >
+            <RefreshCw size={16} className={loading ? 'spin-loader' : ''} />
           </button>
 
           <div style={styles.divider}></div>
@@ -837,16 +1229,91 @@ export default function App() {
         <div className="mobile-drawer-overlay" onClick={() => setMobileMenuOpen(false)}>
           <div className="mobile-drawer-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={styles.logoBadge}>{getCompanyById(activeDepartment)?.code || 'EO'}</div>
-                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                  {getCompanyById(activeDepartment)?.name || 'Elite Online'}
-                </span>
-              </div>
+              {(() => {
+                const comp = getCompanyById(activeDepartment);
+                const CompIcon = comp?.iconName === 'Store' ? Store : comp?.iconName === 'Printer' ? Printer : comp?.iconName === 'Scissors' ? Scissors : Building;
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: comp?.gradient || 'linear-gradient(135deg, #6366f1, #0891b2)',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 800,
+                      boxShadow: `0 2px 8px ${comp?.iconColor || '#6366f1'}40`
+                    }}>
+                      <CompIcon size={16} color="#ffffff" />
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)', display: 'block', lineHeight: 1.2 }}>
+                        {comp?.name || 'Elite Online'}
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: comp?.iconColor || '#6366f1', fontWeight: 700 }}>
+                        {comp?.code} • {comp?.type}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
               <button onClick={() => setMobileMenuOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '0.25rem' }}>
                 <X size={20} />
               </button>
             </div>
+
+            {/* Quick Switch Button in Mobile Drawer */}
+            <button
+              onClick={() => { setShowCompanyQuickSheet(true); setMobileMenuOpen(false); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.55rem 0.75rem',
+                borderRadius: '8px',
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                color: 'var(--text-primary)',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                marginTop: '0.5rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Layers size={14} color="#6366f1" />
+                <span>Switch Company Workspace</span>
+              </div>
+              <ChevronRight size={14} color="#6366f1" />
+            </button>
+
+            {hasWorkspaceAccess && (
+              <button
+                onClick={() => { setActiveTab('communication'); setMobileMenuOpen(false); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.65rem 0.75rem',
+                  borderRadius: '8px',
+                  background: (activeTab === 'communication' || activeTab === 'workspace') ? 'linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)' : 'rgba(56, 189, 248, 0.1)',
+                  border: (activeTab === 'communication' || activeTab === 'workspace') ? 'none' : '1px solid rgba(56, 189, 248, 0.3)',
+                  color: (activeTab === 'communication' || activeTab === 'workspace') ? '#ffffff' : '#38bdf8',
+                  fontSize: '0.84rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  marginTop: '0.4rem'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <MessageSquare size={16} />
+                  <span>Inter-Dept Communication</span>
+                </div>
+                <ChevronRight size={14} />
+              </button>
+            )}
 
             {/* Modules List inside Mobile Drawer */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.75rem' }}>
@@ -933,10 +1400,24 @@ export default function App() {
                       <Database size={18} /><span>Fabric Management</span>
                     </button>
                   )}
-                  {/* 3. Billing & Invoicing */}
+                  {/* 3. Finance */}
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) && (
                     <button onClick={() => { setActiveTab('jobcards_billing'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_billing' ? styles.navItemActive : {}) }}>
-                      <Receipt size={18} /><span>Billing & Invoicing</span>
+                      <Receipt size={18} /><span>Finance</span>
+                    </button>
+                  )}
+
+                  {/* CRM Department */}
+                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_crm') || currentUser.permissions?.includes('crm_department') || currentUser.permissions?.includes('crm')) && (
+                    <button onClick={() => { setActiveTab('jobcards_crm'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_crm' ? styles.navItemActive : {}) }}>
+                      <Users size={18} /><span>CRM Department</span>
+                    </button>
+                  )}
+
+                  {/* Business Connection */}
+                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_business_connection') || currentUser.permissions?.includes('jobcards_master_ai') || currentUser.permissions?.includes('jobcards')) && (
+                    <button onClick={() => { setActiveTab('jobcards_business_connection'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...((activeTab === 'jobcards_business_connection' || activeTab === 'jobcards_master_ai') ? styles.navItemActive : {}) }}>
+                      <Users size={18} /><span>Business Connection</span>
                     </button>
                   )}
 
@@ -1024,11 +1505,6 @@ export default function App() {
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('inventory')) && (
                     <button onClick={() => { setActiveTab('inventory'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'inventory' ? styles.navItemActive : {}) }}>
                       <Database size={18} /><span>Store Inventory</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('catalog')) && (
-                    <button onClick={() => { setActiveTab('catalog'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'catalog' ? styles.navItemActive : {}) }}>
-                      <BookOpen size={18} /><span>Product Catalog</span>
                     </button>
                   )}
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('returns')) && (
@@ -1292,8 +1768,8 @@ export default function App() {
                   <>
                     {renderSectionHeader('Elite Edition Modules', Building)}
                     {renderNavItem('ee_dashboard', 'Dashboard', LayoutDashboard, null, 'Dashboard')}
-                    {renderNavItem('ee_invoices', 'Billing', Receipt, null, 'Billing')}
-                    {renderNavItem('ee_complaints', 'Complaints', AlertTriangle, '#f43f5e', 'Complaints')}
+                    {renderNavItem('ee_invoices', 'Finance', Receipt, null, 'Finance')}
+                    {renderNavItem('ee_complaints', 'Complaints', AlertTriangle, null, 'Complaints')}
                     {renderNavItem('ee_settings', 'Settings', Settings, null, 'Settings')}
                   </>
                 );
@@ -1304,8 +1780,8 @@ export default function App() {
                   <>
                     {renderSectionHeader('Elite Fabtex Modules', Building)}
                     {renderNavItem('ef_dashboard', 'Dashboard', LayoutDashboard, null, 'Dashboard')}
-                    {renderNavItem('ef_invoices', 'Billing', Receipt, null, 'Billing')}
-                    {renderNavItem('ef_complaints', 'Complaints', AlertTriangle, '#f43f5e', 'Complaints')}
+                    {renderNavItem('ef_invoices', 'Finance', Receipt, null, 'Finance')}
+                    {renderNavItem('ef_complaints', 'Complaints', AlertTriangle, null, 'Complaints')}
                     {renderNavItem('ef_settings', 'Settings', Settings, null, 'Settings')}
                   </>
                 );
@@ -1325,7 +1801,7 @@ export default function App() {
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric') || currentUser.permissions?.includes('jobcards_stitching_challan') || currentUser.permissions?.includes('stitching_fabric')) &&
                       renderNavItem('jobcards_stitching_challan', 'Challan', Database, null, 'Challan')
                     }
-                    {renderNavItem('es_complaints', 'Complaints', AlertTriangle, '#f43f5e', 'Complaints')}
+                    {renderNavItem('es_complaints', 'Complaints', AlertTriangle, null, 'Complaints')}
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_stitching_settings') || currentUser.permissions?.includes('stitching_settings') || currentUser.permissions?.includes('es_settings')) &&
                       renderNavItem('es_settings', 'Settings', Settings, null, 'Settings')
                     }
@@ -1350,7 +1826,13 @@ export default function App() {
                       renderNavItem('jobcards_fabric', 'Fabric Management', Database, null, 'Fabric')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) &&
-                      renderNavItem('jobcards_billing', 'Billing & Invoicing', Receipt, null, 'Billing')
+                      renderNavItem('jobcards_billing', 'Finance', Receipt, null, 'Finance')
+                    }
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_crm') || currentUser.permissions?.includes('crm_department') || currentUser.permissions?.includes('crm')) &&
+                      renderNavItem('jobcards_crm', 'CRM Department', Users, null, 'CRM')
+                    }
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_business_connection') || currentUser.permissions?.includes('jobcards_master_ai') || currentUser.permissions?.includes('jobcards')) &&
+                      renderNavItem('jobcards_business_connection', 'Business Connection', Users, null, 'Connections')
                     }
 
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list')) &&
@@ -1366,10 +1848,10 @@ export default function App() {
                       renderNavItem('jobcards_raw_materials', 'Raw Materials', ShoppingBag, null, 'Materials')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_complain') || currentUser.permissions?.includes('jobcards_complaints') || currentUser.permissions?.includes('complaint_dashboard') || currentUser.permissions?.includes('complaint_create')) &&
-                      renderNavItem('jobcards_complain', 'Complain Module', AlertTriangle, '#f43f5e', 'Complain')
+                      renderNavItem('jobcards_complain', 'Complain Module', AlertTriangle, null, 'Complain')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_qa') || currentUser.permissions?.includes('qa') || currentUser.permissions?.includes('jobcards')) &&
-                      renderNavItem('jobcards_qa', 'QA & Quality Checking', ShieldCheck, '#4f46e5', 'QA Check')
+                      renderNavItem('jobcards_qa', 'QA & Quality Checking', ShieldCheck, null, 'QA Check')
                     }
                   </>
                 );
@@ -1384,16 +1866,13 @@ export default function App() {
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('inventory')) &&
                     renderNavItem('inventory', 'Store Inventory', Database, null, 'Inventory')
                   }
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('catalog')) &&
-                    renderNavItem('catalog', 'Product Catalog', BookOpen, null, 'Products')
-                  }
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('returns')) &&
                     renderNavItem('returns', 'Returns Department', PackageMinus, null, 'Returns')
                   }
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('sales')) &&
                     renderNavItem('sales', 'Sales Orders', ShoppingBag, null, 'Sales')
                   }
-                  {renderNavItem('eo_complaints', 'Complaints', AlertTriangle, '#f43f5e', 'Complaints')}
+                  {renderNavItem('eo_complaints', 'Complaints', AlertTriangle, null, 'Complaints')}
                   {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('reports')) &&
                     renderNavItem('reports', 'Reports Center', BarChart3, null, 'Reports')
                   }
@@ -1495,27 +1974,41 @@ export default function App() {
           ) : activeTab === 'inventory' ? (
             <InventoryGrid
               items={items}
+              catalogItems={catalogItems}
               onAdd={triggerAddModal}
               onEdit={triggerEditModal}
               onDelete={handleDeleteItem}
               onStockOut={triggerStockOutModal}
-              onOpenManager={() => triggerManagerModal('vendors')}
+              onOpenManager={(tab) => triggerManagerModal(tab || 'brands')}
               onBulkInward={() => setIsBulkInwardOpen(true)}
+              onQuickStockUpdate={handleQuickStockUpdate}
+              onSyncCatalog={handleSyncCatalog}
+              initialSubTab="overview"
             />
           ) : activeTab === 'catalog' ? (
-            <ProductCatalogGrid
-              items={catalogItems}
+            <InventoryGrid
+              items={items}
+              catalogItems={catalogItems}
               onAdd={triggerAddModal}
               onEdit={triggerEditModal}
               onDelete={handleDeleteItem}
-              onSync={handleSyncCatalog}
+              onStockOut={triggerStockOutModal}
+              onOpenManager={(tab) => triggerManagerModal(tab || 'brands')}
+              onBulkInward={() => setIsBulkInwardOpen(true)}
+              onQuickStockUpdate={handleQuickStockUpdate}
+              onSyncCatalog={handleSyncCatalog}
+              initialSubTab="catalog"
             />
           ) : activeTab === 'returns' ? (
             <ReturnsManager />
           ) : activeTab === 'sales' ? (
             <SalesGrid />
           ) : activeTab === 'reports' ? (
-            <ReportsCenter />
+            <ReportsCenter department={activeDepartment === 'elite_online' ? 'elite-online' : 'elite-print'} />
+          ) : activeTab === 'jobcards_crm' || activeTab === 'crm_department' || activeTab === 'crm' ? (
+            <CrmPanel currentUser={currentUser} />
+          ) : activeTab === 'jobcards_business_connection' || activeTab === 'jobcards_master_ai' || activeTab === 'master_ai_agent' || activeTab === 'business_connection' ? (
+            <BusinessConnectionPanel currentUser={currentUser} />
           ) : activeTab.startsWith('jobcards') ? (
             <JobCardPanel currentUser={currentUser} activeSubTab={activeTab === 'jobcards' ? 'jobcards' : activeTab.replace('jobcards_', '')} department={activeDepartment} />
           ) : activeTab === 'ee_dashboard' ? (
@@ -1565,11 +2058,9 @@ export default function App() {
             <UnicommerceHub />
           ) : activeTab === 'myntra' ? (
             <MyntraHub />
-          ) : activeTab === 'communication' ? (
-            <CommunicationPanel currentUser={currentUser} onNavigateTab={(tab) => setActiveTab(tab)} />
-          ) : activeTab === 'workspace' ? null : activeTab === 'admin' ? (
+          ) : activeTab === 'admin' ? (
             <AdminPanel />
-          ) : (
+          ) : ['communication', 'workspace', 'task_management'].includes(activeTab) ? null : (
             <div style={styles.noAccessContainer}>
               <ShieldAlert size={48} color="var(--primary)" />
               <h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Access Restricted</h3>
@@ -1580,9 +2071,9 @@ export default function App() {
           )}
           </Suspense>
 
-          {/* Persistent Workspace / Chat (always mounted to listen for socket notifications & record history) */}
-          <div style={{ display: activeTab === 'workspace' ? 'block' : 'none', height: '100%' }}>
-            <Workspace currentUser={currentUser} />
+          {/* Persistent CommunicationPanel (Chat & Task Manager - preserved across tab navigation) */}
+          <div style={{ display: (activeTab === 'communication' || activeTab === 'task_management' || activeTab === 'workspace') ? 'block' : 'none', height: '100%' }}>
+            <CommunicationPanel currentUser={currentUser} initialMainTab={activeTab === 'task_management' ? 'task' : 'chat'} onNavigateTab={(tab) => setActiveTab(tab)} />
           </div>
         </section>
       </main>
@@ -1601,10 +2092,12 @@ export default function App() {
       {isFormOpen && (
         <InventoryForm
           item={editingItem}
+          isCatalog={formMode === 'catalog'}
           onSubmit={editingItem ? handleEditSubmit : handleAddSubmit}
           onClose={() => {
             setIsFormOpen(false);
             setEditingItem(null);
+            restoreSavedScrollPos();
           }}
         />
       )}
@@ -1618,6 +2111,7 @@ export default function App() {
           onClose={() => {
             setIsStockOutOpen(false);
             setStockOutItem(null);
+            restoreSavedScrollPos();
           }}
         />
       )}
@@ -1627,7 +2121,10 @@ export default function App() {
           initialTab={managerTab}
           onClose={() => {
             setIsManagerOpen(false);
-            fetchData();
+            fetchData().finally(() => {
+              restoreSavedScrollPos();
+            });
+            restoreSavedScrollPos();
           }}
         />
       )}
@@ -1635,7 +2132,10 @@ export default function App() {
       {isBulkInwardOpen && (
         <BulkInwardModal
           onSubmit={handleBulkInwardSubmit}
-          onClose={() => setIsBulkInwardOpen(false)}
+          onClose={() => {
+            setIsBulkInwardOpen(false);
+            restoreSavedScrollPos();
+          }}
         />
       )}
 
@@ -1708,6 +2208,8 @@ export default function App() {
                 if (company.id === 'stitching' && !hasStitchingAccess) return null;
 
                 const isActive = activeDepartment === company.id && activeTab !== 'workspace';
+                const CompIcon = company.iconName === 'Store' ? Store : company.iconName === 'Printer' ? Printer : company.iconName === 'Scissors' ? Scissors : Building;
+                const brandColor = company.iconColor || '#6366f1';
 
                 return (
                   <div
@@ -1723,41 +2225,61 @@ export default function App() {
                       justifyContent: 'space-between',
                       padding: '0.85rem 1rem',
                       borderRadius: '14px',
-                      border: isActive ? '2px solid #6366f1' : '1px solid #e2e8f0',
-                      background: isActive ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
+                      border: isActive ? `2px solid ${brandColor}` : '1px solid #e2e8f0',
+                      background: isActive ? `${brandColor}0d` : '#ffffff',
                       cursor: 'pointer',
-                      boxShadow: isActive ? '0 4px 14px rgba(99, 102, 241, 0.2)' : '0 1px 3px rgba(0,0,0,0.03)',
+                      boxShadow: isActive ? `0 4px 14px ${brandColor}35` : '0 1px 3px rgba(0,0,0,0.03)',
                       transition: 'all 0.15s ease'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                       <div style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '10px',
-                        background: isActive ? 'linear-gradient(135deg, #4f46e5, #0891b2)' : '#f1f5f9',
-                        color: isActive ? '#ffffff' : '#475569',
-                        fontWeight: 800,
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        background: company.gradient || 'linear-gradient(135deg, #6366f1, #0891b2)',
+                        color: '#ffffff',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '0.88rem',
-                        flexShrink: 0
+                        flexShrink: 0,
+                        boxShadow: `0 3px 10px ${brandColor}40`
                       }}>
-                        {company.code}
+                        <CompIcon size={20} color="#ffffff" />
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
-                          {company.name}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                            {company.name}
+                          </span>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            borderRadius: '6px',
+                            background: `${brandColor}18`,
+                            color: brandColor,
+                            border: `1px solid ${brandColor}30`
+                          }}>
+                            {company.code}
+                          </span>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+                        <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
                           {company.type}
                         </div>
                       </div>
                     </div>
 
                     {isActive ? (
-                      <span style={{ padding: '0.25rem 0.65rem', borderRadius: '20px', background: '#6366f1', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800 }}>
+                      <span style={{
+                        padding: '0.28rem 0.75rem',
+                        borderRadius: '20px',
+                        background: brandColor,
+                        color: '#ffffff',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        boxShadow: `0 2px 8px ${brandColor}50`
+                      }}>
                         Active ✓
                       </span>
                     ) : (
@@ -1766,6 +2288,65 @@ export default function App() {
                   </div>
                 );
               })}
+
+              {hasWorkspaceAccess && (
+                <div
+                  onClick={() => {
+                    setActiveTab('communication');
+                    setShowCompanyQuickSheet(false);
+                    setMobileMenuOpen(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.85rem 1rem',
+                    borderRadius: '14px',
+                    border: (activeTab === 'communication' || activeTab === 'workspace') ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                    background: (activeTab === 'communication' || activeTab === 'workspace') ? '#eff6ff' : '#ffffff',
+                    cursor: 'pointer',
+                    boxShadow: (activeTab === 'communication' || activeTab === 'workspace') ? '0 4px 14px rgba(37,99,235,0.25)' : '0 1px 3px rgba(0,0,0,0.03)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      boxShadow: '0 3px 10px rgba(37,99,235,0.4)'
+                    }}>
+                      <MessageSquare size={20} color="#ffffff" />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                          Inter-Dept Communication
+                        </span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '2px 6px', borderRadius: '6px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
+                          CHAT &amp; TASKS
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                        Real-time Team Chat, Channels &amp; Task Stream
+                      </div>
+                    </div>
+                  </div>
+                  {(activeTab === 'communication' || activeTab === 'workspace') ? (
+                    <span style={{ padding: '0.28rem 0.75rem', borderRadius: '20px', background: '#2563eb', color: '#ffffff', fontSize: '0.75rem', fontWeight: 800 }}>
+                      Active ✓
+                    </span>
+                  ) : (
+                    <ChevronRight size={18} color="#94a3b8" />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1773,6 +2354,13 @@ export default function App() {
 
       {/* Global Elite Glassmorphic Modal Dialog */}
       <EliteModalDialog />
+
+      {/* Hardware & Web Device Permissions Hub Modal */}
+      <WebDevicePermissionsModal
+        isOpen={showPermissionsModal}
+        onClose={() => setShowPermissionsModal(false)}
+        currentUser={currentUser}
+      />
     </div>
   );
 }

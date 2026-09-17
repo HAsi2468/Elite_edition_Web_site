@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Filter, Download, Eye, Edit, Trash2, Printer, X, Save, RefreshCw, FileText, CheckCircle, Receipt } from 'lucide-react';
+import { Plus, Search, Filter, Download, Eye, Edit, Trash2, Printer, X, Save, RefreshCw, FileText, CheckCircle, Receipt, Clock } from 'lucide-react';
 import { api } from '../services/api';
 import { matchSearchQuery } from '../utils/searchUtils';
 import { formatDateDDMMYYYY } from '../utils/dateUtils';
@@ -441,8 +441,23 @@ export default function StitchingChallanPanel({ onNavigateToBilling }) {
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>
                       {c.status === 'INVOICED' ? (
-                        <span style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(52,211,153,0.3)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                          ✓ INVOICED
+                        <span
+                          title={c.invoiceNo ? `Tax Invoice #${c.invoiceNo}` : 'Invoiced'}
+                          style={{
+                            background: 'rgba(52,211,153,0.15)',
+                            color: '#34d399',
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(52,211,153,0.3)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✓ INVOICED {c.invoiceNo ? `(${c.invoiceNo})` : ''}
                         </span>
                       ) : (
                         <span style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(251,191,36,0.3)' }}>

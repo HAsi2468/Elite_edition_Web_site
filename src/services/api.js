@@ -2,14 +2,7 @@
 const DEFAULT_URL = '/v1';
 
 export const getBaseUrl = () => {
-  const stored = localStorage.getItem('elite_api_base_url');
-  if (stored) {
-    if (stored.includes('3.7.174.180')) {
-      localStorage.removeItem('elite_api_base_url');
-      return DEFAULT_URL;
-    }
-    return stored;
-  }
+  localStorage.removeItem('elite_api_base_url');
   return DEFAULT_URL;
 };
 
@@ -49,7 +42,7 @@ const request = async (path, options = {}) => {
     ...options.headers,
   };
   
-  const timeoutMs = options.timeout || 30000;
+  const timeoutMs = options.timeout || 120000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -316,7 +309,7 @@ export const api = {
 
   // Products Catalog
   async getProductsCatalog() {
-    return request('/products/list?limit=2000');
+    return request('/products/list?limit=10000');
   },
 
   async createProductCatalog(data) {
@@ -341,6 +334,12 @@ export const api = {
 
   async syncMissingProducts() {
     return request('/products/fetchMissingProduct');
+  },
+
+  async resetAndSyncUniwareSkus() {
+    return request('/products/reset-and-sync-uniware-skus', {
+      method: 'POST',
+    });
   },
 
   // Stock Out Logs
@@ -738,21 +737,62 @@ export const api = {
     return request(`/jobPrintLogs/${id}`, { method: 'DELETE' });
   },
 
-  // ─── Design Catalogue ──────────────────────────────────────────────────────
-  async uploadImage(file) {
+  // ─── Design Catalogue & Cloudflare R2 Uploads ──────────────────────────────────────
+  async uploadImage(file, folder = 'designs') {
     const formData = new FormData();
     formData.append('image', file);
+    if (folder) formData.append('folder', folder);
     
+    const token = localStorage.getItem('elite_auth_token');
+    const headers = {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+
     const response = await fetch(`${getBaseUrl()}/upload`, {
       method: 'POST',
+      headers,
       body: formData
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP error! status: ${response.status}`);
     }
     return response.json();
   },
+
+  async uploadComplaintAttachment(file, department = 'Digital_Print') {
+    const cleanDept = String(department || 'General')
+      .trim()
+      .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+      .replace(/\s+/g, '_');
+    const folder = `Complaints/${cleanDept}`;
+    return this.uploadImage(file, folder);
+  },
+
+  async uploadChatAttachment(file, roomName = 'General') {
+    const cleanRoom = String(roomName || 'General')
+      .trim()
+      .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+      .replace(/\s+/g, '_');
+    const folder = `Chat/${cleanRoom}`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+
+    const response = await fetch(`${getBaseUrl()}/workspace/upload`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`Chat upload error! status: ${response.status}`);
+    }
+    return response.json();
+  },
+
+
 
   async getDesigns(params = {}) {
     const query = new URLSearchParams();
@@ -921,6 +961,13 @@ export const api = {
   },
 
   // --- Returns Engine ---
+  async lookupUniwareOrder(data) {
+    return request('/returns/lookup-order', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async processReturn(data) {
     return request('/returns/process', {
       method: 'POST',
@@ -1100,16 +1147,24 @@ export const api = {
 
   async downloadFabricLedgerPdf(params = {}) {
     const baseUrl = getBaseUrl();
-    const token = localStorage.getItem('elite_auth_token');
+    const token = localStorage.getItem('elite_auth_token') || localStorage.getItem('token');
     const query = new URLSearchParams();
     if (params.dateStart) query.append('dateStart', params.dateStart);
     if (params.dateEnd) query.append('dateEnd', params.dateEnd);
-    if (params.fabricQuality) query.append('fabricQuality', params.fabricQuality);
+    if (params.fabricQuality && params.fabricQuality !== 'All') query.append('fabricQuality', params.fabricQuality);
     const qs = query.toString() ? `?${query.toString()}` : '';
+
     const response = await fetch(`${baseUrl}/fabric/report/pdf${qs}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!response.ok) throw new Error('Failed to generate fabric ledger PDF');
+    if (!response.ok) {
+      let errText = 'Failed to generate Fabric Ledger PDF';
+      try {
+        const errJson = await response.json();
+        if (errJson && (errJson.message || errJson.error)) errText = errJson.message || errJson.error;
+      } catch (e) {}
+      throw new Error(errText);
+    }
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1117,8 +1172,8 @@ export const api = {
     link.setAttribute('download', `fabric-ledger${params.dateStart ? '-' + params.dateStart : ''}.pdf`);
     document.body.appendChild(link);
     link.click();
-    link.parentNode.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    if (link.parentNode) link.parentNode.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
   },
 
   // Raw Materials Inventory
@@ -1126,8 +1181,9 @@ export const api = {
     return request('/raw-materials/transactions');
   },
 
-  async getRawMaterialStock() {
-    return request('/raw-materials/stock');
+  async getRawMaterialStock(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/raw-materials/stock${query ? `?${query}` : ''}`);
   },
 
   async createRawMaterialInward(payload) {
@@ -1157,25 +1213,40 @@ export const api = {
 
   async downloadRawMaterialLedgerPdf(params = {}) {
     const baseUrl = getBaseUrl();
-    const token = localStorage.getItem('elite_auth_token');
+    const token = localStorage.getItem('elite_auth_token') || localStorage.getItem('token');
     const query = new URLSearchParams();
     if (params.dateStart) query.append('dateStart', params.dateStart);
     if (params.dateEnd) query.append('dateEnd', params.dateEnd);
-    if (params.materialName) query.append('materialName', params.materialName);
+    if (params.materialName && params.materialName !== 'All') query.append('materialName', params.materialName);
+    if (params.type && params.type !== 'All') query.append('type', params.type);
+    if (params.search) query.append('search', params.search);
+    if (params.companyEntity) query.append('companyEntity', params.companyEntity);
     const qs = query.toString() ? `?${query.toString()}` : '';
+
     const response = await fetch(`${baseUrl}/raw-materials/report/pdf${qs}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!response.ok) throw new Error('Failed to generate raw materials ledger PDF');
+    if (!response.ok) {
+      let errText = 'Failed to generate Raw Materials Ledger PDF';
+      try {
+        const errJson = await response.json();
+        if (errJson && (errJson.message || errJson.error)) errText = errJson.message || errJson.error;
+      } catch (e) {}
+      throw new Error(errText);
+    }
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `raw-materials-ledger${params.dateStart ? '-' + params.dateStart : ''}.pdf`);
+    const typeTag = params.type && params.type !== 'All' ? `-${params.type.toLowerCase()}` : '';
+    link.setAttribute('download', `raw-materials${typeTag}-ledger${params.dateStart ? '-' + params.dateStart : ''}.pdf`);
     document.body.appendChild(link);
     link.click();
-    link.parentNode.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    if (link.parentNode) link.parentNode.removeChild(link);
+    try {
+      window.open(url, '_blank');
+    } catch (e) {}
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000);
   },
 
   async importRawMaterialStock(rows) {
@@ -1733,9 +1804,9 @@ export const api = {
   },
 
   // ── Authority-Based Inter-Department Communication ───────────────────────
-  async getCommunicationGroups() {
+  async getCommunicationGroups(userId) {
     const user = this.getCurrentUser();
-    const uId = user ? (user._id || user.id) : '';
+    const uId = userId || (user ? (user._id || user.id) : '');
     const qs = uId ? `?userId=${uId}` : '';
     return request(`/communication/groups${qs}`);
   },
@@ -1747,8 +1818,22 @@ export const api = {
     return request(`/communication/groups/${groupId}/messages${qs}`);
   },
 
+  async sendCommunicationMessage(groupId, data) {
+    return request(`/communication/groups/${groupId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async getCommunicationMembers(groupId) {
     return request(`/communication/groups/${groupId}/members`);
+  },
+
+  async updateGroupMembers(groupId, memberIds) {
+    return request(`/communication/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ memberIds }),
+    });
   },
 
   async syncCommunicationGroups() {
@@ -1769,9 +1854,9 @@ export const api = {
     });
   },
 
-  async getCommunicationUsers() {
+  async getCommunicationUsers(userId) {
     const user = this.getCurrentUser();
-    const uId = user ? (user._id || user.id) : '';
+    const uId = userId || (user ? (user._id || user.id) : '');
     const qs = uId ? `?userId=${uId}` : '';
     return request(`/communication/users${qs}`);
   },
@@ -1803,6 +1888,159 @@ export const api = {
       method: 'POST',
     });
   },
+
+  // CRM Lead Management
+  async getLeads(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/leads${query ? `?${query}` : ''}`);
+  },
+
+  async createLead(payload) {
+    return request('/leads', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateLead(id, payload) {
+    return request(`/leads/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteLead(id) {
+    return request(`/leads/${id}`, { method: 'DELETE' });
+  },
+
+  // Business Connections (Master AI Agent & Directory)
+  async parseBusinessConnectionAI(rawText) {
+    return request('/business-connections/parse-ai', {
+      method: 'POST',
+      body: JSON.stringify({ raw_text: rawText })
+    });
+  },
+
+  async getBusinessConnections(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/business-connections${query ? `?${query}` : ''}`);
+  },
+
+  async createBusinessConnection(payload) {
+    return request('/business-connections', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateBusinessConnection(id, payload) {
+    return request(`/business-connections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteBusinessConnection(id) {
+    return request(`/business-connections/${id}`, { method: 'DELETE' });
+  },
+
+  async addBusinessConnectionNote(id, noteData) {
+    return request(`/business-connections/${id}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(noteData)
+    });
+  },
+
+  // Centralized Master AI Processing Agent
+  async processMasterAiInput(payload) {
+    return request('/ai/master-agent', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async upsertMasterAiRecord(recordData) {
+    return request('/ai/upsert-record', {
+      method: 'POST',
+      body: JSON.stringify(recordData)
+    });
+  },
+
+  // ── Task Management Module (TaskOPad) Endpoints ──
+  async getTasks(params = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') queryParams.append(k, v);
+    });
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return request(`/tasks${qs}`);
+  },
+
+  async getTaskById(id) {
+    return request(`/tasks/${id}`);
+  },
+
+  async createTask(taskData) {
+    return request('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(taskData)
+    });
+  },
+
+  async updateTask(id, taskData) {
+    return request(`/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(taskData)
+    });
+  },
+
+  async deleteTask(id) {
+    return request(`/tasks/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async startTaskTimer(id, userId) {
+    return request(`/tasks/${id}/timer/start`, {
+      method: 'POST',
+      body: JSON.stringify({ userId })
+    });
+  },
+
+  async stopTaskTimer(id, payload = {}) {
+    return request(`/tasks/${id}/timer/stop`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async addTaskTimeLog(id, logData) {
+    return request(`/tasks/${id}/timelogs`, {
+      method: 'POST',
+      body: JSON.stringify(logData)
+    });
+  },
+
+  async addTaskChecklistItem(id, itemData) {
+    return request(`/tasks/${id}/checklist`, {
+      method: 'POST',
+      body: JSON.stringify(itemData)
+    });
+  },
+
+  async toggleTaskChecklistItem(id, itemId, completed) {
+    return request(`/tasks/${id}/checklist/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ completed })
+    });
+  },
+
+  async addTaskComment(id, commentData) {
+    return request(`/tasks/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(commentData)
+    });
+  }
 };
 
 

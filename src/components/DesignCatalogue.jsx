@@ -15,26 +15,52 @@ import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
 import PKDOrdersImportModal from './PKDOrdersImportModal';
 import DesignMaster from './DesignMaster';
 
-// Copy convertDriveUrl helper
-function convertDriveUrl(link) {
-  if (!link || !link.trim()) return '';
+function convertDriveUrl(link, designName = '') {
+  const getOrigin = () => {
+    const baseUrl = getBaseUrl();
+    if (baseUrl && baseUrl.startsWith('http')) {
+      try { return new URL(baseUrl).origin; } catch (e) {}
+    }
+    if (typeof window !== 'undefined') {
+      const hn = window.location.hostname;
+      if ((hn === 'localhost' || hn === '127.0.0.1') && window.location.port && window.location.port !== '3001') {
+        return `${window.location.protocol}//${hn}:3001`;
+      }
+      return window.location.origin;
+    }
+    return '';
+  };
+
+  const origin = getOrigin();
+  const prefix = '/v1/designs';
+
+  if (!link || !link.trim()) {
+    if (designName) {
+      return origin ? `${origin}${prefix}/${designName}.jpg` : `${prefix}/${designName}.jpg`;
+    }
+    return '';
+  }
   const trimmed = link.trim();
   if (trimmed.startsWith('data:')) return trimmed;
 
-  // Handle local uploaded files e.g. "uploads/chat-123.jpg" or "/uploads/chat-123.jpg"
-  if (trimmed.includes('uploads/')) {
-    const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-    const baseUrl = getBaseUrl();
-    if (baseUrl && baseUrl.startsWith('http')) {
-      try {
-        const url = new URL(baseUrl);
-        return `${url.origin}${cleanPath}`;
-      } catch (e) {}
+  // Handle local uploaded files e.g. "uploads/chat-123.jpg" or "/designs/ED-01.jpg"
+  if (trimmed.includes('uploads/') || trimmed.includes('designs/')) {
+    let cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    if (cleanPath.startsWith('/designs/')) {
+      cleanPath = `/v1${cleanPath}`;
     }
-    return cleanPath;
+    const finalUrl = origin ? `${origin}${cleanPath}` : cleanPath;
+    return encodeURI(finalUrl);
   }
 
-  // Handle Google Drive Links - extract File ID & use high-res CORS-free thumbnail endpoint
+  // Handle bare design file names or ED- prefixes without path e.g. "ED-01.jpg" or "ED-708"
+  if (!trimmed.startsWith('http') && !trimmed.startsWith('data:') && !trimmed.includes('/')) {
+    const cleanPath = trimmed.includes('.') ? `${prefix}/${trimmed}` : `${prefix}/${trimmed}.jpg`;
+    const finalUrl = origin ? `${origin}${cleanPath}` : cleanPath;
+    return encodeURI(finalUrl);
+  }
+
+  // Handle Google Drive Links
   if (trimmed.includes('drive.google.com') || trimmed.includes('googleusercontent') || trimmed.includes('lh3.google')) {
     let fileId = '';
     const dMatch = trimmed.match(/\/d\/([-\w]{20,})/);
@@ -54,10 +80,11 @@ function convertDriveUrl(link) {
   }
 
   if (trimmed.startsWith('http')) {
-    return trimmed;
+    return encodeURI(trimmed);
   }
 
-  return trimmed;
+  const finalUrl = origin ? `${origin}/${trimmed.replace(/^\//, '')}` : trimmed;
+  return encodeURI(finalUrl);
 }
 
 // Image compression helper
@@ -184,17 +211,33 @@ function DesignImageField({ label, name, value, onChange, placeholder }) {
   const [mode, setMode] = useState(raw && !raw.startsWith('data:') ? 'url' : 'file'); // 'file' or 'url'
   const fileInputRef = useRef(null);
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
+  const processAndUploadFile = async (file) => {
     if (!file) return;
     try {
-      const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
-      const compressedFile = await imageCompression(file, options);
-      const res = await api.uploadImage(compressedFile);
-      onChange({ target: { name, value: res.url } });
+      // 1. Convert file to compressed Base64 immediately so preview loads 100% instantly
+      const base64 = await compressAndConvertToBase64(file);
+      onChange({ target: { name, value: base64 } });
+
+      // 2. Try background server upload
+      try {
+        const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
+        const compressedFile = await imageCompression(file, options);
+        const res = await api.uploadImage(compressedFile);
+        if (res && res.url) {
+          // If server upload returned a CDN or server URL, upgrade to it
+          onChange({ target: { name, value: res.url } });
+        }
+      } catch (uploadErr) {
+        console.warn('[DesignImageField] Background server upload warning:', uploadErr.message);
+      }
     } catch (err) {
-      alert('Failed to upload image: ' + err.message);
+      alert('Failed to process image file: ' + err.message);
     }
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    await processAndUploadFile(file);
   };
 
   const handleClear = () => {
@@ -231,14 +274,7 @@ function DesignImageField({ label, name, value, onChange, placeholder }) {
             e.preventDefault();
             const file = e.dataTransfer.files[0];
             if (file && file.type.startsWith('image/')) {
-              try {
-                const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
-                const compressedFile = await imageCompression(file, options);
-                const res = await api.uploadImage(compressedFile);
-                onChange({ target: { name, value: res.url } });
-              } catch (err) {
-                alert('Failed to upload image: ' + err.message);
-              }
+              await processAndUploadFile(file);
             }
           }}
           style={{
@@ -350,6 +386,7 @@ function DesignImageField({ label, name, value, onChange, placeholder }) {
 export default function DesignCatalogue({ department, initialSubTab = 'catalogue' }) {
   const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
   const [designs, setDesigns] = useState([]);
+  const [failedImages, setFailedImages] = useState(new Set());
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -368,10 +405,27 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
   const [sortBy, setSortBy] = useState('designName');
   const [sortOrder, setSortOrder] = useState('desc');
   
-  // Pagination
+  // Pagination & Infinite Scroll State
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  // Reset visibleCount on search & filter changes
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [search, categoryFilter, colorFilter, statusFilter, sortBy, sortOrder]);
+
+  // Infinite Scroll Event Listener for seamless performance
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
+        setVisibleCount((prev) => prev + 40);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Modal form states
   const [showForm, setShowForm] = useState(false);
@@ -985,99 +1039,111 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
           </button>
         </div>
       ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.2rem' }}>
-            {designs
-              .filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']))
-              .map(d => {
-              const mainImg = convertDriveUrl(d.imageUrl);
-              const subImg = convertDriveUrl(d.imageUrl2);
+        (() => {
+          const filteredDesigns = designs.filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']));
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.2rem' }}>
+                {filteredDesigns.slice(0, visibleCount).map(d => {
+                  const mainImg = convertDriveUrl(d.imageUrl, d.designName);
+                  const subImg = convertDriveUrl(d.imageUrl2, d.designName ? `${d.designName}-2` : '');
 
-              return (
-                <div
-                  key={d._id}
-                  className="glass-panel"
-                  style={{
-                    padding: '1rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.8rem',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                    position: 'relative'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
-                >
-                  {/* Category badge */}
-                  {d.category && (
-                    <span style={{
-                      position: 'absolute', top: 16, left: 16,
-                      background: 'rgba(139,92,246,0.25)', color: '#a78bfa',
-                      fontSize: '0.65rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
-                      textTransform: 'uppercase', letterSpacing: '0.02em', zIndex: 2
-                    }}>
-                      {d.category}
-                    </span>
-                  )}
+                  return (
+                    <div
+                      key={d._id}
+                      className="glass-panel"
+                      style={{
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.8rem',
+                        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                        position: 'relative'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
+                    >
+                      {/* Category badge */}
+                      {d.category && (
+                        <span style={{
+                          position: 'absolute', top: 16, left: 16,
+                          background: 'rgba(139,92,246,0.25)', color: '#a78bfa',
+                          fontSize: '0.65rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
+                          textTransform: 'uppercase', letterSpacing: '0.02em', zIndex: 2
+                        }}>
+                          {d.category}
+                        </span>
+                      )}
 
-                  {/* Status badge */}
-                  <span style={{
-                    position: 'absolute', top: 16, right: 16,
-                    background: d.status === 'Active' ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.05)',
-                    color: d.status === 'Active' ? '#34d399' : 'var(--text-muted)',
-                    fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-                    border: d.status === 'Active' ? '1px solid rgba(52,211,153,0.3)' : '1px solid var(--border-light)',
-                    zIndex: 2
-                  }}>
-                    {d.status}
-                  </span>
+                      {/* Status badge */}
+                      <span style={{
+                        position: 'absolute', top: 16, right: 16,
+                        background: d.status === 'Active' ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.05)',
+                        color: d.status === 'Active' ? '#34d399' : 'var(--text-muted)',
+                        fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
+                        border: d.status === 'Active' ? '1px solid rgba(52,211,153,0.3)' : '1px solid var(--border-light)',
+                        zIndex: 2
+                      }}>
+                        {d.status}
+                      </span>
 
-                  {/* Main Image View */}
-                  <div
-                    style={{
-                      height: '180px',
-                      background: '#04070d',
-                      borderRadius: 'var(--radius-sm)',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      position: 'relative',
-                      border: '1px solid var(--border-light)',
-                      marginTop: '1.25rem'
-                    }}
-                  >
-                    {mainImg ? (
-                      <img
-                        src={mainImg}
-                        alt={d.designName}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
-                        onClick={() => setZoomImg(mainImg)}
-                        onError={(e) => {
-                          if (d.imageUrl && !e.target.dataset.retried) {
-                            e.target.dataset.retried = 'true';
-                            if (d.imageUrl.startsWith('data:')) {
-                              e.target.src = d.imageUrl;
-                            } else if (d.imageUrl.includes('drive.google.com')) {
-                              const fileMatch = d.imageUrl.match(/([-\w]{25,})/);
-                              if (fileMatch) e.target.src = `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
-                            }
-                          } else {
-                            e.target.style.display = 'none';
-                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
-                          }
+                      {/* Main Image View */}
+                      <div
+                        style={{
+                          height: '180px',
+                          background: '#04070d',
+                          borderRadius: 'var(--radius-sm)',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          position: 'relative',
+                          border: '1px solid var(--border-light)',
+                          marginTop: '1.25rem'
                         }}
-                      />
+                      >
+                        {mainImg ? (
+                          <img
+                            src={mainImg}
+                            alt={d.designName}
+                            loading="lazy"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+                            onClick={(evt) => setZoomImg(evt.target.src || mainImg)}
+                            onError={(e) => {
+                              const name = (d.designName || '').trim();
+                              if (name && !e.target.dataset.retried) {
+                                e.target.dataset.retried = 'true';
+                                const origin = getBaseUrl() || (typeof window !== 'undefined' ? window.location.origin : '');
+                                e.target.src = origin ? `${origin}/v1/designs/${name}.jpg` : `/v1/designs/${name}.jpg`;
+                              }
+                            }}
+                          />
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--text-muted)', gap: '0.4rem' }}>
-                        <Image size={24} style={{ opacity: 0.3 }} />
-                        <span style={{ fontSize: '0.7rem' }}>No Design Image</span>
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+                        color: 'var(--text-muted)',
+                        gap: '0.45rem',
+                        padding: '1rem',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{
+                          width: 42, height: 42, borderRadius: 10,
+                          background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818cf8',
+                          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
+                        }}>
+                          <Image size={22} />
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{d.designName}</span>
+                        <span style={{ fontSize: '0.68rem', color: '#94a3b8', opacity: 0.8, fontWeight: 500 }}>No Image Uploaded</span>
                       </div>
                     )}
-                    <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#000', color: 'var(--text-muted)', gap: '0.4rem' }}>
-                      <Image size={24} style={{ opacity: 0.3 }} />
-                      <span style={{ fontSize: '0.7rem', padding: '0.5rem', textAlign: 'center' }}>⚠️ Unable to load image link</span>
-                    </div>
 
                     {/* Small Sub image thumbnail inside card if available */}
                     {subImg && (
@@ -1198,8 +1264,24 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
             })}
           </div>
 
-          {/* Single-Page Infinite Grid */}
-        </>
+          {/* Scroll Pagination Footer */}
+              {visibleCount < filteredDesigns.length && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '2rem 0', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Showing {Math.min(visibleCount, filteredDesigns.length)} of {filteredDesigns.length} designs
+                  </span>
+                  <button
+                    onClick={() => setVisibleCount((prev) => prev + 40)}
+                    className="btn-secondary"
+                    style={{ padding: '0.55rem 1.6rem', fontSize: '0.82rem', borderRadius: '8px', cursor: 'pointer' }}
+                  >
+                    Scroll Down or Click to Load More Designs
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()
       )}
 
       {/* Form Modal */}
@@ -1236,12 +1318,12 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
               )}
 
               <FormField
-                label={department === 'stitching' ? "Design Name (e.g. PKD-1001)" : "Design Name (e.g. ED1, ED2)"}
+                label={department === 'stitching' ? "Design Name (e.g. PKD-1001)" : "Design Name (e.g. ED-709, ED-710)"}
                 name="designName"
                 value={formVal.designName}
                 onChange={handleFormChange}
                 required
-                placeholder={department === 'stitching' ? "PKD-1001" : "ED1"}
+                placeholder={department === 'stitching' ? "PKD-1001" : "e.g. ED-709"}
               />
 
               {department === 'stitching' && (

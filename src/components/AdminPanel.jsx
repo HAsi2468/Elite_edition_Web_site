@@ -35,6 +35,8 @@ export default function AdminPanel() {
   const [users, setUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('All');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('All');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('All');
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState('');
@@ -70,6 +72,33 @@ export default function AdminPanel() {
     password: '',
     role: 'user',
     isMainAdmin: false,
+    department: 'General',
+    canManageTasks: true,
+    canBroadcastChat: true,
+    canExportReports: true,
+    canDeleteRecords: true,
+    canViewFinancials: true,
+    canCreateJobCards: true,
+    canEditJobCards: true,
+    canDeleteJobCards: true,
+    canAdvanceJobStage: true,
+    canViewJobCosts: true,
+    canCreateDesigns: true,
+    canEditDesigns: true,
+    canDeleteDesigns: true,
+    canViewDesignCosts: true,
+    canAddFabricInward: true,
+    canIssueFabricOutward: true,
+    canTransferFabricLot: true,
+    canDeleteFabricLogs: true,
+    canViewFabricPrices: true,
+    canCreateInvoices: true,
+    canEditInvoiceRates: true,
+    canCancelInvoices: true,
+    canRecordPayments: true,
+    canCreateStitchingJobs: true,
+    canIssueStitchingChallans: true,
+    canManageWorkerRates: true,
     allowedCompanies: ['Elite Online', 'Elite Digital Print', 'Elite Stitching', 'Elite Edition', 'Elite Fabtex'],
     permissions: []
   });
@@ -246,6 +275,126 @@ export default function AdminPanel() {
   };
 
   const ALL_COMPANY_NAMES = ['Elite Online', 'Elite Digital Print', 'Elite Stitching', 'Elite Edition', 'Elite Fabtex'];
+  const DEPARTMENTS_LIST = [
+    'General',
+    'Executive',
+    'Production',
+    'Fabric & Yarn',
+    'Stitching & Cutting',
+    'E-Commerce & Orders',
+    'Billing & Accounts',
+    'Inventory & Warehouse',
+    'Customer Service'
+  ];
+
+  const applyRolePreset = (presetKey) => {
+    if (presetKey === 'full_admin') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'admin',
+        isMainAdmin: false,
+        department: 'Executive',
+        status: 'Active',
+        allowedCompanies: ALL_COMPANY_NAMES,
+        permissions: AVAILABLE_SCREENS.map(s => s.id),
+        canManageTasks: true,
+        canBroadcastChat: true,
+        canExportReports: true,
+        canDeleteRecords: true,
+        canViewFinancials: true
+      }));
+    } else if (presetKey === 'executive') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'Executive',
+        status: 'Active',
+        allowedCompanies: ALL_COMPANY_NAMES,
+        permissions: ['dashboard', 'interdept-communication', 'task-manager', 'expense-log', 'billing-invoice', 'data-backup'],
+        canManageTasks: true,
+        canBroadcastChat: true,
+        canExportReports: true,
+        canDeleteRecords: true,
+        canViewFinancials: true
+      }));
+    } else if (presetKey === 'production_manager') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'Production',
+        status: 'Active',
+        allowedCompanies: ['Elite Edition', 'Elite Fabtex', 'Elite Stitching'],
+        permissions: ['production-tracker', 'job-card-register', 'machine-workload', 'batch-process-entry', 'quality-check-log', 'raw-material-inward', 'inventory-grid'],
+        canManageTasks: true,
+        canBroadcastChat: true,
+        canExportReports: true,
+        canDeleteRecords: false,
+        canViewFinancials: true
+      }));
+    } else if (presetKey === 'stitching_master') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'Stitching & Cutting',
+        status: 'Active',
+        allowedCompanies: ['Elite Stitching', 'Elite Edition'],
+        permissions: ['stitching-job-slips', 'cutting-register', 'stitching-work-orders', 'worker-attendance-ledger', 'quality-check-log'],
+        canManageTasks: true,
+        canBroadcastChat: false,
+        canExportReports: false,
+        canDeleteRecords: false,
+        canViewFinancials: false
+      }));
+    } else if (presetKey === 'ecommerce_manager') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'E-Commerce & Orders',
+        status: 'Active',
+        allowedCompanies: ['Elite Online', 'Elite Digital Print'],
+        permissions: ['online-sales-orders', 'product-master-catalog', 'dispatch-courier-register', 'return-exchange-desk', 'myntra-order-sync', 'customer-complaint-center'],
+        canManageTasks: true,
+        canBroadcastChat: true,
+        canExportReports: true,
+        canDeleteRecords: false,
+        canViewFinancials: true
+      }));
+    } else if (presetKey === 'billing_clerk') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'Billing & Accounts',
+        status: 'Active',
+        allowedCompanies: ALL_COMPANY_NAMES,
+        permissions: ['billing-invoice', 'outward-billing-register', 'expense-log', 'cash-in-out-entry', 'vendor-ledger-master', 'party-customer-master'],
+        canManageTasks: true,
+        canBroadcastChat: false,
+        canExportReports: true,
+        canDeleteRecords: false,
+        canViewFinancials: true
+      }));
+    } else if (presetKey === 'store_keeper') {
+      setFormData(prev => ({
+        ...prev,
+        role: 'user',
+        isMainAdmin: false,
+        department: 'Inventory & Warehouse',
+        status: 'Active',
+        allowedCompanies: ['Elite Edition', 'Elite Fabtex', 'Elite Stitching'],
+        permissions: ['inventory-grid', 'raw-material-inward', 'stock-outward-register', 'fabric-yarn-req'],
+        canManageTasks: true,
+        canBroadcastChat: false,
+        canExportReports: true,
+        canDeleteRecords: false,
+        canViewFinancials: false
+      }));
+    }
+  };
 
   const handleEditClick = (user) => {
     setEditingUser(user);
@@ -255,6 +404,34 @@ export default function AdminPanel() {
       password: '',
       role: user.role || (user.permissions?.length === AVAILABLE_SCREENS.length ? 'admin' : 'user'),
       isMainAdmin: Boolean(user.isMainAdmin || user.email === 'harshitsidapara2468@gmail.com'),
+      department: user.department || 'General',
+      status: user.status || 'Active',
+      canManageTasks: user.canManageTasks !== undefined ? Boolean(user.canManageTasks) : true,
+      canBroadcastChat: user.canBroadcastChat !== undefined ? Boolean(user.canBroadcastChat) : true,
+      canExportReports: user.canExportReports !== undefined ? Boolean(user.canExportReports) : true,
+      canDeleteRecords: user.canDeleteRecords !== undefined ? Boolean(user.canDeleteRecords) : true,
+      canViewFinancials: user.canViewFinancials !== undefined ? Boolean(user.canViewFinancials) : true,
+      canCreateJobCards: user.canCreateJobCards !== undefined ? Boolean(user.canCreateJobCards) : true,
+      canEditJobCards: user.canEditJobCards !== undefined ? Boolean(user.canEditJobCards) : true,
+      canDeleteJobCards: user.canDeleteJobCards !== undefined ? Boolean(user.canDeleteJobCards) : true,
+      canAdvanceJobStage: user.canAdvanceJobStage !== undefined ? Boolean(user.canAdvanceJobStage) : true,
+      canViewJobCosts: user.canViewJobCosts !== undefined ? Boolean(user.canViewJobCosts) : true,
+      canCreateDesigns: user.canCreateDesigns !== undefined ? Boolean(user.canCreateDesigns) : true,
+      canEditDesigns: user.canEditDesigns !== undefined ? Boolean(user.canEditDesigns) : true,
+      canDeleteDesigns: user.canDeleteDesigns !== undefined ? Boolean(user.canDeleteDesigns) : true,
+      canViewDesignCosts: user.canViewDesignCosts !== undefined ? Boolean(user.canViewDesignCosts) : true,
+      canAddFabricInward: user.canAddFabricInward !== undefined ? Boolean(user.canAddFabricInward) : true,
+      canIssueFabricOutward: user.canIssueFabricOutward !== undefined ? Boolean(user.canIssueFabricOutward) : true,
+      canTransferFabricLot: user.canTransferFabricLot !== undefined ? Boolean(user.canTransferFabricLot) : true,
+      canDeleteFabricLogs: user.canDeleteFabricLogs !== undefined ? Boolean(user.canDeleteFabricLogs) : true,
+      canViewFabricPrices: user.canViewFabricPrices !== undefined ? Boolean(user.canViewFabricPrices) : true,
+      canCreateInvoices: user.canCreateInvoices !== undefined ? Boolean(user.canCreateInvoices) : true,
+      canEditInvoiceRates: user.canEditInvoiceRates !== undefined ? Boolean(user.canEditInvoiceRates) : true,
+      canCancelInvoices: user.canCancelInvoices !== undefined ? Boolean(user.canCancelInvoices) : true,
+      canRecordPayments: user.canRecordPayments !== undefined ? Boolean(user.canRecordPayments) : true,
+      canCreateStitchingJobs: user.canCreateStitchingJobs !== undefined ? Boolean(user.canCreateStitchingJobs) : true,
+      canIssueStitchingChallans: user.canIssueStitchingChallans !== undefined ? Boolean(user.canIssueStitchingChallans) : true,
+      canManageWorkerRates: user.canManageWorkerRates !== undefined ? Boolean(user.canManageWorkerRates) : true,
       allowedCompanies: Array.isArray(user.allowedCompanies) && user.allowedCompanies.length > 0 ? user.allowedCompanies : ALL_COMPANY_NAMES,
       permissions: user.permissions || []
     });
@@ -271,6 +448,34 @@ export default function AdminPanel() {
       password: '',
       role: 'user',
       isMainAdmin: false,
+      department: 'General',
+      status: 'Active',
+      canManageTasks: true,
+      canBroadcastChat: true,
+      canExportReports: true,
+      canDeleteRecords: true,
+      canViewFinancials: true,
+      canCreateJobCards: true,
+      canEditJobCards: true,
+      canDeleteJobCards: true,
+      canAdvanceJobStage: true,
+      canViewJobCosts: true,
+      canCreateDesigns: true,
+      canEditDesigns: true,
+      canDeleteDesigns: true,
+      canViewDesignCosts: true,
+      canAddFabricInward: true,
+      canIssueFabricOutward: true,
+      canTransferFabricLot: true,
+      canDeleteFabricLogs: true,
+      canViewFabricPrices: true,
+      canCreateInvoices: true,
+      canEditInvoiceRates: true,
+      canCancelInvoices: true,
+      canRecordPayments: true,
+      canCreateStitchingJobs: true,
+      canIssueStitchingChallans: true,
+      canManageWorkerRates: true,
       allowedCompanies: ALL_COMPANY_NAMES,
       permissions: []
     });
@@ -288,6 +493,13 @@ export default function AdminPanel() {
       password: '',
       role: 'user',
       isMainAdmin: false,
+      department: 'General',
+      status: 'Active',
+      canManageTasks: true,
+      canBroadcastChat: true,
+      canExportReports: true,
+      canDeleteRecords: true,
+      canViewFinancials: true,
       allowedCompanies: ALL_COMPANY_NAMES,
       permissions: []
     });
@@ -318,6 +530,13 @@ export default function AdminPanel() {
           email: formData.email.trim(),
           role: formData.role,
           isMainAdmin: formData.isMainAdmin,
+          department: formData.department,
+          status: formData.status,
+          canManageTasks: formData.canManageTasks,
+          canBroadcastChat: formData.canBroadcastChat,
+          canExportReports: formData.canExportReports,
+          canDeleteRecords: formData.canDeleteRecords,
+          canViewFinancials: formData.canViewFinancials,
           allowedCompanies: formData.allowedCompanies,
           permissions: formData.permissions
         };
@@ -335,7 +554,7 @@ export default function AdminPanel() {
           }
         }
 
-        setSuccess(`User "${formData.name}" credentials & company permissions updated successfully.`);
+        setSuccess(`User "${formData.name}" credentials & permissions updated successfully.`);
         triggerPushNotification('👤 User Updated', `User "${formData.name}" updated successfully!`, 'info');
       } else {
         await api.createUser({
@@ -344,6 +563,13 @@ export default function AdminPanel() {
           password: formData.password,
           role: formData.role,
           isMainAdmin: formData.isMainAdmin,
+          department: formData.department,
+          status: formData.status,
+          canManageTasks: formData.canManageTasks,
+          canBroadcastChat: formData.canBroadcastChat,
+          canExportReports: formData.canExportReports,
+          canDeleteRecords: formData.canDeleteRecords,
+          canViewFinancials: formData.canViewFinancials,
           allowedCompanies: formData.allowedCompanies,
           permissions: formData.permissions
         });
@@ -498,30 +724,51 @@ export default function AdminPanel() {
               </button>
             </div>
 
-            {/* Live Search & Per-Company Scope Filter */}
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', flex: '1 1 240px' }}>
+            {/* Live Search & Multi-Criteria Scope Filters */}
+            <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1 1 220px' }}>
                 <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
                 <input
                   type="text"
-                  placeholder="Filter users by name, email, or role..."
+                  placeholder="Search user name, email, department, or role..."
                   value={userSearch}
                   onChange={e => setUserSearch(e.target.value)}
-                  style={{ width: '100%', paddingLeft: 34, fontSize: '0.85rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px' }}
+                  style={{ width: '100%', paddingLeft: 34, fontSize: '0.82rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px' }}
                 />
               </div>
 
               <select
                 value={selectedCompanyFilter}
                 onChange={e => setSelectedCompanyFilter(e.target.value)}
-                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
               >
-                <option value="All">🌐 All Companies Scope ({users.length})</option>
+                <option value="All">🌐 All Companies ({users.length})</option>
                 <option value="Elite Edition">🏢 Elite Edition ({users.filter(u => u.allowedCompanies?.includes('Elite Edition')).length})</option>
                 <option value="Elite Fabtex">🏢 Elite Fabtex ({users.filter(u => u.allowedCompanies?.includes('Elite Fabtex')).length})</option>
                 <option value="Elite Online">🏪 Elite Online ({users.filter(u => u.allowedCompanies?.includes('Elite Online')).length})</option>
                 <option value="Elite Stitching">🏭 Elite Stitching ({users.filter(u => u.allowedCompanies?.includes('Elite Stitching')).length})</option>
                 <option value="Elite Digital Print">🖨️ Elite Digital Print ({users.filter(u => u.allowedCompanies?.includes('Elite Digital Print')).length})</option>
+              </select>
+
+              <select
+                value={selectedDeptFilter}
+                onChange={e => setSelectedDeptFilter(e.target.value)}
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <option value="All">🏷️ All Departments</option>
+                {DEPARTMENTS_LIST.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedStatusFilter}
+                onChange={e => setSelectedStatusFilter(e.target.value)}
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
+              >
+                <option value="All">⚡ All Statuses</option>
+                <option value="Active">🟢 Active</option>
+                <option value="Inactive">🔴 Inactive / Suspended</option>
               </select>
             </div>
 
@@ -540,10 +787,11 @@ export default function AdminPanel() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Account</th>
-                      <th>Email</th>
+                      <th>Account & Status</th>
+                      <th>Email & Department</th>
                       <th>Role & Hierarchy</th>
                       <th>Allocated Companies</th>
+                      <th>Action Privileges</th>
                       <th>Allowed Functionalities</th>
                       <th className="text-center">Actions</th>
                     </tr>
@@ -551,9 +799,11 @@ export default function AdminPanel() {
                   <tbody>
                     {users
                       .filter(u => {
-                        const matchesSearch = matchSearchQuery(u, userSearch, ['name', 'email', 'role']);
+                        const matchesSearch = matchSearchQuery(u, userSearch, ['name', 'email', 'role', 'department']);
                         const matchesCompany = selectedCompanyFilter === 'All' || (Array.isArray(u.allowedCompanies) && u.allowedCompanies.includes(selectedCompanyFilter));
-                        return matchesSearch && matchesCompany;
+                        const matchesDept = selectedDeptFilter === 'All' || u.department === selectedDeptFilter;
+                        const matchesStatus = selectedStatusFilter === 'All' || (u.status || 'Active') === selectedStatusFilter;
+                        return matchesSearch && matchesCompany && matchesDept && matchesStatus;
                       })
                       .map((u) => {
                         const isMain = Boolean(u.isMainAdmin || u.email === 'harshitsidapara2468@gmail.com');
@@ -562,25 +812,54 @@ export default function AdminPanel() {
                         const userCompanies = Array.isArray(u.allowedCompanies) && u.allowedCompanies.length > 0
                           ? u.allowedCompanies
                           : ALL_COMPANY_NAMES;
+                        const isInactive = u.status === 'Inactive';
 
                         return (
-                          <tr key={u.id || u._id} style={{ background: isCurrentlyEditing ? '#eff6ff' : 'transparent', transition: 'background 0.15s' }}>
+                          <tr key={u.id || u._id} style={{ background: isCurrentlyEditing ? '#eff6ff' : isInactive ? '#fff1f2' : 'transparent', transition: 'background 0.15s', opacity: isInactive ? 0.75 : 1 }}>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                                 <div style={styles.avatar(checkAdmin)}>
                                   {u.name ? u.name[0].toUpperCase() : 'U'}
                                 </div>
                                 <div>
-                                  <span style={{ fontWeight: '700', color: '#0f172a', display: 'block', fontSize: '0.88rem' }}>
-                                    {u.name} {isMain && <span title="Super Master Admin">👑</span>}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.88rem' }}>
+                                      {u.name} {isMain && <span title="Super Master Admin">👑</span>}
+                                    </span>
+                                    <span style={{
+                                      fontSize: '0.65rem',
+                                      fontWeight: 800,
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      background: isInactive ? '#fee2e2' : '#dcfce7',
+                                      color: isInactive ? '#991b1b' : '#166534',
+                                      border: `1px solid ${isInactive ? '#fca5a5' : '#86efac'}`
+                                    }}>
+                                      {isInactive ? '🔴 INACTIVE' : '🟢 ACTIVE'}
+                                    </span>
+                                  </div>
                                   {isCurrentlyEditing && (
-                                    <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 800 }}>[Editing Now]</span>
+                                    <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 800, display: 'block' }}>[Editing Now]</span>
                                   )}
                                 </div>
                               </div>
                             </td>
-                            <td style={{ color: '#334155', fontWeight: 500, fontSize: '0.82rem' }}>{u.email}</td>
+                            <td>
+                              <div style={{ color: '#334155', fontWeight: 600, fontSize: '0.82rem' }}>{u.email}</div>
+                              <span style={{
+                                display: 'inline-block',
+                                marginTop: '2px',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                color: '#475569',
+                                background: '#f1f5f9',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1'
+                              }}>
+                                📁 {u.department || 'General'}
+                              </span>
+                            </td>
                             <td>
                               <span style={{
                                 fontSize: '0.7rem',
@@ -606,6 +885,25 @@ export default function AdminPanel() {
                                     {c}
                                   </span>
                                 ))}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                                <span title="Task Assignment Rights" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: (u.canManageTasks !== false) ? '#eff6ff' : '#f1f5f9', color: (u.canManageTasks !== false) ? '#2563eb' : '#94a3b8', border: '1px solid #cbd5e1' }}>
+                                  📋 Tasks: {(u.canManageTasks !== false) ? 'YES' : 'NO'}
+                                </span>
+                                <span title="Chat Announcement Broadcasting" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: (u.canBroadcastChat !== false) ? '#f0fdf4' : '#f1f5f9', color: (u.canBroadcastChat !== false) ? '#16a34a' : '#94a3b8', border: '1px solid #cbd5e1' }}>
+                                  💬 Chat: {(u.canBroadcastChat !== false) ? 'YES' : 'NO'}
+                                </span>
+                                <span title="Export Excel/PDF" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: (u.canExportReports !== false) ? '#faf5ff' : '#f1f5f9', color: (u.canExportReports !== false) ? '#9333ea' : '#94a3b8', border: '1px solid #cbd5e1' }}>
+                                  📥 Export: {(u.canExportReports !== false) ? 'YES' : 'NO'}
+                                </span>
+                                <span title="Edit/Delete Master Records" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: (u.canDeleteRecords !== false) ? '#fff7ed' : '#f1f5f9', color: (u.canDeleteRecords !== false) ? '#ea580c' : '#94a3b8', border: '1px solid #cbd5e1' }}>
+                                  ✏️ Edit/Del: {(u.canDeleteRecords !== false) ? 'YES' : 'NO'}
+                                </span>
+                                <span title="View Purchase Rates & Financial Margins" style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: (u.canViewFinancials !== false) ? '#fefce8' : '#f1f5f9', color: (u.canViewFinancials !== false) ? '#ca8a04' : '#94a3b8', border: '1px solid #cbd5e1' }}>
+                                  💰 Price: {(u.canViewFinancials !== false) ? 'YES' : 'NO'}
+                                </span>
                               </div>
                             </td>
                             <td>
@@ -643,7 +941,7 @@ export default function AdminPanel() {
                                     alignItems: 'center',
                                     gap: '5px'
                                   }}
-                                  title="Edit Credentials"
+                                  title="Edit Credentials & Permissions"
                                 >
                                   <Edit2 size={14} /> Edit
                                 </button>
@@ -760,53 +1058,357 @@ export default function AdminPanel() {
                 {/* Modal Form Body */}
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
                   <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Full Name *</label>
-                      <div style={styles.inputWrapper}>
-                        <User size={15} style={styles.inputIcon} />
-                        <input
-                          type="text"
-                          name="name"
-                          value={formData.name}
-                          onChange={handleInputChange}
-                          placeholder="e.g. Rahul Sharma"
-                          required
-                          style={styles.formInput}
-                        />
+                    
+                    {/* ⚡ 1-Click Role Permission Presets Bar */}
+                    <div style={{ background: '#f8fafc', padding: '0.75rem 0.85rem', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1d4ed8', textTransform: 'uppercase', marginBottom: '0.4rem', letterSpacing: '0.04em' }}>
+                        ⚡ Quick 1-Click Role Presets
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('full_admin')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer' }}
+                        >
+                          ⚡ Full Admin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('executive')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          👔 Executive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('production_manager')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          🏭 Production
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('stitching_master')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          ✂️ Stitching Master
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('ecommerce_manager')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          🏪 E-Commerce
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('billing_clerk')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          💰 Billing Clerk
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyRolePreset('store_keeper')}
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', cursor: 'pointer' }}
+                        >
+                          📦 Store Keeper
+                        </button>
                       </div>
                     </div>
 
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Email Address *</label>
-                      <div style={styles.inputWrapper}>
-                        <Mail size={15} style={styles.inputIcon} />
-                        <input
-                          type="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleInputChange}
-                          placeholder="rahul@elite.com"
-                          required
-                          style={styles.formInput}
-                        />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Full Name *</label>
+                        <div style={styles.inputWrapper}>
+                          <User size={15} style={styles.inputIcon} />
+                          <input
+                            type="text"
+                            name="name"
+                            value={formData.name}
+                            onChange={handleInputChange}
+                            placeholder="e.g. Rahul Sharma"
+                            required
+                            style={styles.formInput}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Email Address *</label>
+                        <div style={styles.inputWrapper}>
+                          <Mail size={15} style={styles.inputIcon} />
+                          <input
+                            type="email"
+                            name="email"
+                            value={formData.email}
+                            onChange={handleInputChange}
+                            placeholder="rahul@elite.com"
+                            required
+                            style={styles.formInput}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>
-                        {editingUser ? 'New Password (leave blank to keep current)' : 'Password *'}
-                      </label>
-                      <div style={styles.inputWrapper}>
-                        <Lock size={15} style={styles.inputIcon} />
-                        <input
-                          type="password"
-                          name="password"
-                          value={formData.password}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>
+                          {editingUser ? 'New Password (leave blank to keep)' : 'Password *'}
+                        </label>
+                        <div style={styles.inputWrapper}>
+                          <Lock size={15} style={styles.inputIcon} />
+                          <input
+                            type="password"
+                            name="password"
+                            value={formData.password}
+                            onChange={handleInputChange}
+                            placeholder={editingUser ? 'Enter new password...' : 'Enter password...'}
+                            required={!editingUser}
+                            style={styles.formInput}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Primary Department *</label>
+                        <select
+                          name="department"
+                          value={formData.department}
                           onChange={handleInputChange}
-                          placeholder={editingUser ? 'Enter new password...' : 'Enter password...'}
-                          required={!editingUser}
-                          style={styles.formInput}
-                        />
+                          style={styles.selectInput}
+                        >
+                          {DEPARTMENTS_LIST.map(d => (
+                            <option key={d} value={d}>📁 {d}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Account Status *</label>
+                        <select
+                          name="status"
+                          value={formData.status}
+                          onChange={handleInputChange}
+                          style={{
+                            ...styles.selectInput,
+                            color: formData.status === 'Inactive' ? '#dc2626' : '#16a34a',
+                            fontWeight: 800
+                          }}
+                        >
+                          <option value="Active">🟢 Active Account</option>
+                          <option value="Inactive">🔴 Inactive / Suspended</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Action & Operational Privileges Card */}
+                    <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                        <div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            ⚙️ Granular Micro-Level Action & Operational Privileges
+                          </div>
+                          <p style={{ fontSize: '0.73rem', color: '#64748b', margin: '2px 0 0 0' }}>
+                            Configure exact functional capabilities (Create, Edit, Delete, Stage Advances, Costing & Rates) per user within each screen.
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => setFormData(p => ({
+                              ...p,
+                              canManageTasks: true, canBroadcastChat: true, canExportReports: true, canDeleteRecords: true, canViewFinancials: true,
+                              canCreateJobCards: true, canEditJobCards: true, canDeleteJobCards: true, canAdvanceJobStage: true, canViewJobCosts: true,
+                              canCreateDesigns: true, canEditDesigns: true, canDeleteDesigns: true, canViewDesignCosts: true,
+                              canAddFabricInward: true, canIssueFabricOutward: true, canTransferFabricLot: true, canDeleteFabricLogs: true, canViewFabricPrices: true,
+                              canCreateInvoices: true, canEditInvoiceRates: true, canCancelInvoices: true, canRecordPayments: true,
+                              canCreateStitchingJobs: true, canIssueStitchingChallans: true, canManageWorkerRates: true
+                            }))}
+                            className="btn-secondary"
+                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', fontWeight: 700 }}
+                          >
+                            Enable All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormData(p => ({
+                              ...p,
+                              canManageTasks: false, canBroadcastChat: false, canExportReports: false, canDeleteRecords: false, canViewFinancials: false,
+                              canCreateJobCards: false, canEditJobCards: false, canDeleteJobCards: false, canAdvanceJobStage: false, canViewJobCosts: false,
+                              canCreateDesigns: false, canEditDesigns: false, canDeleteDesigns: false, canViewDesignCosts: false,
+                              canAddFabricInward: false, canIssueFabricOutward: false, canTransferFabricLot: false, canDeleteFabricLogs: false, canViewFabricPrices: false,
+                              canCreateInvoices: false, canEditInvoiceRates: false, canCancelInvoices: false, canRecordPayments: false,
+                              canCreateStitchingJobs: false, canIssueStitchingChallans: false, canManageWorkerRates: false
+                            }))}
+                            className="btn-secondary"
+                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', fontWeight: 700, color: '#dc2626' }}
+                          >
+                            Disable All
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '0.75rem' }}>
+                        
+                        {/* Section 1: System & General */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>🌟 System & General Operations</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canManageTasks)}>
+                              <input type="checkbox" checked={formData.canManageTasks} onChange={e => setFormData(p => ({ ...p, canManageTasks: e.target.checked }))} />
+                              <span>📋 Task Creation & Assignment</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canBroadcastChat)}>
+                              <input type="checkbox" checked={formData.canBroadcastChat} onChange={e => setFormData(p => ({ ...p, canBroadcastChat: e.target.checked }))} />
+                              <span>💬 Chat Broadcast Announcements</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canExportReports)}>
+                              <input type="checkbox" checked={formData.canExportReports} onChange={e => setFormData(p => ({ ...p, canExportReports: e.target.checked }))} />
+                              <span>📥 Excel & PDF Report Export</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canDeleteRecords)}>
+                              <input type="checkbox" checked={formData.canDeleteRecords} onChange={e => setFormData(p => ({ ...p, canDeleteRecords: e.target.checked }))} />
+                              <span>⚠️ Edit & Delete Master Data</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canViewFinancials)}>
+                              <input type="checkbox" checked={formData.canViewFinancials} onChange={e => setFormData(p => ({ ...p, canViewFinancials: e.target.checked }))} />
+                              <span>💰 Purchase Cost & Margin Visibility</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Section 2: Job Cards & Digital Print */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#2563eb', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>📦 Digital Printing & Job Cards</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canCreateJobCards)}>
+                              <input type="checkbox" checked={formData.canCreateJobCards} onChange={e => setFormData(p => ({ ...p, canCreateJobCards: e.target.checked }))} />
+                              <span>➕ Create New Job Cards</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canEditJobCards)}>
+                              <input type="checkbox" checked={formData.canEditJobCards} onChange={e => setFormData(p => ({ ...p, canEditJobCards: e.target.checked }))} />
+                              <span>✏️ Edit Job Card Details</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canAdvanceJobStage)}>
+                              <input type="checkbox" checked={formData.canAdvanceJobStage} onChange={e => setFormData(p => ({ ...p, canAdvanceJobStage: e.target.checked }))} />
+                              <span>⚡ Production Stage Transition</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canViewJobCosts)}>
+                              <input type="checkbox" checked={formData.canViewJobCosts} onChange={e => setFormData(p => ({ ...p, canViewJobCosts: e.target.checked }))} />
+                              <span>💰 View Printing Costs & Margins</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canDeleteJobCards)}>
+                              <input type="checkbox" checked={formData.canDeleteJobCards} onChange={e => setFormData(p => ({ ...p, canDeleteJobCards: e.target.checked }))} />
+                              <span>🗑️ Delete Job Cards</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Section 3: Design Catalogue */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0284c7', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>🎨 Design Catalogue & Assets</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canCreateDesigns)}>
+                              <input type="checkbox" checked={formData.canCreateDesigns} onChange={e => setFormData(p => ({ ...p, canCreateDesigns: e.target.checked }))} />
+                              <span>🎨 Create & Upload Designs</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canEditDesigns)}>
+                              <input type="checkbox" checked={formData.canEditDesigns} onChange={e => setFormData(p => ({ ...p, canEditDesigns: e.target.checked }))} />
+                              <span>✏️ Edit Design & Swap Images</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canViewDesignCosts)}>
+                              <input type="checkbox" checked={formData.canViewDesignCosts} onChange={e => setFormData(p => ({ ...p, canViewDesignCosts: e.target.checked }))} />
+                              <span>💵 View Design Meter Costs</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canDeleteDesigns)}>
+                              <input type="checkbox" checked={formData.canDeleteDesigns} onChange={e => setFormData(p => ({ ...p, canDeleteDesigns: e.target.checked }))} />
+                              <span>🗑️ Delete Designs</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Section 4: Fabric Inventory */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#16a34a', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>🧵 Fabric Inventory & Stock Control</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canAddFabricInward)}>
+                              <input type="checkbox" checked={formData.canAddFabricInward} onChange={e => setFormData(p => ({ ...p, canAddFabricInward: e.target.checked }))} />
+                              <span>📥 Inward Fabric Rolls & Lots</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canIssueFabricOutward)}>
+                              <input type="checkbox" checked={formData.canIssueFabricOutward} onChange={e => setFormData(p => ({ ...p, canIssueFabricOutward: e.target.checked }))} />
+                              <span>📦 Issue Fabric Outward</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canTransferFabricLot)}>
+                              <input type="checkbox" checked={formData.canTransferFabricLot} onChange={e => setFormData(p => ({ ...p, canTransferFabricLot: e.target.checked }))} />
+                              <span>🔄 Lot Stock Transfers & Rebalance</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canViewFabricPrices)}>
+                              <input type="checkbox" checked={formData.canViewFabricPrices} onChange={e => setFormData(p => ({ ...p, canViewFabricPrices: e.target.checked }))} />
+                              <span>🏷️ View Supplier Fabric Prices</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canDeleteFabricLogs)}>
+                              <input type="checkbox" checked={formData.canDeleteFabricLogs} onChange={e => setFormData(p => ({ ...p, canDeleteFabricLogs: e.target.checked }))} />
+                              <span>🗑️ Delete Inventory Logs</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Section 5: Billing & Invoicing */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#7c3aed', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>🧾 Billing, Invoices & GST Accounts</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canCreateInvoices)}>
+                              <input type="checkbox" checked={formData.canCreateInvoices} onChange={e => setFormData(p => ({ ...p, canCreateInvoices: e.target.checked }))} />
+                              <span>🧾 Generate Tax Invoices & Challans</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canEditInvoiceRates)}>
+                              <input type="checkbox" checked={formData.canEditInvoiceRates} onChange={e => setFormData(p => ({ ...p, canEditInvoiceRates: e.target.checked }))} />
+                              <span>✏️ Edit Billed Rates & Discounts</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canRecordPayments)}>
+                              <input type="checkbox" checked={formData.canRecordPayments} onChange={e => setFormData(p => ({ ...p, canRecordPayments: e.target.checked }))} />
+                              <span>💳 Record Payment Receipts</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canCancelInvoices)}>
+                              <input type="checkbox" checked={formData.canCancelInvoices} onChange={e => setFormData(p => ({ ...p, canCancelInvoices: e.target.checked }))} />
+                              <span>🚫 Cancel / Void Tax Invoices</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Section 6: Stitching */}
+                        <div style={{ background: '#ffffff', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ea580c', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>✂️ Garment Stitching Department</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canCreateStitchingJobs)}>
+                              <input type="checkbox" checked={formData.canCreateStitchingJobs} onChange={e => setFormData(p => ({ ...p, canCreateStitchingJobs: e.target.checked }))} />
+                              <span>✂️ Create Stitching Job Cards</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canIssueStitchingChallans)}>
+                              <input type="checkbox" checked={formData.canIssueStitchingChallans} onChange={e => setFormData(p => ({ ...p, canIssueStitchingChallans: e.target.checked }))} />
+                              <span>📜 Issue Cutting & Stitching Challans</span>
+                            </label>
+                            <label style={styles.microLabel(formData.canManageWorkerRates)}>
+                              <input type="checkbox" checked={formData.canManageWorkerRates} onChange={e => setFormData(p => ({ ...p, canManageWorkerRates: e.target.checked }))} />
+                              <span>💰 Manage Piece-Rate Worker Wages</span>
+                            </label>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
 
@@ -950,7 +1552,9 @@ export default function AdminPanel() {
                         const catScreens = AVAILABLE_SCREENS.filter(s => s.category === cat);
                         const allChecked = catScreens.every(s => formData.permissions.includes(s.id));
                         const catTitle = cat === 'General' ? '⚙️ Core & General' :
-                                         cat === 'Elite Edition' ? '🛍️ Elite Edition (E-Commerce)' :
+                                         cat === 'Elite Online' ? '🏪 Elite Online (E-Commerce)' :
+                                         cat === 'Elite Edition' ? '🏢 Elite Edition' :
+                                         cat === 'Elite Fabtex' ? '🏭 Elite Fabtex' :
                                          cat === 'Elite Digital Print' ? '🖨️ Elite Digital Print' :
                                          cat === 'Elite Stitching' ? '✂️ Elite Stitching' : `📁 ${cat}`;
 
@@ -1539,6 +2143,20 @@ const styles = {
     margin: '0 0 0.25rem 2px',
     fontWeight: 500
   },
+  microLabel: (checked) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.45rem',
+    background: checked ? '#f0f9ff' : '#ffffff',
+    padding: '0.4rem 0.55rem',
+    borderRadius: '6px',
+    border: checked ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+    fontSize: '0.74rem',
+    cursor: 'pointer',
+    fontWeight: checked ? 700 : 500,
+    color: checked ? '#1e40af' : '#334155',
+    transition: 'all 0.15s ease'
+  }),
   checkboxGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
