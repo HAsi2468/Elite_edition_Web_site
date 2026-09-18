@@ -1471,10 +1471,36 @@ function JobCardForm({ card, onSave, onClose, department }) {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           {d.imageUrl && (
-                            <img src={d.imageUrl} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }} />
+                            <img
+                              src={convertDriveUrl(d.imageUrl)}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }}
+                              onError={(e) => {
+                                const fidMatch = d.imageUrl?.match(/\/d\/([-\w]{20,})/) || d.imageUrl?.match(/[?&]id=([-\w]{20,})/) || d.imageUrl?.match(/([-\w]{25,})/);
+                                if (fidMatch && fidMatch[1]) {
+                                  e.target.src = `https://lh3.googleusercontent.com/d/${fidMatch[1]}=s200`;
+                                } else {
+                                  e.target.style.display = 'none';
+                                }
+                              }}
+                            />
                           )}
                           {d.imageUrl2 && (
-                            <img src={d.imageUrl2} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }} />
+                            <img
+                              src={convertDriveUrl(d.imageUrl2)}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover' }}
+                              onError={(e) => {
+                                const fidMatch = d.imageUrl2?.match(/\/d\/([-\w]{20,})/) || d.imageUrl2?.match(/[?&]id=([-\w]{20,})/) || d.imageUrl2?.match(/([-\w]{25,})/);
+                                if (fidMatch && fidMatch[1]) {
+                                  e.target.src = `https://lh3.googleusercontent.com/d/${fidMatch[1]}=s200`;
+                                } else {
+                                  e.target.style.display = 'none';
+                                }
+                              }}
+                            />
                           )}
                           <div>
                             <span style={{ fontWeight:700, color:'var(--primary)' }}>{d.designName || d.designNo}</span>

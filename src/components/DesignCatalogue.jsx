@@ -75,7 +75,7 @@ function convertDriveUrl(link, designName = '') {
     }
 
     if (fileId) {
-      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+      return `https://lh3.googleusercontent.com/d/${fileId}=s1000`;
     }
   }
 
