@@ -118,51 +118,46 @@ function calcExpTime(panna, passText, totalMtr, machineName) {
 // Accepts any Drive share / view / open link and returns a direct embeddable URL
 function convertDriveUrl(link) {
   if (!link || !link.trim()) return '';
-  if (link.startsWith('data:')) return link;
-  
-  // If it's a local relative path — always resolve to absolute using window.location.origin
-  // This is critical for the print popup window which opens as a blank page
-  if (link.startsWith('/')) {
-    try {
-      return `${window.location.origin}${link}`;
-    } catch (e) {
-      // Fallback to getBaseUrl origin
-      const baseUrl = getBaseUrl();
-      if (baseUrl && baseUrl.startsWith('http')) {
-        try {
-          const url = new URL(baseUrl);
-          return `${url.origin}${link}`;
-        } catch (e2) {}
-      }
-    }
-    return link;
-  }
-  
-  // Handle local uploaded files e.g. "uploads/chat-123.jpg" or "/designs/ED-01.jpg"
-  if (link.includes('uploads/') || link.includes('designs/')) {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    let cleanPath = link.startsWith('/') ? link : `/${link}`;
+  const trimmed = link.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+  // Handle local uploaded files or IP backend URLs e.g. "http://3.7.174.180:3001/designs/ED-476(1).jpg" or "/designs/ED-01.jpg"
+  if (trimmed.includes('/designs/') || trimmed.includes('/uploads/')) {
+    const relativePath = trimmed.substring(trimmed.search(/\/(designs|uploads)\//));
+    let cleanPath = relativePath.startsWith('/designs/') ? `/v1${relativePath}` : relativePath;
     return origin ? `${origin}${cleanPath}` : cleanPath;
   }
-  
+
+  // Handle bare design file names or ED- prefixes without path e.g. "ED-01.jpg" or "ED-708"
+  if (!trimmed.startsWith('http') && !trimmed.startsWith('data:') && !trimmed.includes('/')) {
+    const cleanPath = trimmed.includes('.') ? `/v1/designs/${trimmed}` : `/v1/designs/${trimmed}.jpg`;
+    return origin ? `${origin}${cleanPath}` : cleanPath;
+  }
+
   // If it's a Google Drive link
-  if (link.includes('drive.google.com') || link.includes('googleusercontent') || link.includes('lh3.google')) {
-    if (link.includes('/folders/')) return '';
-    const fileMatch = link.match(/\/d\/([-\w]{20,})/);
+  if (trimmed.includes('drive.google.com') || trimmed.includes('googleusercontent') || trimmed.includes('lh3.google')) {
+    if (trimmed.includes('/folders/')) return '';
+    const fileMatch = trimmed.match(/\/d\/([-\w]{20,})/);
     if (fileMatch) return `https://lh3.googleusercontent.com/d/${fileMatch[1]}=s1000`;
-    const openMatch = link.match(/[?&]id=([-\w]{20,})/);
+    const openMatch = trimmed.match(/[?&]id=([-\w]{20,})/);
     if (openMatch) return `https://lh3.googleusercontent.com/d/${openMatch[1]}=s1000`;
-    const idMatch = link.match(/([-\w]{25,})/);
-    return idMatch ? `https://lh3.googleusercontent.com/d/${idMatch[1]}=s1000` : link;
+    const idMatch = trimmed.match(/([-\w]{25,})/);
+    return idMatch ? `https://lh3.googleusercontent.com/d/${idMatch[1]}=s1000` : trimmed;
   }
-  
-  // If it's any other external link (e.g. starts with http)
-  if (link.startsWith('http')) {
-    return link;
+
+  // Upgrade insecure HTTP to HTTPS if website is loaded over HTTPS to prevent Mixed Content blocking by Chrome
+  if (isHttpsPage && trimmed.startsWith('http://')) {
+    return trimmed.replace('http://', 'https://');
   }
-  
-  // Fallback
-  return link;
+
+  if (trimmed.startsWith('/')) {
+    return origin ? `${origin}${trimmed}` : trimmed;
+  }
+
+  return trimmed;
 }
 
 // ─── Extract multiple design names helper ────────────────────────────────────

@@ -16,52 +16,35 @@ import PKDOrdersImportModal from './PKDOrdersImportModal';
 import DesignMaster from './DesignMaster';
 
 function convertDriveUrl(link, designName = '') {
-  const getOrigin = () => {
-    const baseUrl = getBaseUrl();
-    if (baseUrl && baseUrl.startsWith('http')) {
-      try { return new URL(baseUrl).origin; } catch (e) {}
-    }
-    if (typeof window !== 'undefined') {
-      const hn = window.location.hostname;
-      if ((hn === 'localhost' || hn === '127.0.0.1') && window.location.port && window.location.port !== '3001') {
-        return `${window.location.protocol}//${hn}:3001`;
-      }
-      return window.location.origin;
-    }
-    return '';
-  };
-
-  const origin = getOrigin();
-  const prefix = '/v1/designs';
-
   if (!link || !link.trim()) {
     if (designName) {
-      return origin ? `${origin}${prefix}/${designName}.jpg` : `${prefix}/${designName}.jpg`;
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      return `${origin}/v1/designs/${designName}.jpg`;
     }
     return '';
   }
   const trimmed = link.trim();
   if (trimmed.startsWith('data:')) return trimmed;
 
-  // Handle local uploaded files e.g. "uploads/chat-123.jpg" or "/designs/ED-01.jpg"
-  if (trimmed.includes('uploads/') || trimmed.includes('designs/')) {
-    let cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-    if (cleanPath.startsWith('/designs/')) {
-      cleanPath = `/v1${cleanPath}`;
-    }
-    const finalUrl = origin ? `${origin}${cleanPath}` : cleanPath;
-    return encodeURI(finalUrl);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+  // Handle local uploaded files or IP backend URLs e.g. "http://3.7.174.180:3001/designs/ED-476(1).jpg" or "/designs/ED-01.jpg"
+  if (trimmed.includes('/designs/') || trimmed.includes('/uploads/')) {
+    const relativePath = trimmed.substring(trimmed.search(/\/(designs|uploads)\//));
+    let cleanPath = relativePath.startsWith('/designs/') ? `/v1${relativePath}` : relativePath;
+    return origin ? `${origin}${cleanPath}` : cleanPath;
   }
 
   // Handle bare design file names or ED- prefixes without path e.g. "ED-01.jpg" or "ED-708"
   if (!trimmed.startsWith('http') && !trimmed.startsWith('data:') && !trimmed.includes('/')) {
-    const cleanPath = trimmed.includes('.') ? `${prefix}/${trimmed}` : `${prefix}/${trimmed}.jpg`;
-    const finalUrl = origin ? `${origin}${cleanPath}` : cleanPath;
-    return encodeURI(finalUrl);
+    const cleanPath = trimmed.includes('.') ? `/v1/designs/${trimmed}` : `/v1/designs/${trimmed}.jpg`;
+    return origin ? `${origin}${cleanPath}` : cleanPath;
   }
 
   // Handle Google Drive Links
   if (trimmed.includes('drive.google.com') || trimmed.includes('googleusercontent') || trimmed.includes('lh3.google')) {
+    if (trimmed.includes('/folders/')) return '';
     let fileId = '';
     const dMatch = trimmed.match(/\/d\/([-\w]{20,})/);
     if (dMatch) fileId = dMatch[1];
@@ -79,12 +62,12 @@ function convertDriveUrl(link, designName = '') {
     }
   }
 
-  if (trimmed.startsWith('http')) {
-    return encodeURI(trimmed);
+  // Upgrade insecure HTTP to HTTPS if website is loaded over HTTPS to prevent Mixed Content blocking
+  if (isHttpsPage && trimmed.startsWith('http://')) {
+    return trimmed.replace('http://', 'https://');
   }
 
-  const finalUrl = origin ? `${origin}/${trimmed.replace(/^\//, '')}` : trimmed;
-  return encodeURI(finalUrl);
+  return encodeURI(trimmed);
 }
 
 // Image compression helper
