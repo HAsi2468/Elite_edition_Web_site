@@ -138,7 +138,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
     }
     return clean;
   };
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = String(currentUser?.role || '').toLowerCase() === 'admin' || !!currentUser?.isMainAdmin || currentUser?.email === 'harshitsidapara2468@gmail.com';
   const [stock, setStock] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [fabricsList, setFabricsList] = useState([]);
@@ -2143,16 +2143,18 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
               </div>
 
               <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  onClick={handleAutoLotTransfer}
-                  disabled={autoTransferLoading}
-                  className="btn-primary"
-                  style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none' }}
-                  title="Auto-rebalance negative lots using matching Fabric Quality, Panna, and Vendor"
-                >
-                  <RefreshCw size={16} className={autoTransferLoading ? 'spin-loader' : ''} />
-                  {autoTransferLoading ? 'Rebalancing...' : '⚡ Auto-Rebalance All Deficits'}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={handleAutoLotTransfer}
+                    disabled={autoTransferLoading}
+                    className="btn-primary"
+                    style={{ gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none' }}
+                    title="Auto-rebalance negative lots using matching Fabric Quality, Panna, and Vendor"
+                  >
+                    <RefreshCw size={16} className={autoTransferLoading ? 'spin-loader' : ''} />
+                    {autoTransferLoading ? 'Rebalancing...' : '⚡ Auto-Rebalance All Deficits'}
+                  </button>
+                )}
 
                 <button
                   onClick={async () => {
@@ -2504,16 +2506,18 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
               </div>
 
               <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  onClick={handleAutoLotTransfer}
-                  disabled={autoTransferLoading}
-                  className="btn-primary"
-                  style={{ gap: '0.4rem', padding: '0.55rem 1.1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none' }}
-                  title="Auto-rebalance negative lots using matching Fabric Quality, Panna, and Vendor"
-                >
-                  <RefreshCw size={16} className={autoTransferLoading ? 'spin-loader' : ''} />
-                  {autoTransferLoading ? 'Rebalancing...' : '⚡ Auto-Rebalance All Deficits'}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={handleAutoLotTransfer}
+                    disabled={autoTransferLoading}
+                    className="btn-primary"
+                    style={{ gap: '0.4rem', padding: '0.55rem 1.1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none' }}
+                    title="Auto-rebalance negative lots using matching Fabric Quality, Panna, and Vendor"
+                  >
+                    <RefreshCw size={16} className={autoTransferLoading ? 'spin-loader' : ''} />
+                    {autoTransferLoading ? 'Rebalancing...' : '⚡ Auto-Rebalance All Deficits'}
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
