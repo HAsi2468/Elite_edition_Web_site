@@ -1825,6 +1825,20 @@ export const api = {
     });
   },
 
+  async votePollMessage(messageId, optionId) {
+    return request(`/communication/messages/${messageId}/poll-vote`, {
+      method: 'POST',
+      body: JSON.stringify({ optionId }),
+    });
+  },
+
+  async forwardMessage(messageId, targetRoomId) {
+    return request(`/communication/messages/${messageId}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ targetRoomId }),
+    });
+  },
+
   async getCommunicationMembers(groupId) {
     return request(`/communication/groups/${groupId}/members`);
   },
@@ -1838,6 +1852,10 @@ export const api = {
 
   async syncCommunicationGroups() {
     return request('/communication/groups/sync', { method: 'POST' });
+  },
+
+  async clearAllCommunicationData() {
+    return request('/communication/clear-all', { method: 'POST' });
   },
 
   async postActivityEvent(data) {
