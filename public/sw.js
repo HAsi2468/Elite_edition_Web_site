@@ -28,6 +28,7 @@ self.addEventListener('fetch', (event) => {
     event.request.url.includes('/v1/') || 
     event.request.url.includes('/api/') || 
     event.request.url.includes('socket.io') ||
+    event.request.url.includes('version.json') ||
     isHtml
   ) {
     return;

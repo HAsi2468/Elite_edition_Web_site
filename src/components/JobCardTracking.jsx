@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { Search, RefreshCw, Save, Check, Clipboard, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import JobCardTooltip from './JobCardTooltip';
 import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
+import InfiniteScrollPagination from './InfiniteScrollPagination';
 
 const formatDateDDMMYYYY = (d) => {
   if (!d) return '—';
@@ -25,6 +26,7 @@ export default function JobCardTracking({ onPreview }) {
   const defaultThisMonth = getDatePresetRange('this_month');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   
@@ -87,10 +89,15 @@ export default function JobCardTracking({ onPreview }) {
     }
   }, [printLogsMap]);
 
-  const fetchCards = useCallback(async () => {
-    setLoading(true);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const loadingMoreRef = useRef(false);
+
+  const fetchCards = useCallback(async (isSilent = false, targetPage = 1) => {
+    if (!isSilent && cards.length === 0) setLoading(true);
     setError('');
     try {
+      const effectivePage = targetPage;
       const res = await api.getJobCards({
         search,
         dateStart,
@@ -98,8 +105,8 @@ export default function JobCardTracking({ onPreview }) {
         printStatus: printStatusFilter,
         fusingStatus: fusingStatusFilter,
         deliveryStatus: deliveryStatusFilter,
-        page: 1,
-        limit: 5000,
+        page: effectivePage,
+        limit: 50,
         sortBy,
         sortOrder
       });
@@ -107,18 +114,58 @@ export default function JobCardTracking({ onPreview }) {
         setCards(res.data);
         setPages(res.pages || 1);
         setTotal(res.total || 0);
+        setPage(targetPage);
+        pageRef.current = targetPage;
       }
     } catch (err) {
-      setError(err.message || 'Failed to load tracking data.');
+      if (!isSilent) setError(err.message || 'Failed to load tracking data.');
     } finally {
       setLoading(false);
     }
-  }, [search, dateStart, dateEnd, printStatusFilter, fusingStatusFilter, deliveryStatusFilter, page, sortBy, sortOrder]);
+  }, [search, dateStart, dateEnd, printStatusFilter, fusingStatusFilter, deliveryStatusFilter, sortBy, sortOrder]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const res = await api.getJobCards({
+        search,
+        dateStart,
+        dateEnd,
+        printStatus: printStatusFilter,
+        fusingStatus: fusingStatusFilter,
+        deliveryStatus: deliveryStatusFilter,
+        page: nextPage,
+        limit: 50,
+        sortBy,
+        sortOrder
+      });
+      if (res && res.data && res.data.length > 0) {
+        setCards(prev => {
+          const map = new Map();
+          prev.forEach(c => map.set(c._id || c.id, c));
+          res.data.forEach(c => map.set(c._id || c.id, c));
+          return Array.from(map.values());
+        });
+        setPage(nextPage);
+        pageRef.current = nextPage;
+        if (res.pages) setPages(res.pages);
+        if (res.total !== undefined) setTotal(res.total);
+      }
+    } catch (e) {
+      console.warn('Failed to load more tracking cards:', e);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [pages, search, dateStart, dateEnd, printStatusFilter, fusingStatusFilter, deliveryStatusFilter, sortBy, sortOrder]);
 
   useEffect(() => {
-    fetchCards();
-    const interval = setInterval(fetchCards, 10000);
-    const handleDataRefresh = () => fetchCards();
+    fetchCards(false, 1);
+    const interval = setInterval(() => fetchCards(true, pageRef.current), 10000);
+    const handleDataRefresh = () => fetchCards(true, pageRef.current);
     window.addEventListener('elite-data-refresh', handleDataRefresh);
     return () => {
       clearInterval(interval);
@@ -747,15 +794,35 @@ export default function JobCardTracking({ onPreview }) {
 
                       {/* Bill No */}
                       <td style={tdStyle}>
-                        <input
-                          type="text"
-                          value={getValue(c, 'billNo')}
-                          onChange={e => handleCellChange(c._id, 'billNo', e.target.value)}
-                          onBlur={e => handleAutoSave(c._id, 'billNo', e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                          placeholder="Bill No"
-                          style={{ ...inputStyle, width: '90px' }}
-                        />
+                        {isAdmin ? (
+                          <input
+                            type="text"
+                            value={getValue(c, 'billNo')}
+                            onChange={e => handleCellChange(c._id, 'billNo', e.target.value)}
+                            onBlur={e => handleAutoSave(c._id, 'billNo', e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                            placeholder="Bill No"
+                            title="Auto-synced from Billing Invoice. (Admin can edit)"
+                            style={{ ...inputStyle, width: '100px', fontWeight: 700, color: getValue(c, 'billNo') ? '#38bdf8' : 'inherit' }}
+                          />
+                        ) : (
+                          <span
+                            title="Auto-synced from Billing Invoice"
+                            style={{
+                              display: 'inline-block',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: getValue(c, 'billNo') ? '#38bdf8' : 'var(--text-muted)',
+                              background: getValue(c, 'billNo') ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
+                              padding: getValue(c, 'billNo') ? '2px 6px' : 0,
+                              borderRadius: '4px',
+                              border: getValue(c, 'billNo') ? '1px solid rgba(56, 189, 248, 0.25)' : 'none',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {getValue(c, 'billNo') || '—'}
+                          </span>
+                        )}
                       </td>
 
                       {/* Job Mtr (Total target meters from Job Card) */}
@@ -865,12 +932,16 @@ export default function JobCardTracking({ onPreview }) {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <select
                           value={getValue(c, 'fusingStatus') || 'Fusing Pending'}
-                          onChange={e => handleAutoSave(c._id, 'fusingStatus', e.target.value)}
+                          disabled={!isAdmin}
+                          onChange={e => isAdmin && handleAutoSave(c._id, 'fusingStatus', e.target.value)}
+                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Status"}
                           style={{
                             ...selectStyle,
                             color: getValue(c, 'fusingStatus') === 'Fusing Done' ? '#34d399' : '#fbbf24',
                             borderColor: getValue(c, 'fusingStatus') === 'Fusing Done' ? 'rgba(52,211,153,0.3)' : 'rgba(245,158,11,0.3)',
-                            background: getValue(c, 'fusingStatus') === 'Fusing Done' ? 'rgba(52,211,153,0.06)' : 'rgba(245,158,11,0.06)'
+                            background: getValue(c, 'fusingStatus') === 'Fusing Done' ? 'rgba(52,211,153,0.06)' : 'rgba(245,158,11,0.06)',
+                            opacity: !isAdmin ? 0.9 : 1,
+                            cursor: !isAdmin ? 'default' : 'pointer'
                           }}
                         >
                           <option value="Fusing Pending" style={{ color: '#000' }}>FP</option>
@@ -883,8 +954,17 @@ export default function JobCardTracking({ onPreview }) {
                         <input
                           type="date"
                           value={getValue(c, 'fusingDate')}
-                          onChange={e => handleAutoSave(c._id, 'fusingDate', e.target.value)}
-                          style={{ ...inputStyle, width: '120px' }}
+                          disabled={!isAdmin}
+                          readOnly={!isAdmin}
+                          onChange={e => isAdmin && handleAutoSave(c._id, 'fusingDate', e.target.value)}
+                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Date"}
+                          style={{
+                            ...inputStyle,
+                            width: '120px',
+                            opacity: !isAdmin ? 0.8 : 1,
+                            cursor: !isAdmin ? 'default' : 'pointer',
+                            background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                          }}
                         />
                       </td>
 
@@ -893,10 +973,21 @@ export default function JobCardTracking({ onPreview }) {
                         <input
                           type="number"
                           value={getValue(c, 'fusingMtr')}
-                          onChange={e => handleCellChange(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
-                          onBlur={e => handleAutoSave(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
-                          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                          style={{ ...inputStyle, width: '60px' }}
+                          disabled={!isAdmin}
+                          readOnly={!isAdmin}
+                          onChange={e => isAdmin && handleCellChange(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
+                          onBlur={e => isAdmin && handleAutoSave(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
+                          onKeyDown={e => e.key === 'Enter' && isAdmin && e.target.blur()}
+                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Meters"}
+                          style={{
+                            ...inputStyle,
+                            width: '65px',
+                            fontWeight: 700,
+                            color: '#fb923c',
+                            opacity: !isAdmin ? 0.85 : 1,
+                            cursor: !isAdmin ? 'default' : 'text',
+                            background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                          }}
                         />
                       </td>
 
@@ -1045,6 +1136,28 @@ export default function JobCardTracking({ onPreview }) {
           </table>
         )}
       </div>
+
+      {/* Infinite Scroll & Pagination */}
+      <InfiniteScrollPagination
+        hasMore={page < pages}
+        loading={loading && cards.length === 0}
+        loadingMore={loadingMore}
+        onLoadMore={loadMore}
+        page={page}
+        pages={pages}
+        total={total}
+        currentCount={cards.length}
+        itemName="tracking cards"
+        onPrevPage={() => {
+          const prevPage = Math.max(1, page - 1);
+          fetchCards(false, prevPage);
+        }}
+        onNextPage={() => {
+          if (page < pages) {
+            loadMore();
+          }
+        }}
+      />
     </div>
   );
 }

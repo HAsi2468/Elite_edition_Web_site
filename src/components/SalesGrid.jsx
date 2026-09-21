@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { uniwareApi } from '../services/uniware';
 import { Search, ChevronLeft, ChevronRight, SlidersHorizontal, RefreshCw, ShoppingBag } from 'lucide-react';
 import { formatDateDDMMYYYY, formatDateTimeDDMMYYYY } from '../utils/dateUtils';
 import { matchSearchQuery } from '../utils/searchUtils';
+import InfiniteScrollPagination from './InfiniteScrollPagination';
 
 export default function SalesGrid() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [syncingOrderId, setSyncingOrderId] = useState('');
   const [error, setError] = useState('');
   
   // Pagination State
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [limit] = useState(25);
 
   // Sorting State
@@ -49,20 +52,25 @@ export default function SalesGrid() {
     }
   };
 
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const loadingMoreRef = useRef(false);
+
   // Debounced filters or search on trigger
   useEffect(() => {
-    fetchOrders(false);
-    const interval = setInterval(() => fetchOrders(true), 30000);
+    fetchOrders(false, 1);
+    const interval = setInterval(() => fetchOrders(true, pageRef.current), 30000);
     return () => clearInterval(interval);
-  }, [page, sortField, sortOrder, statusFilter]);
+  }, [sortField, sortOrder, statusFilter]);
 
-  const fetchOrders = async (isSilent = false) => {
-    if (!isSilent) setLoading(true);
+  const fetchOrders = async (isSilent = false, targetPage = 1) => {
+    if (!isSilent && orders.length === 0) setLoading(true);
     setError('');
     try {
+      const effectivePage = targetPage;
       const params = {
-        page,
-        limit,
+        page: effectivePage,
+        limit: 25,
         sortField,
         sortOrder,
         itemSKUCode: skuSearch.trim() || undefined,
@@ -75,12 +83,52 @@ export default function SalesGrid() {
         setOrders(res.data);
         if (res.meta) {
           setTotalPages(res.meta.totalPages || 1);
+          setTotal(res.meta.totalRecords || 0);
         }
+        setPage(targetPage);
+        pageRef.current = targetPage;
       }
     } catch (err) {
       if (!isSilent) setError(err.message || 'Failed to fetch sales orders.');
     } finally {
-      if (!isSilent) setLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMoreRef.current || pageRef.current >= totalPages) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const params = {
+        page: nextPage,
+        limit: 25,
+        sortField,
+        sortOrder,
+        itemSKUCode: skuSearch.trim() || undefined,
+        shippingAddressCity: citySearch.trim() || undefined,
+        saleOrderStatus: statusFilter === 'All' ? undefined : statusFilter,
+      };
+
+      const res = await api.getSales(params);
+      if (res && res.data && res.data.length > 0) {
+        setOrders(prev => {
+          const map = new Map();
+          prev.forEach(o => map.set(o.id || o._id || o.saleOrderItemCode, o));
+          res.data.forEach(o => map.set(o.id || o._id || o.saleOrderItemCode, o));
+          return Array.from(map.values());
+        });
+        setPage(nextPage);
+        pageRef.current = nextPage;
+        if (res.meta?.totalPages) setTotalPages(res.meta.totalPages);
+        if (res.meta?.totalRecords) setTotal(res.meta.totalRecords);
+      }
+    } catch (err) {
+      console.warn('Failed to load more sales orders:', err);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
   };
 
@@ -274,34 +322,27 @@ export default function SalesGrid() {
         )}
       </div>
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div style={styles.pagination}>
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1 || loading}
-            className="btn-secondary"
-            style={styles.pagBtn}
-          >
-            <ChevronLeft size={16} />
-            Prev
-          </button>
-          
-          <span style={styles.pageIndicator}>
-            Page <strong>{page}</strong> of <strong>{totalPages}</strong>
-          </span>
-          
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages || loading}
-            className="btn-secondary"
-            style={styles.pagBtn}
-          >
-            Next
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      )}
+      {/* Infinite Scroll & Pagination */}
+      <InfiniteScrollPagination
+        hasMore={page < totalPages}
+        loading={loading && orders.length === 0}
+        loadingMore={loadingMore}
+        onLoadMore={loadMore}
+        page={page}
+        pages={totalPages}
+        total={total}
+        currentCount={orders.length}
+        itemName="sales orders"
+        onPrevPage={() => {
+          const prevPage = Math.max(1, page - 1);
+          fetchOrders(false, prevPage);
+        }}
+        onNextPage={() => {
+          if (page < totalPages) {
+            loadMore();
+          }
+        }}
+      />
     </div>
   );
 }

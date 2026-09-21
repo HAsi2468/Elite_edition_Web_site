@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Search, Filter, Download, Eye, Edit, Trash2, Scissors, Calculator, TrendingUp, DollarSign, Layers, ArrowRight, CheckCircle2, History, Package, Truck, Check, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 import GarmentJobCardForm from './GarmentJobCardForm';
@@ -9,6 +9,7 @@ import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
 
 import PKDOrdersImportModal from './PKDOrdersImportModal';
 import DateRangePicker from './DateRangePicker';
+import InfiniteScrollPagination from './InfiniteScrollPagination';
 
 const PIPELINE_STAGES = [
   { stage_number: 1, key: '1_fabric_order', name: 'Fabric Order', icon: '🧵', color: '#60a5fa', desc: 'Fabric Procurement & Requisition' },
@@ -28,6 +29,7 @@ export default function GarmentJobCardDashboard() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -78,10 +80,15 @@ export default function GarmentJobCardDashboard() {
   // Active Sub View
   const [activeTab, setActiveTab] = useState('list'); // 'list' or 'analytics'
 
-  const fetchCards = useCallback(async () => {
-    setLoading(true);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const loadingMoreRef = useRef(false);
+
+  const fetchCards = useCallback(async (isSilent = false, targetPage = 1) => {
+    if (!isSilent && cards.length === 0) setLoading(true);
     setError('');
     try {
+      const effectivePage = targetPage;
       const res = await api.getGarmentJobCards({
         search: debouncedSearch,
         dateStart,
@@ -90,20 +97,59 @@ export default function GarmentJobCardDashboard() {
         vendor_name: vendorFilter,
         status: statusFilter,
         stage: stageFilter !== 'All' ? stageFilter : undefined,
-        page,
+        page: effectivePage,
         limit: 25
       });
       if (res && res.success) {
         setCards(res.data || []);
         setTotal(res.total || 0);
         setPages(res.pages || 1);
+        setPage(targetPage);
+        pageRef.current = targetPage;
       }
     } catch (err) {
-      setError(err.message || 'Failed to load garment job cards.');
+      if (!isSilent) setError(err.message || 'Failed to load garment job cards.');
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, dateStart, dateEnd, designFilter, vendorFilter, statusFilter, stageFilter, page]);
+  }, [debouncedSearch, dateStart, dateEnd, designFilter, vendorFilter, statusFilter, stageFilter]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const res = await api.getGarmentJobCards({
+        search: debouncedSearch,
+        dateStart,
+        dateEnd,
+        design_number: designFilter,
+        vendor_name: vendorFilter,
+        status: statusFilter,
+        stage: stageFilter !== 'All' ? stageFilter : undefined,
+        page: nextPage,
+        limit: 25
+      });
+      if (res && res.success && res.data && res.data.length > 0) {
+        setCards(prev => {
+          const map = new Map();
+          prev.forEach(c => map.set(c._id || c.id, c));
+          res.data.forEach(c => map.set(c._id || c.id, c));
+          return Array.from(map.values());
+        });
+        setPage(nextPage);
+        pageRef.current = nextPage;
+        if (res.pages) setPages(res.pages);
+        if (res.total !== undefined) setTotal(res.total);
+      }
+    } catch (e) {
+      console.warn('Failed to load more garment job cards:', e);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [pages, debouncedSearch, dateStart, dateEnd, designFilter, vendorFilter, statusFilter, stageFilter]);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -706,28 +752,27 @@ export default function GarmentJobCardDashboard() {
             </div>
           )}
 
-          {/* Pagination */}
-          {pages > 1 && (
-            <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-light)' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Page {page} of {pages} ({total} entries)</span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage(p => p - 1)}
-                  style={pageBtnStyle}
-                >
-                  Previous
-                </button>
-                <button
-                  disabled={page >= pages}
-                  onClick={() => setPage(p => p + 1)}
-                  style={pageBtnStyle}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Infinite Scroll & Pagination */}
+          <InfiniteScrollPagination
+            hasMore={page < pages}
+            loading={loading && cards.length === 0}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
+            page={page}
+            pages={pages}
+            total={total}
+            currentCount={cards.length}
+            itemName="garment job cards"
+            onPrevPage={() => {
+              const prevPage = Math.max(1, page - 1);
+              fetchCards(false, prevPage);
+            }}
+            onNextPage={() => {
+              if (page < pages) {
+                loadMore();
+              }
+            }}
+          />
         </div>
       ) : (
         /* Design Unit Cost Analytics Matrix */

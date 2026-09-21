@@ -17,6 +17,7 @@ import Workspace from './components/Workspace';
 import CommunicationPanel from './components/CommunicationPanel';
 import TaskManagerPanel from './components/TaskManagerPanel';
 import EliteModalDialog from './components/EliteModalDialog';
+import AutoUpdateNotification from './components/AutoUpdateNotification';
 import CompanySettingsPanel from './components/CompanySettingsPanel';
 import { matchSkuOrBrandCode } from './utils/skuHelper';
 import EliteBillingDepartment from './components/EliteBillingDepartment';
@@ -611,6 +612,10 @@ export default function App() {
     socket.on('task-created', handleDataUpdate);
     socket.on('proof-status-updated', handleDataUpdate);
     socket.on('global-room-updated', handleDataUpdate);
+    socket.on('fabric-updated', handleDataUpdate);
+    socket.on('catalog-updated', handleDataUpdate);
+    socket.on('stock-out-created', handleDataUpdate);
+    socket.on('returns-updated', handleDataUpdate);
 
     return () => {
       socket.off('receive-message', handleReceiveMessage);
@@ -644,6 +649,10 @@ export default function App() {
       socket.off('task-created', handleDataUpdate);
       socket.off('proof-status-updated', handleDataUpdate);
       socket.off('global-room-updated', handleDataUpdate);
+      socket.off('fabric-updated', handleDataUpdate);
+      socket.off('catalog-updated', handleDataUpdate);
+      socket.off('stock-out-created', handleDataUpdate);
+      socket.off('returns-updated', handleDataUpdate);
     };
   }, [socket, isAuthenticated, currentUser?._id]);
 
@@ -870,10 +879,10 @@ export default function App() {
           await ensureSkuSavedToCatalog(item);
         }
       }
-      alert(res.message || 'Bulk inward completed successfully!');
       setIsBulkInwardOpen(false);
       triggerGlobalDataRefresh();
       await fetchData();
+      alert(res.message || 'Bulk inward completed successfully!');
     } catch (err) {
       alert(err.message || 'Failed to process bulk inward.');
     } finally {
@@ -888,7 +897,9 @@ export default function App() {
       await api.createStockOut(payload);
       setIsStockOutOpen(false);
       setStockOutItem(null);
+      triggerGlobalDataRefresh();
       await fetchData();
+      alert('Outward dispatch completed successfully!');
     } catch (err) {
       alert(err.message || 'Failed to submit outward transaction.');
     } finally {
@@ -2446,6 +2457,9 @@ export default function App() {
 
       {/* Global Elite Glassmorphic Modal Dialog */}
       <EliteModalDialog />
+
+      {/* Zero-Hard-Refresh Hot Update Notification */}
+      <AutoUpdateNotification />
 
       {/* Hardware & Web Device Permissions Hub Modal */}
       <WebDevicePermissionsModal

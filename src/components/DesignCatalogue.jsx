@@ -16,6 +16,7 @@ import PKDOrdersImportModal from './PKDOrdersImportModal';
 import DesignMaster from './DesignMaster';
 import { R2_PUBLIC_BASE, convertDriveUrl, getImageCandidates } from '../utils/imageUrlHelper';
 import DesignImage from './DesignImage';
+import InfiniteScrollPagination from './InfiniteScrollPagination';
 
 // Image compression helper
 function compressAndConvertToBase64(file, maxWidth = 900, maxHeight = 900, quality = 0.7) {
@@ -368,23 +369,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [visibleCount, setVisibleCount] = useState(40);
-
-  // Reset visibleCount on search & filter changes
-  useEffect(() => {
-    setVisibleCount(40);
-  }, [search, categoryFilter, colorFilter, statusFilter, sortBy, sortOrder]);
-
-  // Infinite Scroll Event Listener for seamless performance
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
-        setVisibleCount((prev) => prev + 40);
-      }
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Modal form states
   const [showForm, setShowForm] = useState(false);
@@ -461,12 +446,18 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
       window.removeEventListener('elite-data-refresh', handleDataRefresh);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [search, categoryFilter, colorFilter, statusFilter, page, sortBy, sortOrder]);
+  }, [search, categoryFilter, colorFilter, statusFilter, sortBy, sortOrder, department]);
 
-  const fetchDesigns = async (isSilent = false) => {
-    if (!isSilent) setLoading(true);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const loadingMoreRef = useRef(false);
+
+  const fetchDesigns = async (isSilent = false, targetPage = 1) => {
+    // Only show full-screen loader if there are no designs rendered yet
+    if (!isSilent && designs.length === 0) setLoading(true);
     setError('');
     try {
+      const effectivePage = targetPage;
       const res = await api.getDesigns({
         search,
         category: categoryFilter,
@@ -475,18 +466,57 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
         department,
         sortBy,
         sortOrder,
-        page,
-        limit: 1000
+        page: effectivePage,
+        limit: 40
       });
       if (res && res.data) {
         setDesigns(res.data);
-        setTotal(res.total);
+        setTotal(res.total || 0);
         setPages(res.pages || 1);
+        setPage(targetPage);
+        pageRef.current = targetPage;
       }
     } catch (err) {
       if (!isSilent) setError(err.message || 'Failed to fetch designs');
     } finally {
-      if (!isSilent) setLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const res = await api.getDesigns({
+        search,
+        category: categoryFilter,
+        colors: colorFilter,
+        status: statusFilter,
+        department,
+        sortBy,
+        sortOrder,
+        page: nextPage,
+        limit: 40
+      });
+      if (res && res.data && res.data.length > 0) {
+        setDesigns(prev => {
+          const map = new Map();
+          prev.forEach(d => map.set(d._id || d.id, d));
+          res.data.forEach(d => map.set(d._id || d.id, d));
+          return Array.from(map.values());
+        });
+        setPage(nextPage);
+        pageRef.current = nextPage;
+        if (res.pages) setPages(res.pages);
+        if (res.total !== undefined) setTotal(res.total);
+      }
+    } catch (err) {
+      console.warn('Failed to load more designs:', err);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
   };
 
@@ -1014,7 +1044,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
           return (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.2rem' }}>
-                {filteredDesigns.slice(0, visibleCount).map(d => {
+                {filteredDesigns.map(d => {
                   return (
                     <div
                       key={d._id}
@@ -1206,21 +1236,27 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
             })}
           </div>
 
-          {/* Scroll Pagination Footer */}
-              {visibleCount < filteredDesigns.length && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '2rem 0', gap: '0.6rem' }}>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Showing {Math.min(visibleCount, filteredDesigns.length)} of {filteredDesigns.length} designs
-                  </span>
-                  <button
-                    onClick={() => setVisibleCount((prev) => prev + 40)}
-                    className="btn-secondary"
-                    style={{ padding: '0.55rem 1.6rem', fontSize: '0.82rem', borderRadius: '8px', cursor: 'pointer' }}
-                  >
-                    Scroll Down or Click to Load More Designs
-                  </button>
-                </div>
-              )}
+          {/* Infinite Scroll & Pagination */}
+          <InfiniteScrollPagination
+            hasMore={page < pages}
+            loading={loading && designs.length === 0}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
+            page={page}
+            pages={pages}
+            total={total}
+            currentCount={designs.length}
+            itemName="designs"
+            onPrevPage={() => {
+              const prevPage = Math.max(1, page - 1);
+              fetchDesigns(false, prevPage);
+            }}
+            onNextPage={() => {
+              if (page < pages) {
+                loadMore();
+              }
+            }}
+          />
             </>
           );
         })()
