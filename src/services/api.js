@@ -663,6 +663,12 @@ export const api = {
   async deleteJobCard(id) {
     return request(`/jobCards/${id}`, { method: 'DELETE' });
   },
+  async syncFusingFromDelivery(cardId = null) {
+    return request('/jobCards/sync-fusing-from-delivery', {
+      method: 'POST',
+      body: JSON.stringify(cardId ? { cardId } : {})
+    });
+  },
   async downloadJobCardPdf(id, jobNo = '') {
     const baseUrl = getBaseUrl();
     const token = localStorage.getItem('elite_auth_token') || localStorage.getItem('token');
@@ -1124,6 +1130,25 @@ export const api = {
     Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
     const qs = query.toString() ? `?${query.toString()}` : '';
     return request(`/fabric/lot-stock${qs}`);
+  },
+
+  // White Fabric QA Inspection Logs
+  async getWhiteFabricLogs(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/fabric/white-qa-logs${qs}`);
+  },
+  async createWhiteFabricLog(data) {
+    return request('/fabric/white-qa-logs', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+  async deleteWhiteFabricLog(id) {
+    return request(`/fabric/white-qa-logs/${id}`, {
+      method: 'DELETE'
+    });
   },
 
   async getFabricStockByPanna(params = {}) {
@@ -2110,6 +2135,24 @@ export const api = {
     });
   },
 
+  async uploadTaskAttachment(file) {
+    return this.uploadImage(file, 'tasks/attachments');
+  },
+
+  async addTaskAttachment(id, attachmentData) {
+    return request(`/tasks/${id}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify(attachmentData)
+    });
+  },
+
+  async deleteTaskAttachment(id, attachmentId) {
+    return request(`/tasks/${id}/attachments/${attachmentId}`, {
+      method: 'DELETE'
+    });
+  },
+
+
   // ─── Signed Documents (Challan & Invoice) Verification & Approval ───
   async uploadSignedDocumentImage(file, docType = 'challan') {
     const folder = `signed_documents/${docType}s`;
@@ -2143,6 +2186,27 @@ export const api = {
     return request('/signed-documents/bulk-approval', {
       method: 'PATCH',
       body: JSON.stringify({ items, action, rejectionReason })
+    });
+  },
+
+  // ── White Fabric QA Inspection Logs ──
+  async getWhiteFabricLogs(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.department) qs.set('department', params.department);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request(`/fabric/white-qa-logs${query}`);
+  },
+
+  async createWhiteFabricLog(payload) {
+    return request('/fabric/white-qa-logs', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteWhiteFabricLog(id) {
+    return request(`/fabric/white-qa-logs/${id}`, {
+      method: 'DELETE'
     });
   }
 };

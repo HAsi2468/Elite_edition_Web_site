@@ -1952,6 +1952,9 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
   const [statusCounts, setStatusCounts] = useState({});
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const pageSizeRef = useRef(pageSize);
+  pageSizeRef.current = pageSize;
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
@@ -2179,7 +2182,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
     }
   };
 
-  const fetchCards = useCallback(async (isSilent = false, targetPage = page) => {
+  const fetchCards = useCallback(async (isSilent = false, targetPage = 1, targetPageSize = pageSizeRef.current) => {
     if (activeSubTab !== 'list') return;
     // Cancel any in-flight request to prevent race conditions
     if (abortRef.current) abortRef.current.abort();
@@ -2189,8 +2192,10 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
     if (!isSilent) setLoading(true);
     setError('');
     try {
-      const effectiveLimit = isSilent && page > 1 ? Math.min(page * 25, 250) : 25;
-      const effectivePage = isSilent ? 1 : targetPage;
+      const isAll = targetPageSize === 'all' || targetPageSize >= 1000;
+      const numLimit = isAll ? 2000 : Number(targetPageSize || 25);
+      const effectiveLimit = isAll ? 2000 : (isSilent && targetPage > 1 ? targetPage * numLimit : numLimit);
+      const effectivePage = isAll || (isSilent && targetPage > 1) ? 1 : targetPage;
       const res = await api.getJobCards({
         search: debouncedSearch,
         status: statusFilter === 'All' ? '' : statusFilter,
@@ -2203,13 +2208,24 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
         dateEnd
       });
       if (!controller.signal.aborted) {
-        setCards(res.data || []);
+        if (!isSilent) {
+          setCards(res.data || []);
+        } else if (res.data) {
+          setCards(prev => {
+            if (prev.length !== res.data.length) return res.data;
+            const prevIds = prev.map(c => c._id || c.id).join(',');
+            const nextIds = res.data.map(c => c._id || c.id).join(',');
+            return prevIds === nextIds ? prev : res.data;
+          });
+        }
         setTotal(res.total || 0);
         setTotalMtr(res.totalMtr || 0);
         if (res.statusCounts) setStatusCounts(res.statusCounts);
-        setPages(res.pages || 1);
-        setPage(targetPage);
-        pageRef.current = targetPage;
+        setPages(isAll ? 1 : (res.pages || 1));
+        if (!isSilent) {
+          setPage(isAll ? 1 : targetPage);
+          pageRef.current = isAll ? 1 : targetPage;
+        }
       }
     } catch (err) {
       if (!controller.signal.aborted && !isSilent) {
@@ -2226,17 +2242,18 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
 
   // Infinite scroll loader: fetches next page and appends with deduplication
   const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    if (loadingMoreRef.current || pageRef.current >= pages || pageSizeRef.current === 'all') return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const nextPage = pageRef.current + 1;
+      const currentLimit = Number(pageSizeRef.current || 25);
       const res = await api.getJobCards({
         search: debouncedSearch,
         status: statusFilter === 'All' ? '' : statusFilter,
         department,
         page: nextPage,
-        limit: 25,
+        limit: currentLimit,
         sortBy,
         sortOrder,
         dateStart,
@@ -2244,10 +2261,9 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
       });
       if (res && res.data && res.data.length > 0) {
         setCards(prev => {
-          const map = new Map();
-          prev.forEach(c => map.set(c._id || c.id, c));
-          res.data.forEach(c => map.set(c._id || c.id, c));
-          return Array.from(map.values());
+          const existingIds = new Set(prev.map(c => String(c._id || c.id)));
+          const newItems = res.data.filter(c => !existingIds.has(String(c._id || c.id)));
+          return newItems.length > 0 ? [...prev, ...newItems] : prev;
         });
         setPage(nextPage);
         pageRef.current = nextPage;
@@ -2266,7 +2282,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
 
   useEffect(() => {
     fetchCards(false, 1);
-    const interval = setInterval(() => fetchCards(true, pageRef.current), 10000);
+    const interval = setInterval(() => fetchCards(true, pageRef.current), 15000);
     const handleDataRefresh = () => fetchCards(true, pageRef.current);
     window.addEventListener('elite-data-refresh', handleDataRefresh);
 
@@ -2274,7 +2290,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
       clearInterval(interval);
       window.removeEventListener('elite-data-refresh', handleDataRefresh);
     };
-  }, [fetchCards, activeSubTab]);
+  }, [debouncedSearch, statusFilter, activeSubTab, sortBy, sortOrder, dateStart, dateEnd, department, fetchCards]);
 
   const handleDelete = async (id, jobNo) => {
     const confirmed = await triggerEliteConfirm({
@@ -2892,7 +2908,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
 
           {/* Infinite Scroll & Pagination */}
           <InfiniteScrollPagination
-            hasMore={page < pages}
+            hasMore={pageSize !== 'all' && page < pages}
             loading={loading && cards.length === 0}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
@@ -2901,13 +2917,51 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
             total={total}
             currentCount={cards.length}
             itemName="job cards"
+            pageSize={pageSize}
+            pageSizeOptions={[25, 50, 100, 250, 'All']}
+            onPageSizeChange={(newSize) => {
+              const s = newSize === 'All' ? 'all' : Number(newSize);
+              setPageSize(s);
+              pageSizeRef.current = s;
+              setPage(1);
+              pageRef.current = 1;
+              fetchCards(false, 1, s);
+            }}
+            onLoadAll={() => {
+              setPageSize('all');
+              pageSizeRef.current = 'all';
+              setPage(1);
+              pageRef.current = 1;
+              fetchCards(false, 1, 'all');
+            }}
+            onFirstPage={() => {
+              setPage(1);
+              pageRef.current = 1;
+              fetchCards(false, 1, pageSizeRef.current);
+            }}
+            onLastPage={() => {
+              setPage(pages);
+              pageRef.current = pages;
+              fetchCards(false, pages, pageSizeRef.current);
+            }}
+            onPageChange={(targetPage) => {
+              const p = Math.max(1, Math.min(pages, targetPage));
+              setPage(p);
+              pageRef.current = p;
+              fetchCards(false, p, pageSizeRef.current);
+            }}
             onPrevPage={() => {
               const prevPage = Math.max(1, page - 1);
-              fetchCards(false, prevPage);
+              setPage(prevPage);
+              pageRef.current = prevPage;
+              fetchCards(false, prevPage, pageSizeRef.current);
             }}
             onNextPage={() => {
               if (page < pages) {
-                loadMore();
+                const nextPage = page + 1;
+                setPage(nextPage);
+                pageRef.current = nextPage;
+                fetchCards(false, nextPage, pageSizeRef.current);
               }
             }}
           />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
-import { Search, RefreshCw, Save, Check, Clipboard, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { Search, RefreshCw, Save, Check, Clipboard, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, Zap } from 'lucide-react';
 import JobCardTooltip from './JobCardTooltip';
 import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 import InfiniteScrollPagination from './InfiniteScrollPagination';
@@ -22,6 +22,13 @@ const formatDateDDMMYYYY = (d) => {
 export default function JobCardTracking({ onPreview }) {
   const currentUser = api.getCurrentUser();
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin' || currentUser?.username?.toLowerCase() === 'admin' || currentUser?.isAdmin === true;
+  const isExternalCard = (card) => {
+    if (!card) return false;
+    if (card.isExternal === true || card.source === 'external' || card.source === 'import') return true;
+    const jNo = String(card.jobNo || '').trim().toUpperCase();
+    return !jNo.startsWith('JOB NO.-') && !jNo.startsWith('JOB NO-');
+  };
+  const canEditCard = (card) => isAdmin || isExternalCard(card);
 
   const defaultThisMonth = getDatePresetRange('this_month');
   const [cards, setCards] = useState([]);
@@ -45,6 +52,9 @@ export default function JobCardTracking({ onPreview }) {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+  const pageSizeRef = useRef(pageSize);
+  pageSizeRef.current = pageSize;
 
   // Sorting
   const [sortBy, setSortBy] = useState('jobNo');
@@ -53,6 +63,7 @@ export default function JobCardTracking({ onPreview }) {
   // Row edit state: { [cardId]: { billNo, printStatus, printDate, printMtr, fusingStatus, fusingDate, fusingMtr, deliveryStatus, deliveryDate } }
   const [modifiedCards, setModifiedCards] = useState({});
   const [savingIds, setSavingIds] = useState(new Set());
+  const [syncingFusing, setSyncingFusing] = useState(false);
 
   // Collapsible print run history state
   const [expandedCardIds, setExpandedCardIds] = useState(new Set());
@@ -93,12 +104,15 @@ export default function JobCardTracking({ onPreview }) {
   pageRef.current = page;
   const loadingMoreRef = useRef(false);
 
-  const fetchCards = useCallback(async (isSilent = false, targetPage = 1) => {
+  const fetchCards = useCallback(async (isSilent = false, targetPage = 1, targetPageSize = pageSizeRef.current) => {
     if (isSilent && loadingMoreRef.current) return;
     if (!isSilent && cards.length === 0) setLoading(true);
     setError('');
     try {
-      const effectivePage = isSilent ? 1 : targetPage;
+      const isAll = targetPageSize === 'all' || targetPageSize >= 1000;
+      const numLimit = isAll ? 2000 : Number(targetPageSize || 50);
+      const effectiveLimit = isAll ? 2000 : (isSilent && targetPage > 1 ? targetPage * numLimit : numLimit);
+      const effectivePage = isAll || (isSilent && targetPage > 1) ? 1 : targetPage;
       const res = await api.getJobCards({
         search,
         dateStart,
@@ -107,7 +121,7 @@ export default function JobCardTracking({ onPreview }) {
         fusingStatus: fusingStatusFilter,
         deliveryStatus: deliveryStatusFilter,
         page: effectivePage,
-        limit: 50,
+        limit: effectiveLimit,
         sortBy,
         sortOrder,
         skipStats: isSilent ? 'true' : undefined
@@ -121,13 +135,13 @@ export default function JobCardTracking({ onPreview }) {
             return prev.map(c => freshMap.get(c._id || c.id) || c);
           });
           if (res.total !== undefined) setTotal(res.total);
-          if (res.pages !== undefined) setPages(res.pages);
+          if (res.pages !== undefined) setPages(isAll ? 1 : res.pages);
         } else {
           setCards(res.data);
-          setPages(res.pages || 1);
+          setPages(isAll ? 1 : (res.pages || 1));
           setTotal(res.total || 0);
-          setPage(targetPage);
-          pageRef.current = targetPage;
+          setPage(isAll ? 1 : targetPage);
+          pageRef.current = isAll ? 1 : targetPage;
         }
       }
     } catch (err) {
@@ -138,11 +152,12 @@ export default function JobCardTracking({ onPreview }) {
   }, [search, dateStart, dateEnd, printStatusFilter, fusingStatusFilter, deliveryStatusFilter, sortBy, sortOrder]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    if (loadingMoreRef.current || pageRef.current >= pages || pageSizeRef.current === 'all') return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const nextPage = pageRef.current + 1;
+      const currentLimit = Number(pageSizeRef.current || 50);
       const res = await api.getJobCards({
         search,
         dateStart,
@@ -151,17 +166,16 @@ export default function JobCardTracking({ onPreview }) {
         fusingStatus: fusingStatusFilter,
         deliveryStatus: deliveryStatusFilter,
         page: nextPage,
-        limit: 50,
+        limit: currentLimit,
         sortBy,
         sortOrder,
         skipStats: 'true'
       });
       if (res && res.data && res.data.length > 0) {
         setCards(prev => {
-          const map = new Map();
-          prev.forEach(c => map.set(c._id || c.id, c));
-          res.data.forEach(c => map.set(c._id || c.id, c));
-          return Array.from(map.values());
+          const existingIds = new Set(prev.map(c => c._id || c.id));
+          const newItems = res.data.filter(c => !existingIds.has(c._id || c.id));
+          return newItems.length > 0 ? [...prev, ...newItems] : prev;
         });
         setPage(nextPage);
         pageRef.current = nextPage;
@@ -187,9 +201,96 @@ export default function JobCardTracking({ onPreview }) {
     };
   }, [fetchCards]);
 
+  // Helpers to resolve delivery meters and invoice date for a card
+  const getCardDeliveryMtr = (c) => {
+    if (!c) return 0;
+    if (c.deliveredMtr && Number(c.deliveredMtr) > 0) return Number(c.deliveredMtr);
+    if (Array.isArray(c.invoices) && c.invoices.length > 0) {
+      const sum = c.invoices.reduce((acc, inv) => acc + (Number(inv.meters) || 0), 0);
+      if (sum > 0) return Math.round(sum * 100) / 100;
+    }
+    return 0;
+  };
+
+  const getCardInvoiceDate = (c) => {
+    if (!c) return '';
+    if (c.deliveryDate) {
+      return typeof c.deliveryDate === 'string' && c.deliveryDate.includes('T') ? c.deliveryDate.split('T')[0] : c.deliveryDate;
+    }
+    if (Array.isArray(c.invoices) && c.invoices.length > 0) {
+      const sorted = [...c.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
+      if (sorted[0]?.date) {
+        const dt = new Date(sorted[0].date);
+        if (!isNaN(dt.getTime())) {
+          return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        }
+      }
+    }
+    return '';
+  };
+
+  const handleSyncSingleCardFusing = async (c) => {
+    const delMtr = getCardDeliveryMtr(c);
+    const invDate = getCardInvoiceDate(c) || new Date().toISOString().split('T')[0];
+
+    const currentMod = modifiedCards[c._id] || {
+      billNo: c.billNo || '',
+      printStatus: c.printStatus || 'Printing Pending',
+      printDate: c.printDate || '',
+      printMtr: c.printMtr || 0,
+      fusingStatus: c.fusingStatus || 'Fusing Pending',
+      fusingDate: c.fusingDate || '',
+      fusingMtr: c.fusingMtr || 0,
+      deliveryStatus: c.deliveryStatus || 'Delivery Pending',
+      deliveryDate: c.deliveryDate || '',
+    };
+
+    const updated = {
+      ...currentMod,
+      fusingMtr: delMtr > 0 ? delMtr : currentMod.fusingMtr,
+      fusingStatus: 'Fusing Done',
+      fusingDate: invDate
+    };
+
+    setSavingIds(prev => new Set(prev).add(c._id));
+    try {
+      const res = await api.updateJobCard(c._id, updated);
+      setCards(prev => prev.map(item => item._id === c._id ? { ...item, ...res, ...updated } : item));
+      setModifiedCards(prev => {
+        const next = { ...prev };
+        delete next[c._id];
+        return next;
+      });
+    } catch (err) {
+      alert(err.message || 'Failed to sync fusing from delivery.');
+    } finally {
+      setSavingIds(prev => {
+        const next = new Set(prev);
+        next.delete(c._id);
+        return next;
+      });
+    }
+  };
+
+  const handleSyncFusingFromDelivery = async () => {
+    if (!window.confirm('Sync Fusing for all delivered job cards?\n\nThis will find job cards with delivery meters / invoices, set Fusing Mtr = Delivery Mtr, Fusing Status = Fusing Done, and Fusing Date = Invoice Date.')) {
+      return;
+    }
+    setSyncingFusing(true);
+    try {
+      const res = await api.syncFusingFromDelivery();
+      alert(res.message || `Successfully synced ${res.updatedCount || 0} job cards!`);
+      await fetchCards(false, page);
+      window.dispatchEvent(new Event('elite-data-refresh'));
+    } catch (err) {
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingFusing(false);
+    }
+  };
+
   // Handle local cell modifications
   const handleCellChange = (cardId, field, value) => {
-    // Find the original card to base modifications on if not already modified
     const originalCard = cards.find(c => c._id === cardId);
     if (!originalCard) return;
 
@@ -217,8 +318,17 @@ export default function JobCardTracking({ onPreview }) {
       if (field === 'fusingStatus' && value === 'Fusing Done' && !updated.fusingDate) {
         updated.fusingDate = todayStr;
       }
-      if (field === 'deliveryStatus' && value === 'Delivery Done' && !updated.deliveryDate) {
-        updated.deliveryDate = todayStr;
+      if (field === 'deliveryStatus' && value === 'Delivery Done') {
+        if (!updated.deliveryDate) updated.deliveryDate = todayStr;
+        updated.fusingStatus = 'Fusing Done';
+        if (!updated.fusingDate) updated.fusingDate = updated.deliveryDate;
+        const delMtr = getCardDeliveryMtr(originalCard);
+        if (delMtr > 0) updated.fusingMtr = delMtr;
+      }
+      if (field === 'deliveryDate' && value) {
+        if (updated.fusingStatus === 'Fusing Done' || updated.deliveryStatus === 'Delivery Done') {
+          updated.fusingDate = value;
+        }
       }
 
       return { ...prev, [cardId]: updated };
@@ -227,7 +337,6 @@ export default function JobCardTracking({ onPreview }) {
 
   // Auto save row to backend
   const handleAutoSave = async (cardId, field, value) => {
-    // Find the original card to base modifications on if not already modified
     const originalCard = cards.find(c => c._id === cardId);
     if (!originalCard) return;
 
@@ -253,8 +362,17 @@ export default function JobCardTracking({ onPreview }) {
     if (field === 'fusingStatus' && value === 'Fusing Done' && !updated.fusingDate) {
       updated.fusingDate = todayStr;
     }
-    if (field === 'deliveryStatus' && value === 'Delivery Done' && !updated.deliveryDate) {
-      updated.deliveryDate = todayStr;
+    if (field === 'deliveryStatus' && value === 'Delivery Done') {
+      if (!updated.deliveryDate) updated.deliveryDate = todayStr;
+      updated.fusingStatus = 'Fusing Done';
+      if (!updated.fusingDate) updated.fusingDate = updated.deliveryDate;
+      const delMtr = getCardDeliveryMtr(originalCard);
+      if (delMtr > 0) updated.fusingMtr = delMtr;
+    }
+    if (field === 'deliveryDate' && value) {
+      if (updated.fusingStatus === 'Fusing Done' || updated.deliveryStatus === 'Delivery Done') {
+        updated.fusingDate = value;
+      }
     }
 
     setSavingIds(prev => {
@@ -633,6 +751,45 @@ export default function JobCardTracking({ onPreview }) {
             <option value="Delivery Pending">Delivery: DP</option>
           </select>
 
+          {/* Sync Fusing from Delivery Button */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleSyncFusingFromDelivery}
+              disabled={syncingFusing}
+              title="Find all job cards with delivery meters / invoices, set Fusing Mtr = Delivery Mtr, Fusing Status = Fusing Done, and Fusing Date = Invoice Date"
+              style={{
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #059669, #10b981)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                cursor: syncingFusing ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                whiteSpace: 'nowrap',
+                opacity: syncingFusing ? 0.7 : 1,
+                marginLeft: 'auto'
+              }}
+            >
+              {syncingFusing ? (
+                <>
+                  <RefreshCw size={15} className="spin-loader" />
+                  <span>Syncing Fusing...</span>
+                </>
+              ) : (
+                <>
+                  <Zap size={15} />
+                  <span>Sync Fusing from Delivery</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Download PDF Tracking Report Button */}
           <button
             onClick={handleDownloadTrackingPdfReport}
@@ -651,7 +808,7 @@ export default function JobCardTracking({ onPreview }) {
               gap: '0.4rem',
               boxShadow: '0 2px 8px rgba(124, 58, 237, 0.3)',
               whiteSpace: 'nowrap',
-              marginLeft: 'auto'
+              marginLeft: isAdmin ? '0' : 'auto'
             }}
           >
             <Download size={15} />
@@ -810,6 +967,26 @@ export default function JobCardTracking({ onPreview }) {
                           >
                             {c.jobNo}
                           </button>
+                          {isExternalCard(c) && (
+                            <span
+                              style={{
+                                fontSize: '0.65rem',
+                                background: 'rgba(234, 179, 8, 0.15)',
+                                color: '#eab308',
+                                border: '1px solid rgba(234, 179, 8, 0.3)',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                                marginLeft: '5px',
+                                letterSpacing: '0.02em',
+                                verticalAlign: 'middle',
+                                display: 'inline-block'
+                              }}
+                              title="External / Legacy Job Card (Editable by all users)"
+                            >
+                              Manual
+                            </span>
+                          )}
                         </JobCardTooltip>
                       </td>
 
@@ -886,7 +1063,7 @@ export default function JobCardTracking({ onPreview }) {
                             >
                               📄 {getValue(c, 'billNo')}
                             </span>
-                            {isAdmin && (
+                            {canEditCard(c) && (
                               <button
                                 type="button"
                                 title="Edit Bill No"
@@ -915,7 +1092,7 @@ export default function JobCardTracking({ onPreview }) {
                               </button>
                             )}
                           </div>
-                        ) : isAdmin ? (
+                        ) : canEditCard(c) ? (
                           <input
                             type="text"
                             value={getValue(c, 'billNo')}
@@ -923,7 +1100,7 @@ export default function JobCardTracking({ onPreview }) {
                             onBlur={e => handleAutoSave(c._id, 'billNo', e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && e.target.blur()}
                             placeholder="Bill No"
-                            title="Auto-synced from Billing Invoice. (Admin can edit)"
+                            title={isExternalCard(c) ? "Manual / Legacy Job Card (Editable by all users)" : "Auto-synced from Billing Invoice. (Admin can edit)"}
                             style={{ ...inputStyle, width: '100px', fontWeight: 700 }}
                           />
                         ) : (
@@ -958,16 +1135,16 @@ export default function JobCardTracking({ onPreview }) {
                         <input
                           type="date"
                           value={getValue(c, 'printDate')}
-                          disabled={!isAdmin}
-                          readOnly={!isAdmin}
-                          onChange={e => isAdmin && handleAutoSave(c._id, 'printDate', e.target.value)}
-                          title={!isAdmin ? "Only Admin can edit Print Date directly. (Auto-updated from Printing Dept)" : "Edit Print Date"}
+                          disabled={!canEditCard(c)}
+                          readOnly={!canEditCard(c)}
+                          onChange={e => canEditCard(c) && handleAutoSave(c._id, 'printDate', e.target.value)}
+                          title={!canEditCard(c) ? "Only Admin can edit Print Date for system cards. (Auto-updated from Printing Dept)" : "Edit Print Date"}
                           style={{
                             ...inputStyle,
                             width: '120px',
-                            opacity: !isAdmin ? 0.75 : 1,
-                            cursor: !isAdmin ? 'not-allowed' : 'pointer',
-                            background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                            opacity: !canEditCard(c) ? 0.75 : 1,
+                            cursor: !canEditCard(c) ? 'not-allowed' : 'pointer',
+                            background: !canEditCard(c) ? 'rgba(255,255,255,0.03)' : inputStyle.background
                           }}
                         />
                       </td>
@@ -978,21 +1155,21 @@ export default function JobCardTracking({ onPreview }) {
                           <input
                             type="text"
                             value={getValue(c, 'printMtr')}
-                            disabled={!isAdmin}
-                            readOnly={!isAdmin}
-                            onChange={e => isAdmin && handleCellChange(c._id, 'printMtr', e.target.value)}
-                            onBlur={e => isAdmin && handleAutoSave(c._id, 'printMtr', e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && isAdmin && e.target.blur()}
+                            disabled={!canEditCard(c)}
+                            readOnly={!canEditCard(c)}
+                            onChange={e => canEditCard(c) && handleCellChange(c._id, 'printMtr', e.target.value)}
+                            onBlur={e => canEditCard(c) && handleAutoSave(c._id, 'printMtr', e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && canEditCard(c) && e.target.blur()}
                             placeholder="0 mtr"
-                            title={!isAdmin ? "Only Admin can edit Print Meters directly. (Auto-updated from Printing Dept)" : "Edit Print Meters"}
+                            title={!canEditCard(c) ? "Only Admin can edit Print Meters for system cards. (Auto-updated from Printing Dept)" : "Edit Print Meters"}
                             style={{
                               ...inputStyle,
                               width: '80px',
                               fontWeight: 700,
                               color: '#38bdf8',
-                              opacity: !isAdmin ? 0.75 : 1,
-                              cursor: !isAdmin ? 'not-allowed' : 'text',
-                              background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                              opacity: !canEditCard(c) ? 0.75 : 1,
+                              cursor: !canEditCard(c) ? 'not-allowed' : 'text',
+                              background: !canEditCard(c) ? 'rgba(255,255,255,0.03)' : inputStyle.background
                             }}
                           />
                           <button
@@ -1038,16 +1215,16 @@ export default function JobCardTracking({ onPreview }) {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <select
                           value={getValue(c, 'fusingStatus') || 'Fusing Pending'}
-                          disabled={!isAdmin}
-                          onChange={e => isAdmin && handleAutoSave(c._id, 'fusingStatus', e.target.value)}
-                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Status"}
+                          disabled={!canEditCard(c)}
+                          onChange={e => canEditCard(c) && handleAutoSave(c._id, 'fusingStatus', e.target.value)}
+                          title={!canEditCard(c) ? "Auto-updated from Fusing Department" : "Edit Fusing Status"}
                           style={{
                             ...selectStyle,
                             color: getValue(c, 'fusingStatus') === 'Fusing Done' ? '#34d399' : '#fbbf24',
                             borderColor: getValue(c, 'fusingStatus') === 'Fusing Done' ? 'rgba(52,211,153,0.3)' : 'rgba(245,158,11,0.3)',
                             background: getValue(c, 'fusingStatus') === 'Fusing Done' ? 'rgba(52,211,153,0.06)' : 'rgba(245,158,11,0.06)',
-                            opacity: !isAdmin ? 0.9 : 1,
-                            cursor: !isAdmin ? 'default' : 'pointer'
+                            opacity: !canEditCard(c) ? 0.9 : 1,
+                            cursor: !canEditCard(c) ? 'default' : 'pointer'
                           }}
                         >
                           <option value="Fusing Pending" style={{ color: '#000' }}>FP</option>
@@ -1060,41 +1237,87 @@ export default function JobCardTracking({ onPreview }) {
                         <input
                           type="date"
                           value={getValue(c, 'fusingDate')}
-                          disabled={!isAdmin}
-                          readOnly={!isAdmin}
-                          onChange={e => isAdmin && handleAutoSave(c._id, 'fusingDate', e.target.value)}
-                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Date"}
+                          disabled={!canEditCard(c)}
+                          readOnly={!canEditCard(c)}
+                          onChange={e => canEditCard(c) && handleAutoSave(c._id, 'fusingDate', e.target.value)}
+                          title={!canEditCard(c) ? "Auto-updated from Fusing Department" : "Edit Fusing Date"}
                           style={{
                             ...inputStyle,
                             width: '120px',
-                            opacity: !isAdmin ? 0.8 : 1,
-                            cursor: !isAdmin ? 'default' : 'pointer',
-                            background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                            opacity: !canEditCard(c) ? 0.8 : 1,
+                            cursor: !canEditCard(c) ? 'default' : 'pointer',
+                            background: !canEditCard(c) ? 'rgba(255,255,255,0.03)' : inputStyle.background
                           }}
                         />
                       </td>
 
                       {/* Fusing Mtr */}
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          value={getValue(c, 'fusingMtr')}
-                          disabled={!isAdmin}
-                          readOnly={!isAdmin}
-                          onChange={e => isAdmin && handleCellChange(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
-                          onBlur={e => isAdmin && handleAutoSave(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
-                          onKeyDown={e => e.key === 'Enter' && isAdmin && e.target.blur()}
-                          title={!isAdmin ? "Auto-updated from Fusing Department" : "Edit Fusing Meters"}
-                          style={{
-                            ...inputStyle,
-                            width: '65px',
-                            fontWeight: 700,
-                            color: '#fb923c',
-                            opacity: !isAdmin ? 0.85 : 1,
-                            cursor: !isAdmin ? 'default' : 'text',
-                            background: !isAdmin ? 'rgba(255,255,255,0.03)' : inputStyle.background
-                          }}
-                        />
+                        {(() => {
+                          const cardDelMtr = getCardDeliveryMtr(c);
+                          const cardInvDate = getCardInvoiceDate(c);
+                          const currentFMtr = parseFloat(getValue(c, 'fusingMtr')) || 0;
+                          const currentFStatus = getValue(c, 'fusingStatus');
+                          const currentFDate = getValue(c, 'fusingDate');
+                          const needsSync = cardDelMtr > 0 && (
+                            currentFMtr !== cardDelMtr ||
+                            currentFStatus !== 'Fusing Done' ||
+                            (cardInvDate && currentFDate !== cardInvDate)
+                          );
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                              <input
+                                type="number"
+                                value={getValue(c, 'fusingMtr')}
+                                disabled={!canEditCard(c)}
+                                readOnly={!canEditCard(c)}
+                                onChange={e => canEditCard(c) && handleCellChange(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
+                                onBlur={e => canEditCard(c) && handleAutoSave(c._id, 'fusingMtr', parseFloat(e.target.value) || 0)}
+                                onKeyDown={e => e.key === 'Enter' && canEditCard(c) && e.target.blur()}
+                                title={!canEditCard(c) ? "Auto-updated from Fusing Department" : "Edit Fusing Meters"}
+                                style={{
+                                  ...inputStyle,
+                                  width: '65px',
+                                  fontWeight: 700,
+                                  color: '#fb923c',
+                                  opacity: !canEditCard(c) ? 0.85 : 1,
+                                  cursor: !canEditCard(c) ? 'default' : 'text',
+                                  background: !canEditCard(c) ? 'rgba(255,255,255,0.03)' : inputStyle.background
+                                }}
+                              />
+                              {isAdmin && needsSync ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSyncSingleCardFusing(c)}
+                                  title={`Write delivery ${cardDelMtr}m in Fusing Mtr, set Status to FD, and date to ${cardInvDate || 'invoice date'}`}
+                                  style={{
+                                    marginTop: '3px',
+                                    padding: '1px 6px',
+                                    fontSize: '0.62rem',
+                                    fontWeight: 700,
+                                    background: 'rgba(16, 185, 129, 0.15)',
+                                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                                    color: '#10b981',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  <Zap size={10} />
+                                  <span>Sync ({cardDelMtr}m)</span>
+                                </button>
+                              ) : cardDelMtr > 0 ? (
+                                <div style={{ fontSize: '0.62rem', color: '#10b981', marginTop: '2px', fontWeight: 600 }} title="Fusing Mtr and Date are synced with delivery invoice">
+                                  ✓ Synced ({cardDelMtr}m)
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Delivery Status */}
@@ -1250,7 +1473,7 @@ export default function JobCardTracking({ onPreview }) {
 
       {/* Infinite Scroll & Pagination */}
       <InfiniteScrollPagination
-        hasMore={page < pages}
+        hasMore={pageSize !== 'all' && page < pages}
         loading={loading && cards.length === 0}
         loadingMore={loadingMore}
         onLoadMore={loadMore}
@@ -1259,13 +1482,51 @@ export default function JobCardTracking({ onPreview }) {
         total={total}
         currentCount={cards.length}
         itemName="tracking cards"
+        pageSize={pageSize}
+        pageSizeOptions={[50, 100, 250, 'All']}
+        onPageSizeChange={(newSize) => {
+          const s = newSize === 'All' ? 'all' : Number(newSize);
+          setPageSize(s);
+          pageSizeRef.current = s;
+          setPage(1);
+          pageRef.current = 1;
+          fetchCards(false, 1, s);
+        }}
+        onLoadAll={() => {
+          setPageSize('all');
+          pageSizeRef.current = 'all';
+          setPage(1);
+          pageRef.current = 1;
+          fetchCards(false, 1, 'all');
+        }}
+        onFirstPage={() => {
+          setPage(1);
+          pageRef.current = 1;
+          fetchCards(false, 1, pageSizeRef.current);
+        }}
+        onLastPage={() => {
+          setPage(pages);
+          pageRef.current = pages;
+          fetchCards(false, pages, pageSizeRef.current);
+        }}
+        onPageChange={(targetPage) => {
+          const p = Math.max(1, Math.min(pages, targetPage));
+          setPage(p);
+          pageRef.current = p;
+          fetchCards(false, p, pageSizeRef.current);
+        }}
         onPrevPage={() => {
           const prevPage = Math.max(1, page - 1);
-          fetchCards(false, prevPage);
+          setPage(prevPage);
+          pageRef.current = prevPage;
+          fetchCards(false, prevPage, pageSizeRef.current);
         }}
         onNextPage={() => {
           if (page < pages) {
-            loadMore();
+            const nextPage = page + 1;
+            setPage(nextPage);
+            pageRef.current = nextPage;
+            fetchCards(false, nextPage, pageSizeRef.current);
           }
         }}
       />
