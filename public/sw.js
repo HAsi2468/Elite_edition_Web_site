@@ -22,8 +22,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Never cache backend API calls, websocket requests, or HTML documents
-  const isHtml = event.request.headers.get('accept')?.includes('text/html');
+  // Never cache backend API calls, websocket requests, or HTML/navigation documents
+  const isHtml = event.request.headers.get('accept')?.includes('text/html') ||
+                 event.request.mode === 'navigate' ||
+                 event.request.destination === 'document';
   if (
     event.request.url.includes('/v1/') || 
     event.request.url.includes('/api/') || 
@@ -34,7 +36,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first strategy for static assets
+  // Network-first strategy for static assets with safe fallback
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -44,6 +46,10 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response('', { status: 408, statusText: 'Request Timeout' });
+      })
   );
 });

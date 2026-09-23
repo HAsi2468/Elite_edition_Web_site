@@ -136,6 +136,8 @@ export const api = {
   logout() {
     localStorage.removeItem('elite_auth_token');
     localStorage.removeItem('elite_user');
+    localStorage.removeItem('elite_is_client');
+    localStorage.removeItem('elite_client_data');
   },
 
   getCurrentUser() {
@@ -152,6 +154,52 @@ export const api = {
     if (!user) return null;
     const userId = user.id || user._id;
     if (!userId) return user;
+
+    if (this.isClientUser()) {
+      try {
+        let clientData = null;
+
+        // 1. Prioritize lookup by mobile number to auto-heal stale IDs
+        if (user.mobile) {
+          const cRes = await this.getClients({ search: user.mobile }).catch(() => null);
+          const list = cRes?.data || [];
+          clientData = list.find((c) => c.mobile === user.mobile) || list[0];
+        }
+
+        // 2. Lookup by username if still not found
+        if (!clientData && (user.username || user.name)) {
+          const query = user.username || user.name;
+          const cRes = await this.getClients({ search: query }).catch(() => null);
+          const list = cRes?.data || [];
+          clientData = list.find((c) => c.username === query) || list[0];
+        }
+
+        // 3. Fallback to getClientById if id exists and no clientData found
+        if (!clientData && userId) {
+          const res = await this.getClientById(userId).catch(() => null);
+          if (res && (res.data || res.client)) {
+            clientData = res.data || res.client;
+          }
+        }
+
+        if (clientData) {
+          const updated = {
+            ...user,
+            ...clientData,
+            id: clientData._id || userId,
+            role: 'Client',
+            isClient: true
+          };
+          localStorage.setItem('elite_user', JSON.stringify(updated));
+          localStorage.setItem('elite_client_data', JSON.stringify(clientData));
+          return updated;
+        }
+      } catch (e) {
+        console.warn('Failed to refresh client user profile:', e);
+      }
+      return user;
+    }
+
     try {
       const res = await request(`/users/${userId}`);
       if (res && res.user) {
@@ -656,6 +704,12 @@ export const api = {
   },
   async createJobCard(data) {
     return request('/jobCards', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async placeClientBulkOrder(data) {
+    return request('/jobCards/client-bulk-order', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   },
   async updateJobCard(id, data) {
     return request(`/jobCards/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -2248,6 +2302,56 @@ export const api = {
 
   async uploadClientImage(file) {
     return this.uploadImage(file, 'clients/avatars');
+  },
+
+  async clientLogin({ mobile, password }) {
+    const res = await request('/clients/login', {
+      method: 'POST',
+      body: JSON.stringify({ mobile, password }),
+    });
+    if (res && res.success) {
+      const token = res.tokens?.access?.token || res.token;
+      if (token) {
+        localStorage.setItem('elite_auth_token', token);
+      }
+      const user = res.user || { ...res.client, role: 'Client', isClient: true };
+      localStorage.setItem('elite_user', JSON.stringify(user));
+      localStorage.setItem('elite_is_client', 'true');
+      localStorage.setItem('elite_client_data', JSON.stringify(res.client || user));
+    }
+    return res;
+  },
+
+  async updateClientProfile(id, data) {
+    const res = await request(`/clients/profile/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+    if (res && res.success && res.data) {
+      const existingUser = this.getCurrentUser() || {};
+      const updatedUser = { ...existingUser, ...res.data, role: 'Client', isClient: true };
+      localStorage.setItem('elite_user', JSON.stringify(updatedUser));
+      localStorage.setItem('elite_client_data', JSON.stringify(res.data));
+    }
+    return res;
+  },
+
+  isClientUser() {
+    try {
+      const user = this.getCurrentUser();
+      return !!(user?.isClient || user?.role === 'Client' || localStorage.getItem('elite_is_client') === 'true');
+    } catch (e) {
+      return false;
+    }
+  },
+
+  getClientData() {
+    try {
+      const raw = localStorage.getItem('elite_client_data');
+      return raw ? JSON.parse(raw) : this.getCurrentUser();
+    } catch (e) {
+      return this.getCurrentUser();
+    }
   }
 };
 

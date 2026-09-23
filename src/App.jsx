@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { api, getBaseUrl, setBaseUrl } from './services/api';
 import Login from './components/Login';
+import ClientLogin from './components/ClientLogin';
+import ClientPortal from './components/ClientPortal';
 import DashboardStats from './components/DashboardStats';
 import InventoryGrid from './components/InventoryGrid';
 import ProductCatalogGrid from './components/ProductCatalogGrid';
@@ -108,6 +110,46 @@ export default function App() {
   const socket = useSocket();
   const [isAuthenticated, setIsAuthenticated] = useState(api.isAuthenticated());
   const [currentUser, setCurrentUser] = useState(() => api.getCurrentUser());
+
+  const checkIsClientUrl = () => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const hash = (window.location.hash || '').toLowerCase();
+      const path = (window.location.pathname || '').toLowerCase();
+      const search = new URLSearchParams(window.location.search || '');
+      return (
+        hash === '#client-login' ||
+        hash === '#client' ||
+        hash === '#/client-login' ||
+        hash === '#/client' ||
+        path.startsWith('/client') ||
+        search.get('portal') === 'client' ||
+        search.get('client') === 'true'
+      );
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const [isClientPortalMode, setIsClientPortalMode] = useState(() => checkIsClientUrl() || api.isClientUser());
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const isClient = checkIsClientUrl();
+      if (isClient || api.isClientUser()) {
+        setIsClientPortalMode(true);
+      } else {
+        setIsClientPortalMode(false);
+      }
+    };
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, []);
+
   const [activeTab, setActiveTab] = useState(initialNav.tab);
   const [items, setItems] = useState([]);
   const [catalogItems, setCatalogItems] = useState([]);
@@ -370,6 +412,7 @@ export default function App() {
   // Tab permission validation — ONLY reset activeTab if the tab is truly forbidden
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
+    if (api.isClientUser() || currentUser.isClient || currentUser.role === 'Client') return;
 
     const ALL_SYSTEM_TABS = [
       'dashboard', 'workspace', 'communication', 'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'admin',
@@ -657,6 +700,15 @@ export default function App() {
   }, [socket, isAuthenticated, currentUser?._id]);
 
   const fetchData = async () => {
+    if (api.isClientUser()) {
+      const clientData = api.getClientData();
+      if (clientData) {
+        setCurrentUser(clientData);
+      }
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
@@ -946,7 +998,7 @@ export default function App() {
   const triggerEditModal = (item) => {
     savedModalScrollRef.current = window.scrollY || document.documentElement.scrollTop || 0;
     const titleOrDescription = item.description || item.itemName || item.name || item.title || item.productName || item.skuCode || '';
-    const isCatalog = activeTab === 'catalog' || catalogItems.some(c => c._id === item._id) || 'basePrice' in item;
+    const isCatalog = activeTab === 'catalog';
     setFormMode(isCatalog ? 'catalog' : 'inventory');
     if (isCatalog) {
       const adapted = {
@@ -1009,7 +1061,41 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    if (isClientPortalMode) {
+      return (
+        <ClientLogin
+          onLoginSuccess={handleLoginSuccess}
+          onSwitchToStaff={() => {
+            if (window.location.hash.includes('client')) {
+              window.location.hash = '';
+            }
+            setIsClientPortalMode(false);
+          }}
+        />
+      );
+    }
+    return (
+      <Login
+        onLoginSuccess={handleLoginSuccess}
+        onSwitchToClient={() => {
+          window.location.hash = '#client-login';
+          setIsClientPortalMode(true);
+        }}
+      />
+    );
+  }
+
+  // If authenticated as a Client Partner
+  if (api.isClientUser() || currentUser?.isClient || currentUser?.role === 'Client') {
+    const activeClient = (currentUser && (currentUser._id || currentUser.companyName || currentUser.companyCode))
+      ? currentUser
+      : api.getClientData();
+    return (
+      <ClientPortal
+        client={activeClient}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (

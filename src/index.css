@@ -156,17 +156,46 @@ button, .btn {
 }
 
 .btn-icon {
-  padding: 0.5rem;
+  padding: 0.45rem;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-light);
   color: var(--text-muted);
   justify-content: center;
+  min-width: unset;
+  box-sizing: border-box;
 }
 .btn-icon:hover {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Ensure small square/icon buttons do not inherit the default 0.6rem 1.2rem padding */
+button.btn-icon,
+button[style*="width: 2"],
+button[style*="width: 3"],
+button[style*="width:2"],
+button[style*="width:3"],
+button[style*="height: 2"],
+button[style*="height: 3"],
+button[style*="height:2"],
+button[style*="height:3"] {
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Ensure all SVG icons inside buttons and links render cleanly and never collapse */
+button svg,
+.btn svg,
+a svg,
+.btn-icon svg {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* ─────────────────────────────────────────────────
@@ -226,6 +255,12 @@ th {
   color: #ffffff;
   border-bottom: 1px solid var(--border-light);
   letter-spacing: 0.05em;
+}
+
+.order-table-white-blue th {
+  background: #eff6ff !important;
+  color: #1e40af !important;
+  border-bottom: 2px solid #bfdbfe !important;
 }
 
 td {
@@ -816,6 +851,26 @@ body {
     overflow-y: auto !important;
     padding-right: 4px !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════
+   CLIENT PORTAL FULL SCROLL & KEYBOARD OVERRIDES (MOBILE & PC)
+   ═══════════════════════════════════════════════════ */
+html.client-portal-active,
+body.client-portal-active,
+html:has(.client-portal-container),
+body:has(.client-portal-container) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+  min-height: 100% !important;
+  background-color: #f8fafc !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+#root:has(.client-portal-container) {
+  min-height: 100% !important;
+  height: auto !important;
 }
 
 /* ═══════════════════════════════════════════════════
