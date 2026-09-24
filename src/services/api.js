@@ -981,6 +981,25 @@ export const api = {
     return request(`/expenses/${id}`, { method: 'DELETE' });
   },
 
+  // ─── Monthly Costing & P&L Module ───────────────────────────────────────────
+  async getMonthlyCostingReport(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/costing/monthly-report${qs}`);
+  },
+  async saveMonthlyCostingOverheads(payload) {
+    return request('/costing/monthly-overheads', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  // ─── Elite Digital Prints Master Operations Dashboard ────────────────────────
+  async getDigitalPrintDashboard(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/digital-print/dashboard${qs}`);
+  },
+
   // ─── Analytics ──────────────────────────────────────────────────────────────
   async getVariantAnalytics(params = {}) {
     const query = new URLSearchParams();

@@ -4,7 +4,7 @@ import {
   Flame, PlusCircle, Search, RefreshCw, Trash2, Edit2, Edit, CheckCircle2,
   AlertCircle, Cpu, Calendar, Clock, User, Layers, ArrowUpRight, Check,
   X, Download, Eye, Layers3, Activity, Tag, Sparkles, FileText, FileSpreadsheet,
-  AlertTriangle, Gauge, Thermometer, Zap, Scale, Settings, XCircle
+  AlertTriangle, Gauge, Thermometer, Zap, Scale, Settings, XCircle, ChevronDown
 } from 'lucide-react';
 import { triggerPushNotification, triggerGlobalDataRefresh } from './NotificationToast';
 import { formatDateDDMMYYYY, formatDateTimeDDMMYYYY, toLocalYMD } from '../utils/dateUtils';
@@ -20,25 +20,45 @@ function getAutoShift() {
 export function getFabricFusingPreset(fabricName) {
   const f = String(fabricName || '').toLowerCase();
   if (f.includes('crepe') || f.includes('french')) {
-    return { temp: '210°C', speed: '18 m/min', note: 'Standard Sublimation' };
+    return { temp: '210°C', speed: '80', note: 'Standard Sublimation' };
   }
   if (f.includes('organza')) {
-    return { temp: '195°C', speed: '22 m/min', note: 'Low Temp (Anti-Shrink)' };
+    return { temp: '195°C', speed: '80', note: 'Low Temp (Anti-Shrink)' };
   }
   if (f.includes('satin')) {
-    return { temp: '205°C', speed: '16 m/min', note: 'High Tension' };
+    return { temp: '205°C', speed: '80', note: 'High Tension' };
   }
   if (f.includes('georgette') || f.includes('chiffon')) {
-    return { temp: '200°C', speed: '20 m/min', note: 'Medium Heat' };
+    return { temp: '200°C', speed: '80', note: 'Medium Heat' };
   }
   if (f.includes('modal') || f.includes('rayon')) {
-    return { temp: '190°C', speed: '20 m/min', note: 'Pre-dry Recommended' };
+    return { temp: '190°C', speed: '80', note: 'Pre-dry Recommended' };
   }
   if (f.includes('velvet') || f.includes('heavy')) {
-    return { temp: '205°C', speed: '14 m/min', note: 'Slow Speed Feed' };
+    return { temp: '205°C', speed: '80', note: 'Slow Speed Feed' };
   }
-  return { temp: '205°C', speed: '18 m/min', note: 'General Polyester' };
+  return { temp: '205°C', speed: '80', note: 'General Polyester' };
 }
+
+export const FUSING_SPEED_OPTIONS = [50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80];
+
+// Helper to cleanly format Job Number without duplicate "JOB NO.- JOB NO.-"
+export const formatJobCardNo = (jobNo) => {
+  if (!jobNo) return '';
+  const str = String(jobNo).trim();
+  if (/^#?\s*job\s*no\.?/i.test(str)) {
+    return str.replace(/^#?\s*job\s*no\.?\s*[-:]?\s*/i, 'JOB NO.- ');
+  }
+  return `JOB NO.- ${str}`;
+};
+
+// Helper to extract numeric printed meters from card (prioritizing printMtr synced from print logs)
+export const getCardPrintedMeters = (card) => {
+  if (!card) return '';
+  const raw = card.printMtr || card.printedMtr || card.freshMtr || card.fusingMtr || card.totalMtr || '';
+  const match = String(raw).match(/[\d.]+/);
+  return match ? match[0] : '';
+};
 
 const DEFAULT_FUSING_MACHINES = [
   'Fusing Machine 1 (Rotary)',
@@ -63,6 +83,22 @@ export default function FusingDepartment() {
   const [dateEnd, setDateEnd] = useState('');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
+
+  // Top Form Job Search & Eligibility State
+  const [jobSearchText, setJobSearchText] = useState('');
+  const [showJobDropdown, setShowJobDropdown] = useState(false);
+  const [showAllCardsFilter, setShowAllCardsFilter] = useState(false);
+  const jobDropdownRef = React.useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (jobDropdownRef.current && !jobDropdownRef.current.contains(e.target)) {
+        setShowJobDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Report Modal State
   const [showReportModal, setShowReportModal] = useState(false);
@@ -146,11 +182,11 @@ export default function FusingDepartment() {
     jobNo: '',
     fusingMachine: DEFAULT_FUSING_MACHINES[0],
     fusingTemp: '210°C',
-    fusingSpeed: '18 m/min',
+    fusingSpeed: '80',
     panna: '58"',
     useButterPaper: 'Yes',
     butterPaperWeightKg: '',
-    rollCompleted: 'Yes',
+    rollCompleted: 'Complete',
     printedMtr: '',
     fusingMtr: '',
     fusingOperator: accountFullName,
@@ -254,7 +290,7 @@ export default function FusingDepartment() {
     
     // Machine & Process Specs
     fusingTemp: '210°C',
-    fusingSpeed: '18 m/min',
+    fusingSpeed: '80',
     fusingMachine: DEFAULT_FUSING_MACHINES[0],
     fusingOperator: accountFullName,
     shift: getAutoShift(),
@@ -268,7 +304,7 @@ export default function FusingDepartment() {
   const [speedTempForm, setSpeedTempForm] = useState({
     fusingMachine: DEFAULT_FUSING_MACHINES[0],
     fusingTemp: '210°C',
-    fusingSpeed: '18 m/min'
+    fusingSpeed: '80'
   });
 
   const openSpeedTempModal = (card) => {
@@ -277,7 +313,7 @@ export default function FusingDepartment() {
     setSpeedTempForm({
       fusingMachine: card.fusingMachine || DEFAULT_FUSING_MACHINES[0],
       fusingTemp: card.fusingTemp || card.temperature || preset.temp,
-      fusingSpeed: card.fusingSpeed || card.speed || preset.speed
+      fusingSpeed: card.fusingSpeed || card.speed || preset.speed || '80'
     });
     setShowSpeedTempModal(true);
   };
@@ -343,15 +379,65 @@ export default function FusingDepartment() {
     }
   };
 
+  // Filter only cards that are Done for Printing and Pending for Fusing
+  const eligibleFusingCards = useMemo(() => {
+    return cards.filter(c => {
+      if (showAllCardsFilter) return true;
+      if (topForm.jobCardId && (String(c._id) === String(topForm.jobCardId) || String(c.id) === String(topForm.jobCardId))) {
+        return true;
+      }
+      const pStatus = String(c.printStatus || '').toLowerCase();
+      const isPrintDone = pStatus === 'printing done' || (pStatus.includes('done') && !pStatus.includes('pending'));
+      const fStatus = String(c.fusingStatus || 'fusing pending').toLowerCase();
+      const isFusingPending = fStatus !== 'fusing done';
+      return isPrintDone && isFusingPending;
+    });
+  }, [cards, topForm.jobCardId, showAllCardsFilter]);
+
+  const searchMatchingCards = useMemo(() => {
+    const list = eligibleFusingCards;
+    if (!jobSearchText || !jobSearchText.trim()) return list;
+    const q = jobSearchText.toLowerCase().trim();
+    const cleanNum = q.replace(/[^0-9]/g, '');
+    return list.filter(c => {
+      const jNo = String(c.jobNo || '').toLowerCase();
+      const party = String(c.party || c.clientName || c.partyName || '').toLowerCase();
+      const design = String(c.designName || c.designNo || '').toLowerCase();
+      const fabric = String(c.fabric || '').toLowerCase();
+      return (
+        jNo.includes(q) ||
+        (cleanNum && jNo.includes(cleanNum)) ||
+        party.includes(q) ||
+        design.includes(q) ||
+        fabric.includes(q)
+      );
+    });
+  }, [eligibleFusingCards, jobSearchText]);
+
   // Handle Selection of Job Card in Top Form
-  const handleTopJobCardSelect = (e) => {
-    const jId = e.target.value;
-    const card = cards.find(c => String(c._id) === String(jId) || String(c.id) === String(jId));
+  const handleTopJobCardSelect = (cardOrId) => {
+    if (!cardOrId) {
+      setTopForm(prev => ({
+        ...prev,
+        jobCardId: '',
+        jobNo: '',
+        printedMtr: '',
+        fusingMtr: '',
+        butterPaperWeightKg: ''
+      }));
+      setJobSearchText('');
+      return;
+    }
+    const card = typeof cardOrId === 'object' && cardOrId !== null
+      ? (cardOrId.target ? cards.find(c => String(c._id) === String(cardOrId.target.value) || String(c.id) === String(cardOrId.target.value)) : cardOrId)
+      : cards.find(c => String(c._id) === String(cardOrId) || String(c.id) === String(cardOrId) || String(c.jobNo) === String(cardOrId));
+
     if (card) {
-      const pMtr = card.printedMtr || card.freshMtr || card.fusingMtr || card.totalMtr || '';
-      const defaultMtr = card.fusingMtr || pMtr || '';
+      const pMtr = getCardPrintedMeters(card);
+      const defaultMtr = pMtr || (card.fusingMtr ? String(card.fusingMtr).match(/[\d.]+/)?.[0] : '') || '';
       const cardPanna = card.panna ? (String(card.panna).includes('"') ? card.panna : `${card.panna}"`) : '58"';
       const preset = getFabricFusingPreset(card.fabric);
+      const jobDisplay = formatJobCardNo(card.jobNo);
       setTopForm(prev => ({
         ...prev,
         jobCardId: card._id || card.id,
@@ -360,10 +446,12 @@ export default function FusingDepartment() {
         printedMtr: pMtr,
         fusingMtr: defaultMtr,
         fusingTemp: card.fusingTemp || card.temperature || preset.temp,
-        fusingSpeed: card.fusingSpeed || card.speed || preset.speed,
+        fusingSpeed: card.fusingSpeed || card.speed || preset.speed || '80',
         fusingMachine: card.fusingMachine || prev.fusingMachine,
-        butterPaperWeightKg: card.butterPaperWeightKg || ''
+        butterPaperWeightKg: card.butterPaperWeightKg || '',
+        rollCompleted: card.fusingStatus === 'Fusing Done' ? 'Complete' : ((card.fusingStatus === 'Fusing In Progress' || card.fusingStatus === 'Partial Complete') ? 'Partial Complete' : prev.rollCompleted || 'Complete')
       }));
+      setJobSearchText(`${jobDisplay} — ${card.party || ''} | ${card.designName || ''} (${card.fabric || ''} ${cardPanna})`);
     } else {
       setTopForm(prev => ({
         ...prev,
@@ -373,6 +461,7 @@ export default function FusingDepartment() {
         fusingMtr: '',
         butterPaperWeightKg: ''
       }));
+      setJobSearchText('');
     }
   };
 
@@ -385,7 +474,15 @@ export default function FusingDepartment() {
     }
 
     const fusingMtrVal = topForm.fusingMtr || topForm.printedMtr || '0';
-    const isRollDone = topForm.rollCompleted === 'Yes';
+    const rollStatus = (topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes')
+      ? 'Complete'
+      : (topForm.rollCompleted === 'Partial Complete' ? 'Partial Complete' : 'Pending');
+    const isComplete = rollStatus === 'Complete';
+    const isPartial = rollStatus === 'Partial Complete';
+
+    const fusingStatusToSave = isComplete 
+      ? 'Fusing Done' 
+      : (isPartial ? 'Fusing In Progress' : 'Fusing Pending');
 
     setSubmitting(true);
     try {
@@ -394,7 +491,7 @@ export default function FusingDepartment() {
 
       if (targetId) {
         const payload = {
-          fusingStatus: isRollDone ? 'Fusing Done' : 'Fusing In Progress',
+          fusingStatus: fusingStatusToSave,
           fusingDate: topForm.date,
           shift: topForm.shift,
           fusingMachine: topForm.fusingMachine,
@@ -407,7 +504,7 @@ export default function FusingDepartment() {
           fusingMtr: String(fusingMtrVal),
           freshMtr: String(fusingMtrVal),
           fusingOperator: topForm.fusingOperator,
-          emergencyNotes: `Roll Status: ${isRollDone ? 'Completed' : 'In Progress'}${topForm.notes ? ' | ' + topForm.notes : ''}`
+          emergencyNotes: `Roll Status: ${rollStatus}${topForm.notes ? ' | ' + topForm.notes : ''}`
         };
         await api.updateJobCard(targetId, payload);
       }
@@ -423,7 +520,7 @@ export default function FusingDepartment() {
             unit: 'Kg',
             panna: topForm.panna,
             jobNo: topForm.jobNo,
-            notes: `Fusing Entry — Machine: ${topForm.fusingMachine} | Operator: ${topForm.fusingOperator} | Roll Status: ${topForm.rollCompleted}`
+            notes: `Fusing Entry — Machine: ${topForm.fusingMachine} | Operator: ${topForm.fusingOperator} | Roll Status: ${rollStatus}`
           });
         } catch (rmErr) {
           console.warn('Raw material log failed:', rmErr.message);
@@ -432,7 +529,7 @@ export default function FusingDepartment() {
 
       triggerPushNotification(
         '🔥 Fusing Entry Submitted',
-        `Job #${topForm.jobNo}: ${fusingMtrVal}m Fused | Roll: ${isRollDone ? 'Completed' : 'In Progress'} | ${topForm.useButterPaper === 'Yes' ? (topForm.butterPaperWeightKg || 0) + 'kg Butter Paper' : 'No Butter Paper'} logged!`,
+        `Job #${topForm.jobNo}: ${fusingMtrVal}m Fused | Roll: ${rollStatus} | ${topForm.useButterPaper === 'Yes' ? (topForm.butterPaperWeightKg || 0) + 'kg Butter Paper' : 'No Butter Paper'} logged!`,
         'success'
       );
 
@@ -447,15 +544,18 @@ export default function FusingDepartment() {
         jobCardId: '',
         jobNo: '',
         fusingMachine: DEFAULT_FUSING_MACHINES[0],
+        fusingTemp: '210°C',
+        fusingSpeed: '80',
         panna: '58"',
         useButterPaper: 'Yes',
         butterPaperWeightKg: '',
-        rollCompleted: 'Yes',
+        rollCompleted: 'Complete',
         printedMtr: '',
         fusingMtr: '',
         fusingOperator: accountFullName,
         notes: ''
       });
+      setJobSearchText('');
 
       fetchData();
     } catch (err) {
@@ -474,17 +574,18 @@ export default function FusingDepartment() {
     return (fab + fus + prt + gen).toFixed(2);
   }, [form.fabricFaultMtr, form.fusingFaultMtr, form.printFaultMtr, form.genuineFaultMtr]);
 
-  // Compute fresh meters dynamically in Edit Modal (Printed Mtr - Wastage Mtr)
-  const computedModalFreshMtr = useMemo(() => {
-    const base = parseFloat(selectedCard?.printedMtr || selectedCard?.totalMtr || form.freshMtr) || 0;
+  // ── Compute Total Fabric Used Dynamically (Fresh MTR + Total Wastage) ──
+  const calculatedTotalFabricUsedMtr = useMemo(() => {
+    const fresh = parseFloat(form.freshMtr) || 0;
     const waste = parseFloat(calculatedWastageMtr) || 0;
-    return Math.max(0, base - waste).toFixed(2);
-  }, [selectedCard, form.freshMtr, calculatedWastageMtr]);
+    return (fresh + waste).toFixed(2);
+  }, [form.freshMtr, calculatedWastageMtr]);
 
   // Open Edit Modal for a card
   const openFusingModal = (card) => {
     setSelectedCard(card);
-    const defaultFresh = card.freshMtr || card.fusingMtr || card.printedMtr || card.totalMtr || '';
+    const printedM = getCardPrintedMeters(card);
+    const defaultFresh = card.freshMtr || card.fusingMtr || printedM || card.totalMtr || '';
     const cardPanna = card.panna ? (String(card.panna).includes('"') ? card.panna : `${card.panna}"`) : '58"';
     const cardButterUsed = card.useButterPaper || (parseFloat(card.butterPaperWeightKg) > 0 ? 'Yes' : 'No');
 
@@ -503,7 +604,7 @@ export default function FusingDepartment() {
       genuineFaultMtr: card.genuineFaultMtr !== undefined && card.genuineFaultMtr !== '' ? String(card.genuineFaultMtr) : '0',
       
       fusingTemp: card.fusingTemp || card.temperature || '210°C',
-      fusingSpeed: card.fusingSpeed || card.speed || '18 m/min',
+      fusingSpeed: card.fusingSpeed || card.speed || '80',
       fusingMachine: card.fusingMachine || DEFAULT_FUSING_MACHINES[0],
       fusingOperator: card.fusingOperator || accountFullName,
       shift: card.shift || getAutoShift(),
@@ -521,12 +622,12 @@ export default function FusingDepartment() {
       jobNo: card.jobNo || '',
       fusingMachine: card.fusingMachine || DEFAULT_FUSING_MACHINES[0],
       fusingTemp: card.fusingTemp || card.temperature || '210°C',
-      fusingSpeed: card.fusingSpeed || card.speed || '18 m/min',
+      fusingSpeed: card.fusingSpeed || card.speed || '80',
       panna: cardPanna,
       useButterPaper: cardButterUsed,
       butterPaperWeightKg: card.butterPaperWeightKg || '',
-      rollCompleted: card.fusingStatus === 'Fusing Done' ? 'Yes' : 'No',
-      printedMtr: card.printedMtr || card.totalMtr || defaultFresh,
+      rollCompleted: card.fusingStatus === 'Fusing Done' ? 'Complete' : ((card.fusingStatus === 'Fusing In Progress' || card.fusingStatus === 'Partial Complete') ? 'Partial Complete' : 'Pending'),
+      printedMtr: printedM || defaultFresh,
       fusingMtr: defaultFresh,
       fusingOperator: card.fusingOperator || accountFullName,
       notes: card.emergencyNotes || card.note1 || ''
@@ -542,9 +643,9 @@ export default function FusingDepartment() {
       return;
     }
 
-    const baseMtr = parseFloat(selectedCard?.printedMtr || selectedCard?.totalMtr || form.freshMtr) || 0;
+    const freshMtrVal = parseFloat(form.freshMtr) || 0;
     const wasteMtr = parseFloat(calculatedWastageMtr) || 0;
-    const computedFreshMtr = Math.max(0, baseMtr - wasteMtr).toFixed(2);
+    const totalFabricUsed = (freshMtrVal + wasteMtr).toFixed(2);
     const finalButterKg = form.useButterPaper === 'No' ? '0' : String(form.butterPaperWeightKg || 0);
 
     setSubmitting(true);
@@ -556,31 +657,50 @@ export default function FusingDepartment() {
         panna: form.panna,
         useButterPaper: form.useButterPaper,
         butterPaperWeightKg: finalButterKg,
-        freshMtr: String(computedFreshMtr),
+        freshMtr: String(freshMtrVal),
+        totalWastageMtr: String(wasteMtr),
+        totalFabricUsedMtr: String(totalFabricUsed),
         fabricFaultMtr: String(form.fabricFaultMtr || 0),
         fusingFaultMtr: String(form.fusingFaultMtr || 0),
         printFaultMtr: String(form.printFaultMtr || 0),
         genuineFaultMtr: String(form.genuineFaultMtr || 0),
-        totalWastageMtr: String(calculatedWastageMtr),
-        fusingMtr: String(computedFreshMtr),
+        fusingMtr: wasteMtr > 0 ? String(totalFabricUsed) : String(freshMtrVal),
         fusingTemp: form.fusingTemp,
-        temperature: form.fusingTemp,
-        fusingSpeed: form.fusingSpeed,
-        speed: form.fusingSpeed,
+        fusingSpeed: String(form.fusingSpeed),
         fusingMachine: form.fusingMachine,
         fusingOperator: form.fusingOperator,
-        emergencyNotes: form.notes
+        emergencyNotes: form.notes,
+        notes: form.notes
       };
 
       await api.updateJobCard(form.jobCardId, payload);
-      triggerPushNotification('🔥 Fusing Record Updated', `Job #${form.jobNo}: ${computedFreshMtr}m Fresh | ${calculatedWastageMtr}m Wastage updated.`, 'success');
-      triggerGlobalDataRefresh('fusing');
+      triggerPushNotification('🔥 Fusing Record Updated', `Job #${form.jobNo}: ${freshMtrVal}m Fresh | ${wasteMtr}m Wastage updated.`, 'success');
       setShowFormModal(false);
       fetchData();
     } catch (err) {
-      triggerEliteAlert('Save Error', err.message || 'Failed to save fusing record.', 'error');
+      triggerEliteAlert('Update Failed', err.message || 'Failed to update fusing record.', 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Quick Toggle Status in Main Table (Pending -> Partial Complete -> Complete -> Pending)
+  const handleQuickToggleStatus = async (card) => {
+    const cur = card.fusingStatus || 'Fusing Pending';
+    const nextStatus = cur === 'Fusing Pending' 
+      ? 'Fusing In Progress' 
+      : (cur === 'Fusing In Progress' ? 'Fusing Done' : 'Fusing Pending');
+
+    try {
+      await api.updateJobCard(card._id || card.id, {
+        fusingStatus: nextStatus,
+        fusingDate: nextStatus === 'Fusing Done' ? (card.fusingDate || toLocalYMD()) : card.fusingDate
+      });
+      triggerPushNotification('⚡ Fusing Status Updated', `Job #${card.jobNo} set to ${nextStatus === 'Fusing Done' ? 'Complete' : (nextStatus === 'Fusing In Progress' ? 'Partial Complete' : 'Pending')}`, 'success');
+      triggerGlobalDataRefresh('fusing');
+      fetchData();
+    } catch (err) {
+      triggerEliteAlert('Update Failed', err.message || 'Failed to toggle status.', 'error');
     }
   };
 
@@ -594,7 +714,7 @@ export default function FusingDepartment() {
         const curStatus = c.fusingStatus || 'Fusing Pending';
         if (statusFilter === 'Ready for Fusing') {
           if (c.printStatus !== 'Printing Done' || curStatus === 'Fusing Done') return false;
-        } else if (statusFilter === 'Fusing Pending' && curStatus !== 'Fusing Pending') return false;
+        } else if (statusFilter === 'Fusing Pending' && curStatus === 'Fusing Done') return false;
         else if (statusFilter === 'Fusing Done' && curStatus !== 'Fusing Done') return false;
       }
       if (filterMachine && (c.fusingMachine || '') !== filterMachine) {
@@ -851,24 +971,235 @@ export default function FusingDepartment() {
           {/* Primary Required Fields: JOB CARD NO, PRINTED METERS, FUSING TEMP, FUSING SPEED, BUTTER PAPER USED?, ROLL COMPLETED?, PANNA */}
             <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
               
-              {/* 1. JOB TYPE / JOBCARD NO. */}
-              <div style={{ gridColumn: 'span 2 / span 2' }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: '#0284c7', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
-                  JOB TYPE / JOBCARD NO. *
-                </label>
-                <select
-                  required
-                  value={topForm.jobCardId}
-                  onChange={handleTopJobCardSelect}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '2px solid #38bdf8', fontSize: '0.92rem', fontWeight: 800, background: '#ffffff', color: '#0369a1', cursor: 'pointer' }}
-                >
-                  <option value="">Select Job Card No. (e.g. 1001)</option>
-                  {cards.map(c => (
-                    <option key={c._id || c.id} value={c._id || c.id}>
-                      {c.jobNo || 'JOB'} — {c.party || 'Party'} | {c.designName || 'Design'} ({c.fabric || 'Fabric'} {c.panna ? `${c.panna}"` : ''}) {c.printedMtr ? `| ${c.printedMtr}m Printed` : ''} {c.fusingStatus === 'Fusing Done' ? '✓ Done' : '⏳ Pending'}
-                    </option>
-                  ))}
-                </select>
+              {/* 1. JOB TYPE / JOBCARD NO. - Searchable & Filtered to Printing Done & Fusing Pending */}
+              <div ref={jobDropdownRef} style={{ gridColumn: 'span 2 / span 2', position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem', flexWrap: 'wrap', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase' }}>
+                    JOB TYPE / JOBCARD NO. *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCardsFilter(prev => !prev)}
+                    style={{
+                      background: showAllCardsFilter ? '#e0f2fe' : '#f0fdf4',
+                      color: showAllCardsFilter ? '#0369a1' : '#15803d',
+                      border: `1px solid ${showAllCardsFilter ? '#7dd3fc' : '#86efac'}`,
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Toggle between only Ready for Fusing jobs vs All Job Cards"
+                  >
+                    <span>{showAllCardsFilter ? '🔍 Showing: All Cards' : `⚡ Filter: Ready for Fusing (${eligibleFusingCards.length})`}</span>
+                    <span style={{ textDecoration: 'underline', opacity: 0.8 }}>({showAllCardsFilter ? 'Switch to Ready' : 'Show All'})</span>
+                  </button>
+                </div>
+
+                {/* Search Input Box with Clear & Dropdown Caret */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Search size={16} color="#0284c7" style={{ position: 'absolute', left: '10px', pointerEvents: 'none' }} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Search Job No. (e.g. 3135), Party or Design..."
+                    value={jobSearchText}
+                    onFocus={() => setShowJobDropdown(true)}
+                    onChange={e => {
+                      setJobSearchText(e.target.value);
+                      setShowJobDropdown(true);
+                      if (!e.target.value) {
+                        handleTopJobCardSelect('');
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 2.8rem 0.65rem 2.2rem',
+                      borderRadius: '8px',
+                      border: '2px solid #38bdf8',
+                      fontSize: '0.92rem',
+                      fontWeight: 800,
+                      background: '#ffffff',
+                      color: '#0369a1',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {/* Clear / Dropdown Toggle Button */}
+                  <div style={{ position: 'absolute', right: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {topForm.jobCardId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleTopJobCardSelect('');
+                          setJobSearchText('');
+                          setShowJobDropdown(true);
+                        }}
+                        style={{
+                          background: '#fee2e2',
+                          color: '#dc2626',
+                          border: 'none',
+                          borderRadius: '4px',
+                          width: '22px',
+                          height: '22px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          fontWeight: 900,
+                          fontSize: '0.75rem'
+                        }}
+                        title="Clear Selection"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setShowJobDropdown(prev => !prev)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#0284c7',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title="Open List"
+                    >
+                      <ChevronDown size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Floating Interactive Dropdown Menu */}
+                {showJobDropdown && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    maxHeight: '280px',
+                    overflowY: 'auto',
+                    background: '#ffffff',
+                    border: '2px solid #38bdf8',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.2)',
+                    zIndex: 1000,
+                    marginTop: '4px'
+                  }}>
+                    <div style={{
+                      padding: '6px 12px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      color: '#64748b',
+                      background: '#f8fafc',
+                      borderBottom: '1px solid #e2e8f0',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>
+                        {showAllCardsFilter ? 'ALL JOBCARDS' : 'PRINTING DONE & FUSING PENDING'} ({searchMatchingCards.length})
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: '#0284c7' }}>
+                        Click card to select
+                      </span>
+                    </div>
+
+                    {searchMatchingCards.length === 0 ? (
+                      <div style={{ padding: '1.25rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                        <p style={{ margin: 0, fontWeight: 700 }}>No matching job cards found.</p>
+                        {!showAllCardsFilter && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllCardsFilter(true)}
+                            style={{
+                              marginTop: '0.5rem',
+                              background: '#eff6ff',
+                              color: '#2563eb',
+                              border: '1px solid #bfdbfe',
+                              borderRadius: '6px',
+                              padding: '0.3rem 0.75rem',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Click to Search All Job Cards
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      searchMatchingCards.map(c => {
+                        const isSelected = String(topForm.jobCardId) === String(c._id || c.id);
+                        const cardPanna = c.panna ? (String(c.panna).includes('"') ? c.panna : `${c.panna}"`) : '58"';
+                        return (
+                          <div
+                            key={c._id || c.id}
+                            onMouseDown={() => {
+                              handleTopJobCardSelect(c);
+                              setShowJobDropdown(false);
+                            }}
+                            style={{
+                              padding: '8px 12px',
+                              borderBottom: '1px solid #f1f5f9',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              background: isSelected ? '#e0f2fe' : '#ffffff',
+                              transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#f0fdf4'; }}
+                            onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = '#ffffff'; }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                                <span style={{ fontWeight: 900, color: '#0369a1', fontSize: '0.9rem' }}>
+                                  {formatJobCardNo(c.jobNo)}
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>
+                                  {c.party || 'Party'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.74rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                Design: <strong style={{ color: '#475569' }}>{c.designName || '—'}</strong> • Fabric: <strong>{c.fabric || '—'} ({cardPanna})</strong>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
+                              <span style={{
+                                padding: '1px 7px',
+                                borderRadius: '4px',
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                border: '1px solid #bbf7d0'
+                              }}>
+                                🖨️ {getCardPrintedMeters(c) || 0}m Printed
+                              </span>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                background: c.fusingStatus === 'Fusing Done' ? '#f1f5f9' : (c.fusingStatus === 'Fusing In Progress' ? '#e0f2fe' : '#fef3c7'),
+                                color: c.fusingStatus === 'Fusing Done' ? '#64748b' : (c.fusingStatus === 'Fusing In Progress' ? '#0369a1' : '#b45309')
+                              }}>
+                                {c.fusingStatus === 'Fusing Done' ? '✓ Complete' : (c.fusingStatus === 'Fusing In Progress' ? '⏳ Partial' : '⏸️ Pending')}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* 2. PRINTED METERS (DISPLAYED) */}
@@ -900,19 +1231,26 @@ export default function FusingDepartment() {
                 />
               </div>
 
-              {/* 4. FUSING MACHINE SPEED */}
+              {/* 4. FUSING MACHINE SPEED - Dropdown with 50, 52, 54 ... up to 80 */}
               <div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 800, color: '#2563eb', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
                   <Gauge size={14} color="#2563eb" /> FUSING SPEED (m/min) *
                 </label>
-                <input
-                  type="text"
+                <select
                   required
-                  placeholder="e.g. 18 m/min"
-                  value={topForm.fusingSpeed}
+                  value={topForm.fusingSpeed || '80'}
                   onChange={e => setTopForm(f => ({ ...f, fusingSpeed: e.target.value }))}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '2px solid #bfdbfe', fontSize: '0.92rem', fontWeight: 900, background: '#eff6ff', color: '#1e40af' }}
-                />
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '2px solid #bfdbfe', fontSize: '0.92rem', fontWeight: 900, background: '#eff6ff', color: '#1e40af', cursor: 'pointer' }}
+                >
+                  {topForm.fusingSpeed && !FUSING_SPEED_OPTIONS.map(String).includes(String(topForm.fusingSpeed).replace(/[^0-9]/g, '')) && (
+                    <option value={topForm.fusingSpeed}>{topForm.fusingSpeed}</option>
+                  )}
+                  {FUSING_SPEED_OPTIONS.map(spd => (
+                    <option key={spd} value={String(spd)}>
+                      {spd}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* 6. IS BUTTER PAPER USED? */}
@@ -949,26 +1287,45 @@ export default function FusingDepartment() {
 
               {/* 7. ROLL COMPLETED? */}
               <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 800, color: topForm.rollCompleted === 'Yes' ? '#16a34a' : '#ea580c', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
-                  <CheckCircle2 size={14} color={topForm.rollCompleted === 'Yes' ? '#16a34a' : '#ea580c'} /> ROLL COMPLETED? *
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  color: (topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes') ? '#16a34a' : (topForm.rollCompleted === 'Partial Complete' ? '#0284c7' : '#ea580c'),
+                  marginBottom: '0.3rem',
+                  textTransform: 'uppercase'
+                }}>
+                  {(topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes') ? (
+                    <CheckCircle2 size={14} color="#16a34a" />
+                  ) : topForm.rollCompleted === 'Partial Complete' ? (
+                    <Clock size={14} color="#0284c7" />
+                  ) : (
+                    <AlertCircle size={14} color="#ea580c" />
+                  )}
+                  ROLL COMPLETED? *
                 </label>
                 <select
-                  value={topForm.rollCompleted}
+                  value={topForm.rollCompleted === 'Yes' ? 'Complete' : (topForm.rollCompleted === 'No' ? 'Partial Complete' : (topForm.rollCompleted || 'Complete'))}
                   onChange={e => setTopForm(f => ({ ...f, rollCompleted: e.target.value }))}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem',
                     borderRadius: '8px',
-                    border: `2px solid ${topForm.rollCompleted === 'Yes' ? '#4ade80' : '#fb923c'}`,
+                    border: `2px solid ${
+                      (topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes') ? '#4ade80' : (topForm.rollCompleted === 'Partial Complete' ? '#38bdf8' : '#fb923c')
+                    }`,
                     fontSize: '0.92rem',
                     fontWeight: 800,
-                    background: topForm.rollCompleted === 'Yes' ? '#f0fdf4' : '#fff7ed',
-                    color: topForm.rollCompleted === 'Yes' ? '#15803d' : '#c2410c',
+                    background: (topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes') ? '#f0fdf4' : (topForm.rollCompleted === 'Partial Complete' ? '#f0f9ff' : '#fff7ed'),
+                    color: (topForm.rollCompleted === 'Complete' || topForm.rollCompleted === 'Yes') ? '#15803d' : (topForm.rollCompleted === 'Partial Complete' ? '#0369a1' : '#c2410c'),
                     cursor: 'pointer'
                   }}
                 >
-                  <option value="Yes">✓ YES (Roll Completed)</option>
-                  <option value="No">⏳ NO (Partial / In Progress)</option>
+                  <option value="Complete">✓ Complete</option>
+                  <option value="Partial Complete">⏳ Partial Complete</option>
+                  <option value="Pending">⏸️ Pending</option>
                 </select>
               </div>
 
@@ -1315,7 +1672,7 @@ export default function FusingDepartment() {
                           </span>
                           <span style={{ fontSize: '0.72rem', background: '#eff6ff', color: '#1e40af', padding: '2px 7px', borderRadius: '4px', fontWeight: 800, border: '1px solid #bfdbfe' }}>
                             <Gauge size={10} style={{ display: 'inline', marginRight: 2 }} />
-                            {c.fusingSpeed || c.speed || '18 m/min'}
+                            {c.fusingSpeed || c.speed || '80'}
                           </span>
                         </button>
                       </td>
@@ -1337,26 +1694,32 @@ export default function FusingDepartment() {
 
                       {/* Status */}
                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickToggleStatus(c)}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '20px',
-                            fontSize: '0.72rem',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            background: isDone ? '#d1fae5' : '#fef3c7',
-                            color: isDone ? '#047857' : '#b45309',
-                            border: `1px solid ${isDone ? '#6ee7b7' : '#fde68a'}`,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          {isDone ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                          <span>{isDone ? 'Fusing Done' : 'Pending'}</span>
-                        </button>
+                        {(() => {
+                          const isDone = c.fusingStatus === 'Fusing Done';
+                          const isPartial = c.fusingStatus === 'Fusing In Progress' || c.fusingStatus === 'Partial Complete';
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickToggleStatus(c)}
+                              style={{
+                                padding: '4px 10px',
+                                borderRadius: '20px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                background: isDone ? '#d1fae5' : (isPartial ? '#e0f2fe' : '#fef3c7'),
+                                color: isDone ? '#047857' : (isPartial ? '#0369a1' : '#b45309'),
+                                border: `1px solid ${isDone ? '#6ee7b7' : (isPartial ? '#7dd3fc' : '#fde68a')}`,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              {isDone ? <CheckCircle2 size={12} /> : isPartial ? <Clock size={12} /> : <AlertCircle size={12} />}
+                              <span>{isDone ? 'Complete' : (isPartial ? 'Partial' : 'Pending')}</span>
+                            </button>
+                          );
+                        })()}
                       </td>
 
                       {/* Fresh Output */}
@@ -1415,12 +1778,14 @@ export default function FusingDepartment() {
             {/* Modal Header */}
             <div style={{ padding: '1rem 1.25rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <Flame size={20} color="#2563eb" />
+                <Flame size={22} color="#2563eb" />
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
-                    Edit Fusing Production Entry — Job #{form.jobNo}
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900, color: '#0f172a' }}>
+                    Edit Fusing Production Entry — {formatJobCardNo(form.jobNo)}
                   </h3>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Enter Butter Paper weight &amp; 4 Wastage fault breakdown</span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Verify Fresh Output, 4-Fault Wastage breakdown &amp; calculate Total Fabric Used
+                  </span>
                 </div>
               </div>
               <button type="button" onClick={() => setShowFormModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
@@ -1428,27 +1793,102 @@ export default function FusingDepartment() {
               </button>
             </div>
 
-            {/* Modal Body */}
-            <form onSubmit={handleFormSubmit} style={{ padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Modal Body Form */}
+            <form onSubmit={handleFormSubmit} style={{ padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               
-              {/* Fresh Mtr & Butter Paper Used / Weight */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem' }}>
+              {/* Fresh Output MTR & Total Fabric Used formula box */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                
+                {/* 1. Fresh Output (Net Usable MTR) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#059669', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
-                    Fresh Output (Net Usable MTR)
+                    Fresh Output (Net Usable MTR) *
                   </label>
-                  <div style={{
-                    width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #a7f3d0',
-                    fontWeight: 900, fontSize: '0.95rem', background: '#ecfdf5', color: '#047857',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                  }}>
-                    <span>{computedModalFreshMtr} Mtr</span>
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669', opacity: 0.85 }}>Auto-calculated</span>
-                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={form.freshMtr}
+                    onChange={e => setForm(f => ({ ...f, freshMtr: e.target.value }))}
+                    placeholder="e.g. 138.00"
+                    style={{
+                      width: '100%', padding: '0.55rem', borderRadius: '8px',
+                      border: '2px solid #10b981', fontWeight: 900, fontSize: '0.95rem',
+                      background: '#ecfdf5', color: '#047857'
+                    }}
+                  />
                 </div>
 
+                {/* 2. Total Fabric Used (Fresh MTR + Total Wastage) */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 900, color: '#0284c7', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
+                    Total Fabric Used (MTR)
+                  </label>
+                  <div style={{
+                    width: '100%', padding: '0.55rem 0.75rem', borderRadius: '8px', border: '2px solid #0284c7',
+                    fontWeight: 900, fontSize: '1rem', background: '#f0f9ff', color: '#0369a1',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                  }}>
+                    <span>{calculatedTotalFabricUsedMtr} Mtr</span>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0284c7', background: '#e0f2fe', padding: '2px 6px', borderRadius: '4px' }}>
+                      Total = Fresh MTR + Total Wastage
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Wastage Fault Breakdown */}
+              <div style={{ background: '#fff1f2', padding: '0.9rem 1rem', borderRadius: '10px', border: '1px solid #fecdd3' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#be123c', textTransform: 'uppercase', marginBottom: '0.65rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Wastage Breakdown (4 Fault Types)</span>
+                  <span style={{ background: '#ffe4e6', padding: '2px 8px', borderRadius: '6px' }}>Total Wastage: <b>{calculatedWastageMtr} Mtr</b></span>
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#9f1239', marginBottom: '0.2rem', display: 'block' }}>1. Fabric Fault (Mtr)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form.fabricFaultMtr}
+                      onChange={e => setForm(f => ({ ...f, fabricFaultMtr: e.target.value }))}
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.9rem', fontWeight: 800, background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#9f1239', marginBottom: '0.2rem', display: 'block' }}>2. Fusing Fault (Mtr)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form.fusingFaultMtr}
+                      onChange={e => setForm(f => ({ ...f, fusingFaultMtr: e.target.value }))}
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.9rem', fontWeight: 800, background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#9f1239', marginBottom: '0.2rem', display: 'block' }}>3. Print Fault (Mtr)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form.printFaultMtr}
+                      onChange={e => setForm(f => ({ ...f, printFaultMtr: e.target.value }))}
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.9rem', fontWeight: 800, background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#9f1239', marginBottom: '0.2rem', display: 'block' }}>4. Genuine Fault (Mtr)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form.genuineFaultMtr}
+                      onChange={e => setForm(f => ({ ...f, genuineFaultMtr: e.target.value }))}
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.9rem', fontWeight: 800, background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Butter Paper Specs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
                     Butter Paper Used?
                   </label>
                   <select
@@ -1457,7 +1897,7 @@ export default function FusingDepartment() {
                       const val = e.target.value;
                       setForm(f => ({ ...f, useButterPaper: val, butterPaperWeightKg: val === 'No' ? '0' : f.butterPaperWeightKg }));
                     }}
-                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #d8b4fe', fontWeight: 800, fontSize: '0.88rem', background: '#f5f3ff', color: '#6d28d9' }}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #d8b4fe', fontWeight: 800, fontSize: '0.88rem', background: '#f5f3ff', color: '#6d28d9' }}
                   >
                     <option value="Yes">✓ YES (Used Butter Paper)</option>
                     <option value="No">✕ NO (No Butter Paper)</option>
@@ -1465,7 +1905,7 @@ export default function FusingDepartment() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
                     Butter Paper Weight (KG)
                   </label>
                   <input
@@ -1475,118 +1915,105 @@ export default function FusingDepartment() {
                     value={form.butterPaperWeightKg}
                     onChange={e => setForm(f => ({ ...f, butterPaperWeightKg: e.target.value }))}
                     placeholder="e.g. 12.50 kg"
-                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.9rem', background: form.useButterPaper === 'No' ? '#f1f5f9' : '#ffffff', color: '#0f172a' }}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 700, fontSize: '0.88rem', background: form.useButterPaper === 'No' ? '#f1f5f9' : '#ffffff', color: '#0f172a' }}
                   />
                 </div>
               </div>
 
-              {/* 4 Wastage Fault Breakdown */}
-              <div style={{ background: '#fff1f2', padding: '0.85rem', borderRadius: '8px', border: '1px solid #fecdd3' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#be123c', textTransform: 'uppercase', marginBottom: '0.6rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Wastage Breakdown (4 Fault Types)</span>
-                  <span>Total Wastage: <b>{calculatedWastageMtr} Mtr</b></span>
-                </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9f1239' }}>1. Fabric Fault (Mtr)</label>
-                    <input
-                      type="number" step="0.01"
-                      value={form.fabricFaultMtr}
-                      onChange={e => setForm(f => ({ ...f, fabricFaultMtr: e.target.value }))}
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.85rem', fontWeight: 700 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9f1239' }}>2. Fusing Fault (Mtr)</label>
-                    <input
-                      type="number" step="0.01"
-                      value={form.fusingFaultMtr}
-                      onChange={e => setForm(f => ({ ...f, fusingFaultMtr: e.target.value }))}
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.85rem', fontWeight: 700 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9f1239' }}>3. Print Fault (Mtr)</label>
-                    <input
-                      type="number" step="0.01"
-                      value={form.printFaultMtr}
-                      onChange={e => setForm(f => ({ ...f, printFaultMtr: e.target.value }))}
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.85rem', fontWeight: 700 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9f1239' }}>4. Genuine Fault (Mtr)</label>
-                    <input
-                      type="number" step="0.01"
-                      value={form.genuineFaultMtr}
-                      onChange={e => setForm(f => ({ ...f, genuineFaultMtr: e.target.value }))}
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #fda4af', fontSize: '0.85rem', fontWeight: 700 }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Machine, Temperature, Speed & Specs */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+              {/* Machine Specs: Panna, Temp, Speed, Status */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', marginBottom: '0.2rem' }}>Panna</label>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Panna</label>
                   <select
                     value={form.panna}
                     onChange={e => setForm(f => ({ ...f, panna: e.target.value }))}
-                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 700 }}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
                   >
                     {pannaOptions.map(p => <option key={p} value={p}>{p} Panna</option>)}
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#d97706', marginBottom: '0.2rem' }}>Fusing Temp (°C)</label>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#d97706', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Fusing Temp (°C)</label>
                   <input
                     type="text"
                     value={form.fusingTemp}
                     onChange={e => setForm(f => ({ ...f, fusingTemp: e.target.value }))}
-                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fde68a', fontSize: '0.82rem', fontWeight: 800, background: '#fffbe6', color: '#92400e' }}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '0.85rem', fontWeight: 800, background: '#fffbe6', color: '#92400e' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#2563eb', marginBottom: '0.2rem' }}>Fusing Speed (m/min)</label>
-                  <input
-                    type="text"
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#2563eb', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Fusing Speed</label>
+                  <select
                     value={form.fusingSpeed}
                     onChange={e => setForm(f => ({ ...f, fusingSpeed: e.target.value }))}
-                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.82rem', fontWeight: 800, background: '#eff6ff', color: '#1e40af' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', marginBottom: '0.2rem' }}>Fusing Status</label>
-                  <select
-                    value={form.fusingStatus}
-                    onChange={e => setForm(f => ({ ...f, fusingStatus: e.target.value }))}
-                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 700 }}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.85rem', fontWeight: 800, background: '#eff6ff', color: '#1e40af', cursor: 'pointer' }}
                   >
-                    <option value="Fusing Pending">Fusing Pending</option>
-                    <option value="Fusing Done">Fusing Done</option>
+                    {FUSING_SPEED_OPTIONS.map(spd => (
+                      <option key={spd} value={spd}>{spd} m/min</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', marginBottom: '0.2rem' }}>Operator Name</label>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: '#64748b', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Fusing Status</label>
+                  <select
+                    value={form.fusingStatus}
+                    onChange={e => setForm(f => ({ ...f, fusingStatus: e.target.value }))}
+                    style={{
+                      width: '100%', padding: '0.5rem', borderRadius: '8px',
+                      border: form.fusingStatus === 'Fusing Done' ? '2px solid #10b981' : (form.fusingStatus === 'Fusing In Progress' ? '2px solid #38bdf8' : '2px solid #f59e0b'),
+                      fontSize: '0.85rem', fontWeight: 800, cursor: 'pointer',
+                      background: form.fusingStatus === 'Fusing Done' ? '#f0fdf4' : (form.fusingStatus === 'Fusing In Progress' ? '#f0f9ff' : '#fffbe5'),
+                      color: form.fusingStatus === 'Fusing Done' ? '#15803d' : (form.fusingStatus === 'Fusing In Progress' ? '#0369a1' : '#b45309')
+                    }}
+                  >
+                    <option value="Fusing Done">✓ Complete</option>
+                    <option value="Fusing In Progress">⏳ Partial Complete</option>
+                    <option value="Fusing Pending">⏸️ Pending</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Operator Name & Remarks */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#64748b', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Operator Name</label>
                   <input
                     type="text"
                     value={form.fusingOperator}
                     onChange={e => setForm(f => ({ ...f, fusingOperator: e.target.value }))}
-                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 700 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: '#64748b', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Fusing Remarks / Notes</label>
+                  <input
+                    type="text"
+                    value={form.notes}
+                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Optional notes e.g. Butter Paper Roll #2..."
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
               {/* Modal Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setShowFormModal(false)} className="btn-secondary">Cancel</button>
-                <button type="submit" disabled={submitting} className="btn-primary" style={{ background: '#2563eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFormModal(false)}
+                  style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{ padding: '0.6rem 1.35rem', borderRadius: '8px', background: '#2563eb', color: '#ffffff', fontWeight: 800, fontSize: '0.9rem', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)' }}
+                >
                   {submitting ? 'Saving...' : 'Update Fusing Record'}
                 </button>
               </div>
@@ -2093,7 +2520,7 @@ export default function FusingDepartment() {
               </div>
               <div>
                 <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 700, display: 'block' }}>PRINTED METERS</span>
-                <strong style={{ color: '#059669', fontWeight: 800 }}>{speedTempCard.printedMtr || speedTempCard.totalMtr || '0'} mtr</strong>
+                <strong style={{ color: '#059669', fontWeight: 800 }}>{getCardPrintedMeters(speedTempCard) || '0'} mtr</strong>
               </div>
             </div>
 
@@ -2157,26 +2584,33 @@ export default function FusingDepartment() {
                   <Gauge size={14} /> FUSING MACHINE SPEED (m/min) *
                 </label>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                  <input
-                    type="text"
+                  <select
                     required
-                    value={speedTempForm.fusingSpeed}
+                    value={speedTempForm.fusingSpeed || '80'}
                     onChange={e => setSpeedTempForm(f => ({ ...f, fusingSpeed: e.target.value }))}
-                    placeholder="e.g. 18 m/min"
-                    style={{ flex: 1, padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1.5px solid #bfdbfe', fontSize: '0.92rem', fontWeight: 800, background: '#eff6ff', color: '#1e40af' }}
-                  />
+                    style={{ flex: 1, padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1.5px solid #bfdbfe', fontSize: '0.92rem', fontWeight: 800, background: '#eff6ff', color: '#1e40af', cursor: 'pointer' }}
+                  >
+                    {speedTempForm.fusingSpeed && !FUSING_SPEED_OPTIONS.map(String).includes(String(speedTempForm.fusingSpeed).replace(/[^0-9]/g, '')) && (
+                      <option value={speedTempForm.fusingSpeed}>{speedTempForm.fusingSpeed}</option>
+                    )}
+                    {FUSING_SPEED_OPTIONS.map(spd => (
+                      <option key={spd} value={String(spd)}>
+                        {spd}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 {/* Preset Chips */}
                 <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                  {['10 m/min', '12 m/min', '15 m/min', '18 m/min', '20 m/min', '22 m/min', '25 m/min'].map(spd => (
+                  {FUSING_SPEED_OPTIONS.map(spd => (
                     <button
                       key={spd}
                       type="button"
-                      onClick={() => setSpeedTempForm(f => ({ ...f, fusingSpeed: spd }))}
+                      onClick={() => setSpeedTempForm(f => ({ ...f, fusingSpeed: String(spd) }))}
                       style={{
                         padding: '2px 8px', fontSize: '0.72rem', fontWeight: 800, borderRadius: '4px', cursor: 'pointer',
-                        background: speedTempForm.fusingSpeed === spd ? '#2563eb' : '#dbeafe',
-                        color: speedTempForm.fusingSpeed === spd ? '#ffffff' : '#1e40af',
+                        background: String(speedTempForm.fusingSpeed) === String(spd) ? '#2563eb' : '#dbeafe',
+                        color: String(speedTempForm.fusingSpeed) === String(spd) ? '#ffffff' : '#1e40af',
                         border: '1px solid #bfdbfe', transition: 'all 0.1s'
                       }}
                     >

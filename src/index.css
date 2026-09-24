@@ -305,16 +305,19 @@ tr:hover td { background: rgba(255, 255, 255, 0.025); }
 /* ─────────────────────────────────────────────────
    Modals
 ───────────────────────────────────────────────── */
-.modal-overlay {
+.modal-overlay,
+.modal-backdrop {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(3, 7, 18, 0.8);
+  background: rgba(3, 7, 18, 0.7);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -896,16 +899,11 @@ body:has(.client-portal-container) {
   100% { top: 15%; opacity: 0.9; }
 }
 
-/* Html5Qrcode video canvas container responsive overrides */
+/* Html5Qrcode video container default styling */
 #reader-camera-scanner-viewport video {
   width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
+  max-width: 100% !important;
   border-radius: 8px !important;
-}
-
-#reader-camera-scanner-viewport canvas {
-  display: none !important;
 }
 
 /* Mobile Phone UI Optimizations (max-width: 768px) */
@@ -932,11 +930,6 @@ body:has(.client-portal-container) {
   /* Improve mobile table horizontal scrolling touch UX */
   .table-responsive, table {
     -webkit-overflow-scrolling: touch;
-  }
-
-  /* Barcode Scanner modal viewport on mobile phones */
-  #reader-camera-scanner-viewport {
-    min-height: 220px !important;
   }
 }
 

@@ -21,6 +21,7 @@ import StitchingChallanPanel from './StitchingChallanPanel';
 import StitchingSettings from './StitchingSettings';
 import QADepartment from './QADepartment';
 import JobCardStatusDashboard from './JobCardStatusDashboard';
+import DigitalPrintOperationsDashboard from './DigitalPrintOperationsDashboard';
 import { areDesignsEquivalent, cleanDesignNameString, extractDesignNames } from '../utils/designUtils';
 import { R2_PUBLIC_BASE, convertDriveUrl, getImageCandidates } from '../utils/imageUrlHelper';
 import InfiniteScrollPagination from './InfiniteScrollPagination';
@@ -2409,8 +2410,8 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
         <DesignCatalogue department={department} initialSubTab={effectiveSubTab === 'master' ? 'master' : 'catalogue'} />
       ) : effectiveSubTab === 'fabric' ? (
         <FabricInventoryPanel department={department} onNavigateToBilling={(ch) => { setBillingChallanData(ch); setOverrideSubTab('billing'); }} />
-      ) : effectiveSubTab === 'billing' || effectiveSubTab === 'billing_digital' || effectiveSubTab === 'billing_elite' ? (
-        <EliteBillingDepartment initialChallanData={billingChallanData} department={department} companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} />
+      ) : effectiveSubTab === 'billing' || effectiveSubTab === 'billing_digital' || effectiveSubTab === 'billing_elite' || effectiveSubTab === 'costing' || effectiveSubTab === 'costing_pl' ? (
+        <EliteBillingDepartment initialChallanData={billingChallanData} department={department} companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} initialTab={(effectiveSubTab === 'costing' || effectiveSubTab === 'costing_pl') ? 'costing' : undefined} />
       ) : effectiveSubTab === 'billing_fabtex' ? (
         <EliteBillingDepartment initialChallanData={billingChallanData} department={department} companyEntity="Elite Fabtex" />
       ) : effectiveSubTab === 'printing_log' || effectiveSubTab === 'print_entry' ? (
@@ -2431,8 +2432,10 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department }) 
         department === 'stitching' ? <StitchingSettings /> : <PrintSettings />
       ) : effectiveSubTab === 'status_dashboard' || effectiveSubTab === 'jobcards_status' || effectiveSubTab === 'pending_summary' || effectiveSubTab === 'status_overview' ? (
         <JobCardStatusDashboard onSelectCard={c => openEdit(c)} department={department} />
-      ) : effectiveSubTab === 'jobcards' ? (
-        department === 'stitching' ? <GarmentJobCardDashboard /> : <ReportsCenter department="elite-print" />
+      ) : effectiveSubTab === 'reports' || effectiveSubTab === 'reports_center' ? (
+        <ReportsCenter department={department === 'stitching' ? 'stitching' : 'elite-print'} />
+      ) : effectiveSubTab === 'jobcards' || effectiveSubTab === 'dashboard' ? (
+        department === 'stitching' ? <GarmentJobCardDashboard /> : <DigitalPrintOperationsDashboard onNavigateDepartment={(tab) => setOverrideSubTab(tab)} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
           {/* Header banner */}

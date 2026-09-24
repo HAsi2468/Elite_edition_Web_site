@@ -1248,7 +1248,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
     setChallanForm(prev => {
       const updatedTps = prev.tpDetails.map(tp => {
-        if (!tp.lotNo || !lotsList.includes(tp.lotNo)) {
+        if (!tp.lotNo || (!tp.isCustomLot && lotsList.length > 0 && !lotsList.includes(String(tp.lotNo)))) {
           return { ...tp, lotNo: defaultLot };
         }
         return tp;
@@ -1465,7 +1465,11 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
         totalTp: challanTotalTp,
         tpDetails: challanForm.tpDetails
           .filter(r => r.tpMeter !== '' && r.tpMeter != null)
-          .map(r => ({ tpNo: Number(r.tpNo), tpMeter: parseFloat(r.tpMeter) || 0, lotNo: r.lotNo || '' })),
+          .map(r => ({
+            tpNo: Number(r.tpNo),
+            tpMeter: parseFloat(r.tpMeter) || 0,
+            lotNo: r.lotNo || (challanForm.lotNo ? String(challanForm.lotNo).split(/[,\s&]+/)[0] : '') || ''
+          })),
       };
       if (editingChallan) {
         await api.updateFabricChallan(editingChallan._id, payload);
@@ -1488,7 +1492,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   const startEditChallan = (c) => {
     setEditingChallan(c);
     const tpRows = c.tpDetails && c.tpDetails.length > 0
-      ? c.tpDetails.map(r => ({ tpNo: r.tpNo, tpMeter: String(r.tpMeter) }))
+      ? c.tpDetails.map(r => ({ tpNo: r.tpNo, tpMeter: String(r.tpMeter), lotNo: r.lotNo || '' }))
       : emptyTpRows();
     setChallanForm({
       date: c.date ? new Date(c.date).toISOString().split('T')[0] : '',
@@ -4908,7 +4912,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                 <div style={{ padding: '1rem 1.25rem', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <span style={{ fontSize: '0.85rem', fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TP METERS VALUES</span>
-                    <div style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: 700 }}>Lot No assigned automatically line-by-line</div>
+                    <div style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: 700 }}>Manual Lot No &amp; TP meters entry per row</div>
                   </div>
                   <button type="button" className="btn-secondary" style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem', fontWeight: 700, background: '#ffffff', border: '1px solid #cbd5e1', color: '#0284c7' }} onClick={addTpRow} disabled={challanForm.tpDetails.length >= 30}>
                     <PlusCircle size={14} /> Add TP Row
@@ -4919,7 +4923,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                 <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: '#ffffff' }}>
 
                   {/* Table Column Headers */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '65px 120px 1fr 36px', gap: '0.5rem', fontSize: '0.75rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', paddingLeft: '0.25rem', marginBottom: '0.2rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '65px 150px 1fr 36px', gap: '0.5rem', fontSize: '0.75rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', paddingLeft: '0.25rem', marginBottom: '0.2rem' }}>
                     <span>TP No</span>
                     <span>Assigned Lot</span>
                     <span>TP Meters (mtr)</span>
@@ -4928,18 +4932,124 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
                   {(() => {
                     const currentLots = String(challanForm.lotNo || '')
-                      .split(',')
+                      .split(/[,\s&]+/)
                       .map(s => s.trim())
-                      .filter(s => s.length > 0);
+                      .filter(Boolean);
                     return challanForm.tpDetails.map((row, idx) => {
-                      const assignedLot = row.lotNo || currentLots[0] || '';
+                      const isCustom = row.isCustomLot;
                       return (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '65px 120px 1fr 36px', gap: '0.5rem', alignItems: 'center' }}>
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '65px 150px 1fr 36px', gap: '0.5rem', alignItems: 'center' }}>
                           <div style={{ width: '100%', padding: '0.5rem 0.4rem', fontSize: '0.85rem', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', textAlign: 'center', fontWeight: 900, color: '#0369a1', cursor: 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             TP {row.tpNo}
                           </div>
-                          <div style={{ width: '100%', padding: '0.5rem 0.4rem', fontSize: '0.78rem', background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '6px', color: '#047857', fontWeight: 800, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Lot No is automatically zeroed out and assigned by program">
-                            {assignedLot ? `#${assignedLot}` : 'Auto Lot'}
+                          <div style={{ position: 'relative', width: '100%' }}>
+                            {!isCustom ? (
+                              <select
+                                value={row.lotNo || currentLots[0] || ''}
+                                onChange={e => {
+                                  if (e.target.value === '__custom__') {
+                                    updateTpRow(idx, 'isCustomLot', true);
+                                    updateTpRow(idx, 'lotNo', '');
+                                  } else {
+                                    updateTpRow(idx, 'lotNo', e.target.value);
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.5rem 0.35rem',
+                                  fontSize: '0.82rem',
+                                  fontWeight: 800,
+                                  color: '#0f172a',
+                                  background: '#ffffff',
+                                  border: '1.5px solid #0284c7',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  boxSizing: 'border-box'
+                                }}
+                              >
+                                {currentLots.length > 0 ? (
+                                  <>
+                                    <optgroup label="Selected Challan Lots">
+                                      {currentLots.map((l, i) => {
+                                        const avail = availableLots.find(al => String(al.lotNo) === String(l));
+                                        return (
+                                          <option key={`cur-${i}`} value={l}>
+                                            Lot #{l} {avail?.currentStock != null ? `(${parseFloat(avail.currentStock).toFixed(1)}m)` : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </optgroup>
+                                    {availableLots.filter(al => !currentLots.includes(String(al.lotNo))).length > 0 && (
+                                      <optgroup label="Other Available Lots">
+                                        {availableLots.filter(al => !currentLots.includes(String(al.lotNo))).slice(0, 25).map((al, i) => (
+                                          <option key={`avail-${i}`} value={String(al.lotNo)}>
+                                            Lot #{al.lotNo} ({parseFloat(al.currentStock || 0).toFixed(1)}m)
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <option value="">Select Lot…</option>
+                                    {availableLots.slice(0, 35).map((al, i) => (
+                                      <option key={`avail-${i}`} value={String(al.lotNo)}>
+                                        Lot #{al.lotNo} ({parseFloat(al.currentStock || 0).toFixed(1)}m)
+                                      </option>
+                                    ))}
+                                  </>
+                                )}
+                                {row.lotNo && !currentLots.includes(String(row.lotNo)) && !availableLots.some(al => String(al.lotNo) === String(row.lotNo)) && (
+                                  <option value={row.lotNo}>Lot #{row.lotNo} (Manual)</option>
+                                )}
+                                <option value="__custom__">✏️ Custom Lot #…</option>
+                              </select>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', width: '100%' }}>
+                                <input
+                                  type="text"
+                                  value={row.lotNo ?? ''}
+                                  onChange={e => updateTpRow(idx, 'lotNo', e.target.value)}
+                                  placeholder="Lot #"
+                                  autoFocus
+                                  style={{
+                                    width: '100%',
+                                    padding: '0.5rem 0.35rem',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 800,
+                                    color: '#0f172a',
+                                    background: '#ffffff',
+                                    border: '1.5px solid #0284c7',
+                                    borderRadius: '6px',
+                                    textAlign: 'center',
+                                    boxSizing: 'border-box'
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  title="Switch to dropdown"
+                                  onClick={() => {
+                                    updateTpRow(idx, 'isCustomLot', false);
+                                    updateTpRow(idx, 'lotNo', currentLots[0] || '');
+                                  }}
+                                  style={{
+                                    border: '1px solid #cbd5e1',
+                                    background: '#f8fafc',
+                                    color: '#64748b',
+                                    borderRadius: '4px',
+                                    padding: '0.45rem 0.3rem',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <input
                             type="number"
