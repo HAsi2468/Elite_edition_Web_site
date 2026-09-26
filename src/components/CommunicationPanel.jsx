@@ -71,7 +71,10 @@ import {
   Reply,
   CornerUpRight,
   ChevronDown,
-  Calendar
+  Calendar,
+  Tag,
+  PhoneMissed,
+  PhoneCall
 } from 'lucide-react';
 
 const ICE_SERVERS = [
@@ -151,6 +154,20 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [chatSoundMuted, setChatSoundMuted] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('elite_chat_sound_muted') === 'true' : false);
   const [playingAudioId, setPlayingAudioId] = useState(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [isChatDragging, setIsChatDragging] = useState(false);
+
+  const audioElementRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
+  const chatDragCounterRef = useRef(0);
+  const touchStartXRef = useRef(null);
+
   const [activeMsgMenuId, setActiveMsgMenuId] = useState(null);
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [viewportHeight, setViewportHeight] = useState(null);
@@ -180,6 +197,18 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', handleResize);
         window.visualViewport.removeEventListener('scroll', handleResize);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioElementRef.current) {
+        audioElementRef.current.pause();
+        audioElementRef.current = null;
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
     };
   }, []);
@@ -663,6 +692,17 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
             roomId,
             caller: myId,
             recipientId
+          });
+          socket.emit('send-message', {
+            roomId,
+            senderId: myId,
+            content: `Missed ${type === 'video' ? 'video' : 'voice'} call`,
+            type: 'call-log',
+            activityMeta: {
+              callType: type,
+              status: 'missed',
+              timestamp: new Date().toISOString()
+            }
           });
         }
         setTimeout(() => endCall(true), 2500);
@@ -1376,6 +1416,20 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         callTimeoutRef.current = null;
       }
       stopCallRingtones();
+      const callSnapshot = activeCallRef.current;
+      if (callSnapshot && callSnapshot.roomId && socket) {
+        socket.emit('send-message', {
+          roomId: callSnapshot.roomId,
+          senderId: currentUser?._id || currentUser?.id,
+          content: `Missed ${callSnapshot.type === 'video' ? 'video' : 'voice'} call (User unavailable)`,
+          type: 'call-log',
+          activityMeta: {
+            callType: callSnapshot.type || 'voice',
+            status: 'missed',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
       setActiveCall((prev) => (prev ? {
         ...prev,
         status: 'ended',
@@ -1395,6 +1449,28 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       endCall(false);
     };
 
+    const handlePresenceSync = (onlineIds) => {
+      if (Array.isArray(onlineIds)) {
+        setOnlineUserIds(new Set(onlineIds.map(String)));
+      }
+    };
+
+    const handleUserTyping = (data) => {
+      if (!data) return;
+      const { roomId, username, isTyping } = data;
+      if (activeGroupRef.current && String(activeGroupRef.current._id) === String(roomId)) {
+        setTypingUsers((prev) => {
+          const uName = username || 'Someone';
+          if (isTyping) {
+            if (!prev.includes(uName)) return [...prev, uName];
+            return prev;
+          } else {
+            return prev.filter((u) => u !== uName);
+          }
+        });
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('receive-message', handleReceiveMessage);
     socket.on('message-acknowledged', handleAck);
@@ -1406,6 +1482,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     socket.on('room-messages-read', handleRoomMessagesRead);
     socket.on('poll-updated', handlePollUpdated);
     socket.on('communication-data-cleared', handleDataCleared);
+    socket.on('presence-sync', handlePresenceSync);
+    socket.on('user-typing', handleUserTyping);
     socket.on('incoming-call', handleIncomingCall);
     socket.on('call-accepted', handleCallAccepted);
     socket.on('call-declined', handleCallDeclined);
@@ -1427,6 +1505,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       socket.off('room-messages-read', handleRoomMessagesRead);
       socket.off('poll-updated', handlePollUpdated);
       socket.off('communication-data-cleared', handleDataCleared);
+      socket.off('presence-sync', handlePresenceSync);
+      socket.off('user-typing', handleUserTyping);
       socket.off('incoming-call', handleIncomingCall);
       socket.off('call-accepted', handleCallAccepted);
       socket.off('call-declined', handleCallDeclined);
@@ -1733,10 +1813,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
 
   const [uploadingFile, setUploadingFile] = useState(false);
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+  const processFileUpload = async (file) => {
     if (!file) return;
-
     if (file.size > 100 * 1024 * 1024) {
       alert('File size exceeds 100MB limit.');
       return;
@@ -1758,18 +1836,124 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       const res = await api.uploadChatAttachment(uploadFile, roomName);
       if (res && res.fileUrl) {
         setAttachedFile({
-          fileName: res.fileName || file.name,
+          fileName: res.fileName || file.name || `file_${Date.now()}`,
           fileType: file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'document',
           fileUrl: res.fileUrl,
           fileSize: res.fileSize || file.size,
         });
       } else {
-        alert('Failed to upload attachment to Cloudflare R2.');
+        alert('Failed to upload attachment.');
       }
     } catch (err) {
       alert('File upload failed: ' + err.message);
     } finally {
       setUploadingFile(false);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFileUpload(file);
+    e.target.value = '';
+  };
+
+  const handleChatDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatDragCounterRef.current += 1;
+    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+      setIsChatDragging(true);
+    }
+  };
+
+  const handleChatDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleChatDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatDragCounterRef.current -= 1;
+    if (chatDragCounterRef.current <= 0) {
+      chatDragCounterRef.current = 0;
+      setIsChatDragging(false);
+    }
+  };
+
+  const handleChatDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatDragCounterRef.current = 0;
+    setIsChatDragging(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      await processFileUpload(file);
+    }
+  };
+
+  const handlePlayVoiceNote = (msgId, audioUrl) => {
+    if (playingAudioId === msgId) {
+      if (audioElementRef.current) {
+        if (audioElementRef.current.paused) {
+          audioElementRef.current.play().then(() => setIsAudioPlaying(true)).catch(() => {});
+        } else {
+          audioElementRef.current.pause();
+          setIsAudioPlaying(false);
+        }
+      }
+    } else {
+      if (audioElementRef.current) {
+        audioElementRef.current.pause();
+      }
+      const audio = new Audio(audioUrl);
+      audio.playbackRate = playbackSpeed;
+      audioElementRef.current = audio;
+      setPlayingAudioId(msgId);
+      setIsAudioPlaying(true);
+      setAudioProgress(0);
+      setAudioCurrentTime(0);
+
+      audio.ontimeupdate = () => {
+        if (audio.duration) {
+          setAudioProgress((audio.currentTime / audio.duration) * 100);
+          setAudioCurrentTime(audio.currentTime);
+        }
+      };
+      audio.onended = () => {
+        setPlayingAudioId(null);
+        setIsAudioPlaying(false);
+        setAudioProgress(0);
+        setAudioCurrentTime(0);
+      };
+      audio.onerror = () => {
+        setPlayingAudioId(null);
+        setIsAudioPlaying(false);
+      };
+      audio.play().catch((err) => console.warn('Audio play failed/blocked:', err));
+    }
+  };
+
+  const handleAudioSeek = (e, msgId, defaultDuration) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const newPct = Math.max(0, Math.min(1, clickX / rect.width));
+    if (audioElementRef.current && playingAudioId === msgId) {
+      const targetDuration = audioElementRef.current.duration || defaultDuration || 1;
+      audioElementRef.current.currentTime = newPct * targetDuration;
+      setAudioProgress(newPct * 100);
+      setAudioCurrentTime(newPct * targetDuration);
+    }
+  };
+
+  const handleToggleAudioSpeed = () => {
+    const speeds = [1, 1.5, 2];
+    const nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.length;
+    const nextSpeed = speeds[nextIdx];
+    setPlaybackSpeed(nextSpeed);
+    if (audioElementRef.current) {
+      audioElementRef.current.playbackRate = nextSpeed;
     }
   };
 
@@ -2263,28 +2447,46 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  // Clipboard Screenshot Paste Handler
+  // Clipboard Screenshot Paste Handler (Supports Ctrl+V / Cmd+V Screenshots & Image Blobs)
   const handlePasteClipboard = async (e) => {
-    const items = e.clipboardData?.files;
-    if (!items || items.length === 0) return;
-    const file = items[0];
-    if (file && file.type.startsWith('image/')) {
-      e.preventDefault();
-      try {
-        const roomName = activeGroup?.name || 'General';
-        const uploadRes = await api.uploadChatAttachment(file, roomName);
-        if (uploadRes && uploadRes.fileUrl) {
-          setAttachedFile({
-            fileUrl: uploadRes.fileUrl,
-            fileName: file.name || `clipboard_${Date.now()}.png`,
-            fileType: 'image',
-            fileSize: file.size
-          });
+    let file = null;
+    if (e.clipboardData?.items) {
+      for (let i = 0; i < e.clipboardData.items.length; i++) {
+        const item = e.clipboardData.items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          file = item.getAsFile();
+          break;
         }
-      } catch (err) {
-        console.error('Failed to upload pasted image:', err);
-        alert('Failed to attach pasted screenshot');
       }
+    }
+    if (!file && e.clipboardData?.files && e.clipboardData.files.length > 0) {
+      const f = e.clipboardData.files[0];
+      if (f && f.type.startsWith('image/')) file = f;
+    }
+    if (file) {
+      e.preventDefault();
+      await processFileUpload(file);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setInputMessage(val);
+    if (activeGroup?._id) {
+      setRoomDrafts((prev) => ({ ...prev, [activeGroup._id]: val }));
+    }
+
+    if (activeGroup?._id && socket) {
+      const myName = currentUser?.name || currentUser?.username || 'Staff';
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        socket.emit('typing', { roomId: activeGroup._id, username: myName, isTyping: true });
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+        socket.emit('typing', { roomId: activeGroup._id, username: myName, isTyping: false });
+      }, 2500);
     }
   };
 
@@ -2486,6 +2688,12 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     setAttachedFile(null);
     setReplyToMessage(null);
     setIsUrgent(false);
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (isTypingRef.current && socket && activeGroup?._id) {
+      isTypingRef.current = false;
+      socket.emit('typing', { roomId: activeGroup._id, username: currentUser?.name || 'Staff', isTyping: false });
+    }
 
     if (activeGroup?._id) {
       setRoomDrafts((prev) => {
@@ -3093,7 +3301,24 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                       ) : (
                         <Building2 size={18} color={deptCol} />
                       )}
-                      <span className="phoenix-online-dot" title="Active now" />
+                      {isDirect ? (
+                        (() => {
+                          const colleagueId = colleague?._id || colleague?.id;
+                          const isOnline = colleagueId ? onlineUserIds.has(String(colleagueId)) : false;
+                          return (
+                            <span
+                              className="phoenix-online-dot"
+                              style={{
+                                background: isOnline ? '#22c55e' : '#94a3b8',
+                                borderColor: 'var(--bg-card, #ffffff)'
+                              }}
+                              title={isOnline ? 'Active now' : 'Offline'}
+                            />
+                          );
+                        })()
+                      ) : (
+                        <span className="phoenix-online-dot" title="Active channel" />
+                      )}
                     </div>
 
                     {/* Center & Right: Name, preview snippet, time, unread badge */}
@@ -3211,7 +3436,24 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                           ) : (
                             <Building2 size={18} color={deptCol} />
                           )}
-                          <span className="phoenix-online-dot" title="Active now" />
+                          {isDirect ? (
+                            (() => {
+                              const colleagueId = colleague?._id || colleague?.id;
+                              const isOnline = colleagueId ? onlineUserIds.has(String(colleagueId)) : false;
+                              return (
+                                <span
+                                  className="phoenix-online-dot"
+                                  style={{
+                                    background: isOnline ? '#22c55e' : '#94a3b8',
+                                    borderColor: 'var(--bg-card, #ffffff)'
+                                  }}
+                                  title={isOnline ? 'Active now' : 'Offline'}
+                                />
+                              );
+                            })()
+                          ) : (
+                            <span className="phoenix-online-dot" title="Active channel" />
+                          )}
                         </div>
 
                         {/* Name + Dropdown Chevron + Active Now Status */}
@@ -3245,17 +3487,33 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                             <ChevronDown size={15} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                           </button>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
-                            <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
-                              Active now
-                            </span>
-                          </div>
+                          {(() => {
+                            const colleagueId = colleague?._id || colleague?.id;
+                            const isOnline = isDirect && colleagueId ? onlineUserIds.has(String(colleagueId)) : false;
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: isDirect ? (isOnline ? '#22c55e' : '#94a3b8') : '#22c55e', display: 'inline-block' }} />
+                                <span style={{ fontSize: '0.72rem', color: isDirect ? (isOnline ? '#10b981' : 'var(--text-muted, #64748b)') : '#10b981', fontWeight: 600 }}>
+                                  {isDirect ? (isOnline ? 'Active now' : 'Offline') : 'Active channel'}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
 
-                      {/* Right: Phone, Video, and More Options Buttons (Phoenix 1:1) */}
+                      {/* Right: Media Folder, Phone, Video, and More Options Buttons (Phoenix 1:1) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: isMobileScreen ? '4px' : '8px', flexShrink: 0 }}>
+                        {/* Shared Media & Docs Drawer Button */}
+                        <button
+                          type="button"
+                          className="phoenix-action-btn-neutral"
+                          style={{ width: isMobileScreen ? 32 : 36, height: isMobileScreen ? 32 : 36 }}
+                          onClick={() => setShowGalleryModal(true)}
+                          title="Shared Media, Docs & Files"
+                        >
+                          <Folder size={isMobileScreen ? 14 : 16} color="var(--text-primary)" />
+                        </button>
                         {/* Phone Call Button */}
                         <button
                           type="button"
@@ -3537,9 +3795,37 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                 ref={chatScrollRef}
                 onScroll={handleChatScroll}
                 onClick={() => setActiveMsgMenuId(null)}
+                onDragEnter={handleChatDragEnter}
+                onDragOver={handleChatDragOver}
+                onDragLeave={handleChatDragLeave}
+                onDrop={handleChatDrop}
                 className="phoenix-chat-stream"
-                style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '4px' }}
+                style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}
               >
+                {/* Drag and Drop Visual Dropzone Overlay */}
+                {isChatDragging && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: '8px',
+                    background: 'rgba(37, 99, 235, 0.12)',
+                    border: '2px dashed #2563eb',
+                    borderRadius: '12px',
+                    backdropFilter: 'blur(3px)',
+                    zIndex: 50,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    pointerEvents: 'none'
+                  }}>
+                    <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                      <Paperclip size={24} />
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1e40af' }}>Drop file here to attach</div>
+                    <div style={{ fontSize: '0.75rem', color: '#3b82f6' }}>Screenshots, documents, audio or ERP records</div>
+                  </div>
+                )}
                 {loadingMoreMessages && (
                   <div style={{ textAlign: 'center', padding: '0.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                     <RefreshCw size={14} className="spin-loader" />
@@ -3674,6 +3960,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                     const isAudioMsg = msg.type === 'audio-voice' || (msg.attachment && msg.attachment.fileType === 'audio');
                     const isRecordCard = msg.type === 'record-card' || Boolean(msg.activityMeta && msg.activityMeta.module);
                     const isPollMsg = msg.type === 'poll' || Boolean(msg.pollMeta && msg.pollMeta.question);
+                    const isCallLog = msg.type === 'call-log' || Boolean(msg.activityMeta && msg.activityMeta.callType);
 
                     return (
                       <React.Fragment key={msg._id}>
@@ -3686,6 +3973,23 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                         )}
 
                         <div
+                          id={`msg_${msg._id}`}
+                          data-msg-id={msg._id}
+                          onTouchStart={(e) => {
+                            if (isMobileScreen) {
+                              touchStartXRef.current = e.touches[0].clientX;
+                            }
+                          }}
+                          onTouchEnd={(e) => {
+                            if (isMobileScreen && touchStartXRef.current !== null) {
+                              const diff = e.changedTouches[0].clientX - touchStartXRef.current;
+                              touchStartXRef.current = null;
+                              if (diff > 60) {
+                                setReplyToMessage(msg);
+                                if (navigator.vibrate) navigator.vibrate(30);
+                              }
+                            }
+                          }}
                           style={{
                             display: 'flex',
                             alignItems: 'flex-end',
@@ -3876,9 +4180,34 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                               </div>
                             )}
 
-                            {/* Quoted Reply Card */}
+                            {/* Quoted Reply Card (Click to jump) */}
                             {msg.replyTo && (
-                              <div style={{ background: isMe ? 'rgba(255,255,255,0.15)' : 'rgba(37,99,235,0.06)', borderRadius: '5px', borderLeft: isMe ? '3.5px solid #ffffff' : '3.5px solid #2563eb', padding: '3px 8px', marginBottom: '4px', fontSize: '0.74rem' }}>
+                              <div
+                                onClick={() => {
+                                  const targetId = msg.replyTo?._id || msg.replyTo?.id || (typeof msg.replyTo === 'string' ? msg.replyTo : null);
+                                  if (targetId) {
+                                    const el = document.getElementById(`msg_${targetId}`);
+                                    if (el) {
+                                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                      el.style.transition = 'background-color 0.4s ease';
+                                      el.style.backgroundColor = 'rgba(37,99,235,0.15)';
+                                      setTimeout(() => {
+                                        el.style.backgroundColor = '';
+                                      }, 1400);
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  cursor: 'pointer',
+                                  background: isMe ? 'rgba(255,255,255,0.15)' : 'rgba(37,99,235,0.06)',
+                                  borderRadius: '5px',
+                                  borderLeft: isMe ? '3.5px solid #ffffff' : '3.5px solid #2563eb',
+                                  padding: '3px 8px',
+                                  marginBottom: '4px',
+                                  fontSize: '0.74rem'
+                                }}
+                                title="Click to jump to replied message"
+                              >
                                 <div style={{ fontWeight: 700, color: isMe ? '#ffffff' : '#2563eb', fontSize: '0.7rem', marginBottom: '1px' }}>
                                   {typeof msg.replyTo.senderId === 'object' ? (msg.replyTo.senderId.name || msg.replyTo.senderId.username) : 'Staff Member'}
                                 </div>
@@ -3955,33 +4284,153 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                               </div>
                             )}
 
-                            {/* Audio Voice Player Card */}
+                            {/* Missed Call Log Card */}
+                            {isCallLog && (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '12px',
+                                padding: '0.55rem 0.85rem',
+                                background: isMe ? 'rgba(255,255,255,0.18)' : '#fff1f2',
+                                border: isMe ? '1px solid rgba(255,255,255,0.25)' : '1px solid #fecdd3',
+                                borderRadius: '10px',
+                                marginBottom: '0.35rem',
+                                minWidth: 210
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: '50%',
+                                    background: isMe ? 'rgba(255,255,255,0.2)' : '#fee2e2',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: isMe ? '#ffffff' : '#e11d48'
+                                  }}>
+                                    {msg.activityMeta?.callType === 'video' ? <Video size={16} /> : <PhoneMissed size={16} />}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '0.82rem', fontWeight: 800, color: isMe ? '#ffffff' : '#9f1239' }}>
+                                      {msg.content || `Missed ${msg.activityMeta?.callType || 'voice'} call`}
+                                    </div>
+                                    <div style={{ fontSize: '0.68rem', color: isMe ? 'rgba(255,255,255,0.85)' : '#be123c' }}>
+                                      {formatMessageTime(msg.createdAt)}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {!isMe && (
+                                  <button
+                                    type="button"
+                                    onClick={() => startCall(msg.activityMeta?.callType || 'voice')}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      background: '#e11d48',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      boxShadow: '0 2px 5px rgba(225,29,72,0.25)'
+                                    }}
+                                    title="Call back immediately"
+                                  >
+                                    <PhoneCall size={12} />
+                                    <span>Call Back</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Audio Voice Player Card (With Scrubber & Speed Control) */}
                             {isAudioMsg && msg.attachment && msg.attachment.fileUrl && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', background: isMe ? 'rgba(255,255,255,0.18)' : 'rgba(37,99,235,0.06)', borderRadius: '10px', marginBottom: '0.35rem' }}>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                padding: '0.5rem 0.75rem',
+                                background: isMe ? 'rgba(255,255,255,0.18)' : 'rgba(37,99,235,0.06)',
+                                borderRadius: '12px',
+                                marginBottom: '0.35rem',
+                                minWidth: 220,
+                                maxWidth: 290
+                              }}>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (playingAudioId === msg._id) {
-                                      setPlayingAudioId(null);
-                                    } else {
-                                      setPlayingAudioId(msg._id);
-                                      const audio = new Audio(msg.attachment.fileUrl);
-                                      audio.play();
-                                      audio.onended = () => setPlayingAudioId(null);
-                                    }
+                                  onClick={() => handlePlayVoiceNote(msg._id, msg.attachment.fileUrl)}
+                                  style={{
+                                    background: isMe ? '#ffffff' : '#2563eb',
+                                    color: isMe ? '#2563eb' : '#ffffff',
+                                    border: 'none',
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    flexShrink: 0,
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
                                   }}
-                                  style={{ background: isMe ? '#ffffff' : '#2563eb', color: isMe ? '#2563eb' : '#ffffff', border: 'none', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}
+                                  title={playingAudioId === msg._id && isAudioPlaying ? 'Pause' : 'Play'}
                                 >
-                                  {playingAudioId === msg._id ? <Pause size={15} /> : <Play size={15} />}
+                                  {playingAudioId === msg._id && isAudioPlaying ? <Pause size={16} /> : <Play size={16} />}
                                 </button>
 
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: '0.76rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', color: isMe ? '#ffffff' : '#0f172a' }}>
-                                    <Volume2 size={13} />
-                                    <span>Voice Note</span>
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div
+                                    onClick={(e) => handleAudioSeek(e, msg._id, msg.attachment.durationSec)}
+                                    style={{
+                                      width: '100%',
+                                      height: 6,
+                                      background: isMe ? 'rgba(255,255,255,0.3)' : 'rgba(37,99,235,0.2)',
+                                      borderRadius: 3,
+                                      cursor: 'pointer',
+                                      position: 'relative',
+                                      overflow: 'hidden'
+                                    }}
+                                    title="Seek audio position"
+                                  >
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${playingAudioId === msg._id ? audioProgress : 0}%`,
+                                        background: isMe ? '#ffffff' : '#2563eb',
+                                        borderRadius: 3,
+                                        transition: 'width 0.1s linear'
+                                      }}
+                                    />
                                   </div>
-                                  <div style={{ fontSize: '0.66rem', color: isMe ? 'rgba(255,255,255,0.85)' : '#64748b' }}>
-                                    {msg.attachment.durationSec || 5} sec
+
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: isMe ? 'rgba(255,255,255,0.9)' : '#64748b' }}>
+                                    <span>
+                                      {playingAudioId === msg._id
+                                        ? `${Math.floor(audioCurrentTime / 60)}:${String(Math.floor(audioCurrentTime % 60)).padStart(2, '0')}`
+                                        : (msg.attachment.durationSec ? `${Math.floor(msg.attachment.durationSec / 60)}:${String(Math.floor(msg.attachment.durationSec % 60)).padStart(2, '0')}` : 'Voice Note')}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={handleToggleAudioSpeed}
+                                      style={{
+                                        background: isMe ? 'rgba(255,255,255,0.25)' : 'rgba(37,99,235,0.12)',
+                                        color: isMe ? '#ffffff' : '#2563eb',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '0.65rem',
+                                        fontWeight: 800,
+                                        padding: '1px 5px',
+                                        cursor: 'pointer'
+                                      }}
+                                      title="Playback speed"
+                                    >
+                                      {playbackSpeed}x
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -4218,18 +4667,48 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                               style={{
                                 position: 'absolute',
                                 top: '2px',
-                                [isMe ? 'left' : 'right']: '-66px',
+                                [isMe ? 'left' : 'right']: '-220px',
                                 display: 'flex',
+                                alignItems: 'center',
                                 gap: '2px',
                                 background: 'rgba(255,255,255,0.95)',
-                                backdropFilter: 'blur(4px)',
+                                backdropFilter: 'blur(6px)',
                                 border: '1px solid #e2e8f0',
-                                borderRadius: '16px',
-                                padding: '2px 4px',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                                borderRadius: '20px',
+                                padding: '2px 6px',
+                                boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
                                 zIndex: 10
                               }}
                             >
+                              {/* 1-Click Quick Emoji Reaction Bar */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', borderRight: '1px solid #e2e8f0', paddingRight: '4px', marginRight: '2px' }}>
+                                {['👍', '❤️', '😂', '👏', '🔥', '✅'].map((emo) => (
+                                  <button
+                                    key={emo}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleReaction(msg._id, emo);
+                                    }}
+                                    className="quick-hover-emoji"
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontSize: '0.85rem',
+                                      padding: '2px',
+                                      borderRadius: '4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}
+                                    title={`React ${emo}`}
+                                  >
+                                    {emo}
+                                  </button>
+                                ))}
+                              </div>
+
                               <button
                                 type="button"
                                 onClick={() => setReplyToMessage(msg)}
@@ -4267,6 +4746,28 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                 })()}
                 <div ref={chatBottomRef} />
               </div>
+
+              {/* Real-time Typing Indicator Wave */}
+              {typingUsers.length > 0 && (
+                <div style={{
+                  padding: '4px 1rem',
+                  fontSize: '0.74rem',
+                  color: '#2563eb',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'var(--bg-card, #ffffff)',
+                  borderTop: '1px solid var(--border-light, #e3e6ed)'
+                }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#2563eb', display: 'inline-block', animation: 'typingBounce 1.4s infinite ease-in-out both' }} />
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#2563eb', display: 'inline-block', animation: 'typingBounce 1.4s infinite ease-in-out both', animationDelay: '0.2s' }} />
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#2563eb', display: 'inline-block', animation: 'typingBounce 1.4s infinite ease-in-out both', animationDelay: '0.4s' }} />
+                  </div>
+                  <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is typing...' : 'are typing...'}</span>
+                </div>
+              )}
 
               {/* Quoted Inline Reply Banner */}
               {replyToMessage && (
@@ -4376,13 +4877,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                             }
                           }, 100);
                         }}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setInputMessage(val);
-                          if (activeGroup?._id) {
-                            setRoomDrafts((prev) => ({ ...prev, [activeGroup._id]: val }));
-                          }
-                        }}
+                        onChange={handleInputChange}
                         style={{
                           width: '100%',
                           background: 'transparent',
@@ -4460,6 +4955,29 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                           title="Voice Note"
                         >
                           <Mic size={18} />
+                        </button>
+
+                        {/* 1-Tap ERP Share */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenShareModal('jobcard')}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            padding: '3px 8px',
+                            background: 'rgba(37,99,235,0.08)',
+                            color: '#2563eb',
+                            border: '1px solid rgba(37,99,235,0.2)',
+                            borderRadius: '12px',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                          title="Share ERP Job Cards, Designs, Invoices & Complaints"
+                        >
+                          <Tag size={13} />
+                          <span>ERP</span>
                         </button>
 
                         {/* More tools popover (Polls, Tasks, Job Cards, SOS) */}
