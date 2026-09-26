@@ -30,7 +30,8 @@ import {
   Settings,
   AlertCircle,
   FileCheck,
-  Users
+  Users,
+  Palette
 } from 'lucide-react';
 import { AVAILABLE_SCREENS } from '../config/screensConfig';
 import AdminSignedDocumentsApproval from './AdminSignedDocumentsApproval';
@@ -73,6 +74,7 @@ export default function AdminPanel() {
   // Form & Modal State
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null); // null means "Add Mode"
+  const [availableDesigners, setAvailableDesigners] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -80,6 +82,7 @@ export default function AdminPanel() {
     role: 'user',
     isMainAdmin: false,
     department: 'General',
+    designerName: '',
     canManageTasks: true,
     canBroadcastChat: true,
     canExportReports: true,
@@ -91,6 +94,7 @@ export default function AdminPanel() {
     canAdvanceJobStage: true,
     canViewJobCosts: true,
     canCreateDesigns: true,
+    canInputNewDesign: false,
     canEditDesigns: true,
     canDeleteDesigns: true,
     canViewDesignCosts: true,
@@ -231,6 +235,11 @@ export default function AdminPanel() {
 
   useEffect(() => {
     fetchUsers();
+    api.getPrintConfig().then(cfg => {
+      if (cfg && Array.isArray(cfg.designers)) {
+        setAvailableDesigners(cfg.designers);
+      }
+    }).catch(() => {});
   }, []);
 
   const fetchUsers = async () => {
@@ -412,6 +421,7 @@ export default function AdminPanel() {
       role: user.role || (user.permissions?.length === AVAILABLE_SCREENS.length ? 'admin' : 'user'),
       isMainAdmin: Boolean(user.isMainAdmin || user.email === 'harshitsidapara2468@gmail.com'),
       department: user.department || 'General',
+      designerName: user.designerName || '',
       status: user.status || 'Active',
       canManageTasks: user.canManageTasks !== undefined ? Boolean(user.canManageTasks) : true,
       canBroadcastChat: user.canBroadcastChat !== undefined ? Boolean(user.canBroadcastChat) : true,
@@ -424,6 +434,7 @@ export default function AdminPanel() {
       canAdvanceJobStage: user.canAdvanceJobStage !== undefined ? Boolean(user.canAdvanceJobStage) : true,
       canViewJobCosts: user.canViewJobCosts !== undefined ? Boolean(user.canViewJobCosts) : true,
       canCreateDesigns: user.canCreateDesigns !== undefined ? Boolean(user.canCreateDesigns) : true,
+      canInputNewDesign: user.canInputNewDesign !== undefined ? Boolean(user.canInputNewDesign) : false,
       canEditDesigns: user.canEditDesigns !== undefined ? Boolean(user.canEditDesigns) : true,
       canDeleteDesigns: user.canDeleteDesigns !== undefined ? Boolean(user.canDeleteDesigns) : true,
       canViewDesignCosts: user.canViewDesignCosts !== undefined ? Boolean(user.canViewDesignCosts) : true,
@@ -457,6 +468,7 @@ export default function AdminPanel() {
       role: 'user',
       isMainAdmin: false,
       department: 'General',
+      designerName: '',
       status: 'Active',
       canManageTasks: true,
       canBroadcastChat: true,
@@ -469,6 +481,7 @@ export default function AdminPanel() {
       canAdvanceJobStage: true,
       canViewJobCosts: true,
       canCreateDesigns: true,
+      canInputNewDesign: false,
       canEditDesigns: true,
       canDeleteDesigns: true,
       canViewDesignCosts: true,
@@ -504,6 +517,7 @@ export default function AdminPanel() {
       role: 'user',
       isMainAdmin: false,
       department: 'General',
+      designerName: '',
       status: 'Active',
       canManageTasks: true,
       canBroadcastChat: true,
@@ -558,6 +572,7 @@ export default function AdminPanel() {
           canAdvanceJobStage: formData.canAdvanceJobStage,
           canViewJobCosts: formData.canViewJobCosts,
           canCreateDesigns: formData.canCreateDesigns,
+          canInputNewDesign: formData.canInputNewDesign,
           canEditDesigns: formData.canEditDesigns,
           canDeleteDesigns: formData.canDeleteDesigns,
           canViewDesignCosts: formData.canViewDesignCosts,
@@ -617,6 +632,7 @@ export default function AdminPanel() {
           canAdvanceJobStage: formData.canAdvanceJobStage,
           canViewJobCosts: formData.canViewJobCosts,
           canCreateDesigns: formData.canCreateDesigns,
+          canInputNewDesign: formData.canInputNewDesign,
           canEditDesigns: formData.canEditDesigns,
           canDeleteDesigns: formData.canDeleteDesigns,
           canViewDesignCosts: formData.canViewDesignCosts,
@@ -938,19 +954,32 @@ export default function AdminPanel() {
                             </td>
                             <td>
                               <div style={{ color: '#334155', fontWeight: 600, fontSize: '0.82rem' }}>{u.email}</div>
-                              <span style={{
-                                display: 'inline-block',
-                                marginTop: '2px',
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                color: '#475569',
-                                background: '#f1f5f9',
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                border: '1px solid #cbd5e1'
-                              }}>
-                                📁 {u.department || 'General'}
-                              </span>
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                <span style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  color: '#475569',
+                                  background: '#f1f5f9',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid #cbd5e1'
+                                }}>
+                                  📁 {u.department || 'General'}
+                                </span>
+                                {u.designerName && (
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    color: '#1d4ed8',
+                                    background: '#eff6ff',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    border: '1px solid #bfdbfe'
+                                  }}>
+                                    🎨 {u.designerName}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td>
                               <span style={{
@@ -1313,6 +1342,24 @@ export default function AdminPanel() {
                           <option value="Inactive">🔴 Inactive / Suspended</option>
                         </select>
                       </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>🎨 Connected Designer (Settings &rarr; Designers)</label>
+                        <select
+                          name="designerName"
+                          value={formData.designerName || ''}
+                          onChange={handleInputChange}
+                          style={styles.selectInput}
+                        >
+                          <option value="">-- None (Not a Designer) --</option>
+                          {availableDesigners.map((d, i) => (
+                            <option key={i} value={d}>👤 {d}</option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '3px', display: 'block' }}>
+                          When selected, user will see only their own designs on the Designer Screen.
+                        </span>
+                      </div>
                     </div>
 
                     {/* Action & Operational Privileges Card */}
@@ -1333,7 +1380,7 @@ export default function AdminPanel() {
                               ...p,
                               canManageTasks: true, canBroadcastChat: true, canExportReports: true, canDeleteRecords: true, canViewFinancials: true,
                               canCreateJobCards: true, canEditJobCards: true, canDeleteJobCards: true, canAdvanceJobStage: true, canViewJobCosts: true,
-                              canCreateDesigns: true, canEditDesigns: true, canDeleteDesigns: true, canViewDesignCosts: true,
+                              canCreateDesigns: true, canInputNewDesign: true, canEditDesigns: true, canDeleteDesigns: true, canViewDesignCosts: true,
                               canAddFabricInward: true, canIssueFabricOutward: true, canTransferFabricLot: true, canDeleteFabricLogs: true, canViewFabricPrices: true,
                               canCreateInvoices: true, canEditInvoiceRates: true, canCancelInvoices: true, canRecordPayments: true,
                               canCreateStitchingJobs: true, canIssueStitchingChallans: true, canManageWorkerRates: true
@@ -1349,7 +1396,7 @@ export default function AdminPanel() {
                               ...p,
                               canManageTasks: false, canBroadcastChat: false, canExportReports: false, canDeleteRecords: false, canViewFinancials: false,
                               canCreateJobCards: false, canEditJobCards: false, canDeleteJobCards: false, canAdvanceJobStage: false, canViewJobCosts: false,
-                              canCreateDesigns: false, canEditDesigns: false, canDeleteDesigns: false, canViewDesignCosts: false,
+                              canCreateDesigns: false, canInputNewDesign: false, canEditDesigns: false, canDeleteDesigns: false, canViewDesignCosts: false,
                               canAddFabricInward: false, canIssueFabricOutward: false, canTransferFabricLot: false, canDeleteFabricLogs: false, canViewFabricPrices: false,
                               canCreateInvoices: false, canEditInvoiceRates: false, canCancelInvoices: false, canRecordPayments: false,
                               canCreateStitchingJobs: false, canIssueStitchingChallans: false, canManageWorkerRates: false
@@ -1428,6 +1475,10 @@ export default function AdminPanel() {
                             <span>🎨 Design Catalogue & Assets</span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                            <label style={styles.microLabel(formData.canInputNewDesign)}>
+                              <input type="checkbox" checked={formData.canInputNewDesign} onChange={e => setFormData(p => ({ ...p, canInputNewDesign: e.target.checked }))} />
+                              <span>➕ Input New Design (Designer Screen)</span>
+                            </label>
                             <label style={styles.microLabel(formData.canCreateDesigns)}>
                               <input type="checkbox" checked={formData.canCreateDesigns} onChange={e => setFormData(p => ({ ...p, canCreateDesigns: e.target.checked }))} />
                               <span>🎨 Create & Upload Designs</span>

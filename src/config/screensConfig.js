@@ -48,6 +48,7 @@ export const AVAILABLE_SCREENS = [
   { id: 'jobcards_business_connection', label: 'Elite Prints: Business Connection', category: 'Elite Digital Print' },
   { id: 'jobcards_list', label: 'Elite Prints: Job Card List', category: 'Elite Digital Print' },
   { id: 'jobcards_catalogue', label: 'Elite Prints: Design Catalog', category: 'Elite Digital Print' },
+  { id: 'jobcards_sample', label: 'Elite Prints: Sample Design Screen', category: 'Elite Digital Print' },
   { id: 'jobcards_tracking', label: 'Elite Prints: Job Card Tracking', category: 'Elite Digital Print' },
   { id: 'jobcards_master', label: 'Elite Prints: Design Master (100 Pic)', category: 'Elite Digital Print' },
   { id: 'jobcards_billing_elite', label: 'Elite Prints: Elite Edition Billing', category: 'Elite Digital Print' },
@@ -55,6 +56,7 @@ export const AVAILABLE_SCREENS = [
   { id: 'jobcards_raw_materials', label: 'Elite Prints: Raw Materials', category: 'Elite Digital Print' },
   { id: 'jobcards_complain', label: 'Elite Prints: Complain Module', category: 'Elite Digital Print' },
   { id: 'jobcards_qa', label: 'Elite Prints: QA & Quality Checking', category: 'Elite Digital Print' },
+  { id: 'designer_screen', label: 'Elite Prints: Designer Screen', category: 'Elite Digital Print' },
   { id: 'expense_dashboard', label: 'Elite Prints: Department Expenses', category: 'Elite Digital Print' },
   { id: 'jobcards_settings', label: 'Elite Prints: Print Settings', category: 'Elite Digital Print' },
 

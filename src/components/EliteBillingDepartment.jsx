@@ -13,6 +13,7 @@ import { triggerEliteAlert } from './EliteModalDialog';
 import DateRangePicker from './DateRangePicker';
 import SignedDocumentUploadModal from './SignedDocumentUploadModal';
 import SignedDocumentPreviewModal from './SignedDocumentPreviewModal';
+import * as XLSX from 'xlsx';
 
 const R2_PUBLIC_BASE = 'https://pub-66cb4aaa7dca442893dd7569e70ff7bd.r2.dev';
 
@@ -848,7 +849,65 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
         return;
       }
 
-      if (ledgerFormat === 'csv' || ledgerFormat === 'excel') {
+      if (ledgerFormat === 'excel') {
+        const wb = XLSX.utils.book_new();
+        const rows = [
+          ['ELITE DIGITAL PRINTS — PARTY LEDGER STATEMENT'],
+          ['Party Name:', partyName],
+          ['GSTIN:', selectedParty.gstin || 'N/A', 'Phone:', selectedParty.phone || 'N/A'],
+          ['Period:', `${startD ? formatDateDDMMYYYY(startD) : 'Start'} to ${endD ? formatDateDDMMYYYY(endD) : 'Present'}`],
+          ['Opening Balance (₹):', Number(ledger.openingBalance) || 0],
+          [],
+          ['Date', 'Voucher No', 'Particulars', 'Department', 'Debit (₹)', 'Credit (₹)', 'Running Balance (₹)', 'Dr/Cr']
+        ];
+
+        ledger.transactions.forEach(t => {
+          rows.push([
+            t.date,
+            t.voucherNo,
+            t.particulars,
+            t.department,
+            Number(t.debit) || 0,
+            Number(t.credit) || 0,
+            Number(Math.abs(t.runningBalance)) || 0,
+            t.balType
+          ]);
+        });
+
+        rows.push([]);
+        rows.push([
+          'TOTALS',
+          '',
+          '',
+          '',
+          Number(ledger.totalDebit) || 0,
+          Number(ledger.totalCredit) || 0,
+          Number(Math.abs(ledger.closingBalance)) || 0,
+          ledger.closingBalance >= 0 ? 'Dr' : 'Cr'
+        ]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Column widths for professional formatting
+        ws['!cols'] = [
+          { wch: 14 },
+          { wch: 22 },
+          { wch: 45 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 20 },
+          { wch: 8 },
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Party Ledger');
+        const fileName = `Ledger_${partyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        triggerPushNotification('📊 Excel Export Ready', `Party statement for ${partyName} exported as XLSX.`, 'success');
+        return;
+      }
+
+      if (ledgerFormat === 'csv') {
         let csvContent = `ELITE DIGITAL PRINTS — PARTY LEDGER STATEMENT\n`;
         csvContent += `Party Name: "${partyName}"\n`;
         csvContent += `Period: ${startD ? formatDateDDMMYYYY(startD) : 'Start'} to ${endD ? formatDateDDMMYYYY(endD) : 'Present'}\n`;
@@ -1010,6 +1069,74 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
         link.click();
         document.body.removeChild(link);
         triggerPushNotification('🏛️ Tally XML Ready', `All-Parties Tally XML Master Ledgers exported successfully.`, 'success');
+        return;
+      }
+
+      if (ledgerFormat === 'excel') {
+        const wb = XLSX.utils.book_new();
+        const rows = [
+          ['ELITE DIGITAL PRINTS — ALL-PARTIES MASTER LEDGER SUMMARY'],
+          ['Report Date:', new Date().toLocaleDateString('en-IN')],
+          ['Period:', `${startD ? formatDateDDMMYYYY(startD) : 'Start'} to ${endD ? formatDateDDMMYYYY(endD) : 'Present'}`],
+          [],
+          ['Party Code', 'Party Name', 'GSTIN', 'Phone', 'Opening Balance (₹)', 'Total Billed (₹)', 'Total Paid (₹)', 'Closing Balance (₹)', 'Status']
+        ];
+
+        let grandBilled = 0;
+        let grandPaid = 0;
+        let grandBal = 0;
+
+        customers.forEach(cust => {
+          const partyLedger = computePartyLedger(cust._id, startD, endD);
+          grandBilled += partyLedger.totalDebit;
+          grandPaid += partyLedger.totalCredit;
+          grandBal += partyLedger.closingBalance;
+
+          rows.push([
+            `CUST-${cust._id.slice(-4).toUpperCase()}`,
+            cust.businessName || cust.name,
+            cust.gstin || 'N/A',
+            cust.phone || 'N/A',
+            Number(partyLedger.openingBalance) || 0,
+            Number(partyLedger.totalDebit) || 0,
+            Number(partyLedger.totalCredit) || 0,
+            Number(partyLedger.closingBalance) || 0,
+            partyLedger.closingBalance > 0 ? 'Overdue' : 'Active'
+          ]);
+        });
+
+        rows.push([]);
+        rows.push([
+          'GRAND TOTALS',
+          '',
+          '',
+          '',
+          '',
+          Number(grandBilled) || 0,
+          Number(grandPaid) || 0,
+          Number(grandBal) || 0,
+          ''
+        ]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Column widths for professional formatting
+        ws['!cols'] = [
+          { wch: 14 },
+          { wch: 35 },
+          { wch: 20 },
+          { wch: 16 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 22 },
+          { wch: 12 },
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Master Ledger');
+        const fileName = `Master_Ledger_Summary_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        triggerPushNotification('📊 Excel Export Ready', `All-Parties Master Ledger exported as XLSX.`, 'success');
         return;
       }
 
@@ -1626,8 +1753,12 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
 
   const handleResyncMetersFromChallans = async () => {
     try {
-      const res = await api.getFabricChallans();
-      const allChallans = Array.isArray(res) ? res : (res?.data || []);
+      const [resChallans, resJobs] = await Promise.all([
+        api.getFabricChallans(),
+        api.getJobCards().catch(() => ({ data: [] }))
+      ]);
+      const allChallans = Array.isArray(resChallans) ? resChallans : (resChallans?.data || []);
+      const allJobs = Array.isArray(resJobs) ? resJobs : (resJobs?.data || []);
 
       let updatedCount = 0;
       setInvoiceForm(f => {
@@ -1640,12 +1771,87 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             return itemChallanNoStr.includes(cNo) || itemChallanNoStr.includes(rawNo);
           });
 
-          if (matchChallan && matchChallan.totalMtr !== undefined && matchChallan.totalMtr !== null) {
+          if (!matchChallan) return it;
+
+          let itemChanged = false;
+          const updatedItem = { ...it };
+
+          // 1. Re-sync Metres / Qty
+          if (matchChallan.totalMtr !== undefined && matchChallan.totalMtr !== null) {
             const newMtr = Number(matchChallan.totalMtr) || 0;
-            if (newMtr !== Number(it.qty)) {
-              updatedCount++;
-              return { ...it, qty: newMtr };
+            if (newMtr > 0 && newMtr !== Number(it.qty)) {
+              updatedItem.qty = newMtr;
+              itemChanged = true;
             }
+          }
+
+          // 2. Re-sync Fabric Name & Description from Challan / Job Card
+          const chJobNo = String(matchChallan.jobNo || it.jobNo || '').trim();
+          const matchedJob = chJobNo ? allJobs.find(j => {
+            const jNum = String(j.jobNo || '').replace(/\D/g, '');
+            const targetNum = chJobNo.replace(/\D/g, '');
+            return (targetNum && jNum === targetNum) || String(j.jobNo).toUpperCase() === chJobNo.toUpperCase();
+          }) : null;
+
+          const latestFabric = (matchChallan.fabricName || matchChallan.fabric || matchedJob?.fabric || '').trim();
+          const chNoStr = matchChallan.challanNo
+            ? (String(matchChallan.challanNo).startsWith('PCH') || String(matchChallan.challanNo).startsWith('EDP')
+                ? String(matchChallan.challanNo)
+                : `EDP-${matchChallan.challanNo}`)
+            : (it.ourChallanNo || '');
+
+          if (latestFabric) {
+            if (updatedItem.fabric !== latestFabric || updatedItem.fabricName !== latestFabric) {
+              updatedItem.fabric = latestFabric;
+              updatedItem.fabricName = latestFabric;
+              itemChanged = true;
+            }
+
+            const expectedDesc = chNoStr ? `Challan ${chNoStr} | Fabric: ${latestFabric}` : `Fabric: ${latestFabric}`;
+            if (updatedItem.description !== expectedDesc) {
+              updatedItem.description = expectedDesc;
+              itemChanged = true;
+            }
+          }
+
+          // 3. Re-sync Item Name if panna changed
+          const pannaStr = String(matchChallan.panna || matchedJob?.panna || '').trim();
+          if (pannaStr && updatedItem.itemName && updatedItem.itemName.startsWith('DIGITAL PRINT JOB WORK')) {
+            let newItemName = 'DIGITAL PRINT JOB WORK 58"';
+            if (pannaStr.includes('36')) newItemName = 'DIGITAL PRINT JOB WORK 36"';
+            else if (pannaStr.includes('44')) newItemName = 'DIGITAL PRINT JOB WORK 44"';
+            else if (pannaStr.includes('58')) newItemName = 'DIGITAL PRINT JOB WORK 58"';
+            else if (pannaStr) newItemName = `DIGITAL PRINT JOB WORK ${pannaStr.replace(/['"]/g, '')}"`;
+
+            if (updatedItem.itemName !== newItemName) {
+              updatedItem.itemName = newItemName;
+              itemChanged = true;
+            }
+          }
+
+          // 4. Re-sync Job No, Lot No, Vendor Challan, Design Image
+          if (matchChallan.jobNo && matchChallan.jobNo !== updatedItem.jobNo) {
+            updatedItem.jobNo = matchChallan.jobNo;
+            itemChanged = true;
+          }
+          if (matchChallan.lotNo && matchChallan.lotNo !== updatedItem.lotNo) {
+            updatedItem.lotNo = matchChallan.lotNo;
+            itemChanged = true;
+          }
+          const vChallan = matchChallan.vendorChallanNo || matchChallan.partyChallan || '';
+          if (vChallan && vChallan !== updatedItem.partyChallan) {
+            updatedItem.partyChallan = vChallan;
+            itemChanged = true;
+          }
+          const dImg = matchChallan.designImage || matchChallan.imageUrl || matchedJob?.imageUrl1 || matchedJob?.imageUrl2 || '';
+          if (dImg && !updatedItem.imageUrl) {
+            updatedItem.imageUrl = dImg;
+            itemChanged = true;
+          }
+
+          if (itemChanged) {
+            updatedCount++;
+            return updatedItem;
           }
           return it;
         });
@@ -1654,13 +1860,13 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
       });
 
       if (updatedCount > 0) {
-        triggerPushNotification('🔄 Metres Re-synced!', `Updated ${updatedCount} line item(s) with the latest metres from Delivery Challan(s).`, 'success');
+        triggerPushNotification('🔄 Challan Details Re-synced!', `Updated ${updatedCount} line item(s) with latest Fabric Name, Metres & details from Delivery Challan(s).`, 'success');
       } else {
-        triggerPushNotification('ℹ️ Metres Up-to-Date', 'Line item metres are already up-to-date with Delivery Challans.', 'info');
+        triggerPushNotification('ℹ️ Details Up-to-Date', 'Line item Fabric Name and Metres are already up-to-date with Delivery Challans.', 'info');
       }
     } catch (e) {
-      console.error('Error re-syncing metres from challans:', e);
-      triggerEliteAlert('Sync Error', 'Failed to fetch latest Delivery Challans to re-sync metres.', 'error');
+      console.error('Error re-syncing details from challans:', e);
+      triggerEliteAlert('Sync Error', 'Failed to fetch latest Delivery Challans to re-sync details.', 'error');
     }
   };
 
@@ -2608,9 +2814,9 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
                       alignItems: 'center',
                       gap: '0.3rem'
                     }}
-                    title="Fetch latest metres from linked Delivery Challan(s)"
+                    title="Fetch latest metres, fabric name & job details from linked Delivery Challan(s)"
                   >
-                    <RefreshCw size={13} /> 🔄 Re-sync Meters from Challan
+                    <RefreshCw size={13} /> 🔄 Re-sync Fabric & Meters
                   </button>
                   <button type="button" onClick={handleAddItemRow} className="btn-secondary" style={{ padding: '0.35rem 0.8rem', fontSize: '0.75rem' }}>
                     <Plus size={13} /> Add Item Row
@@ -2654,6 +2860,19 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
                           {itemsList.map(item => <option key={item._id} value={item.itemName} />)}
                         </datalist>
                       </div>
+
+                      {/* Visible Fabric & Description badge so the user sees the fabric name! */}
+                      {(it.fabric || it.fabricName || it.description) && (
+                        <div style={{ fontSize: '0.72rem', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: 4, border: '1px solid #c7d2fe', display: 'flex', alignItems: 'center', gap: 5, width: 'fit-content' }}>
+                          <span>🧵</span>
+                          <span style={{ fontWeight: 700 }}>
+                            {it.fabric || it.fabricName ? `Fabric: ${it.fabric || it.fabricName}` : it.description}
+                          </span>
+                          {it.description && !it.description.includes(it.fabric || it.fabricName || '') && (
+                            <span style={{ color: '#64748b', fontWeight: 500 }}>({it.description})</span>
+                          )}
+                        </div>
+                      )}
 
                       {/* Sub-inputs: Job No, Lot No, Party Challan, Our Challan, Image URL */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1.5fr', gap: '0.3rem' }}>
