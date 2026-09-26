@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { api, getBaseUrl } from '../services/api';
 import { useSocket } from '../contexts/SocketContext';
 import TaskManagerPanel from './TaskManagerPanel';
@@ -73,6 +74,27 @@ import {
   Calendar
 } from 'lucide-react';
 
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+];
 
 export default function CommunicationPanel({ currentUser, onNavigateTab, initialMainTab = 'chat', onUnreadChange }) {
   const [mainTab, setMainTab] = useState(initialMainTab); // 'chat' | 'task'
@@ -185,6 +207,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
   const remoteVideoRef = useRef(null);
   const isNearBottomRef = useRef(true);
   const activeCallRef = useRef(null);
+  const iceCandidatesQueue = useRef([]);
+  const callTimeoutRef = useRef(null);
 
   // Job Card PDF preview modal state
   const [pdfPreviewCard, setPdfPreviewCard] = useState(null);
@@ -360,7 +384,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         ringtoneAudioCtxRef.current = new AudioCtx();
       }
       if (ringtoneAudioCtxRef.current.state === 'suspended') {
-        ringtoneAudioCtxRef.current.resume();
+        ringtoneAudioCtxRef.current.resume().catch(() => {});
       }
       const ctx = ringtoneAudioCtxRef.current;
       const osc1 = ctx.createOscillator();
@@ -372,7 +396,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       osc1.frequency.setValueAtTime(freq1, ctx.currentTime);
       osc2.frequency.setValueAtTime(freq2, ctx.currentTime);
 
-      gainNode.gain.setValueAtTime(0.12, ctx.currentTime);
+      gainNode.gain.setValueAtTime(0.22, ctx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
 
       osc1.connect(gainNode);
@@ -390,12 +414,18 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
 
   const startIncomingRingtone = () => {
     stopCallRingtones();
-    playTone(587.33, 880, 400);
-    setTimeout(() => playTone(659.25, 987.77, 600), 450);
+    playTone(587.33, 880, 450);
+    setTimeout(() => playTone(659.25, 987.77, 650), 500);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([350, 150, 350, 150, 600]); } catch (e) {}
+    }
     ringtoneIntervalRef.current = setInterval(() => {
-      playTone(587.33, 880, 400);
-      setTimeout(() => playTone(659.25, 987.77, 600), 450);
-    }, 2200);
+      playTone(587.33, 880, 450);
+      setTimeout(() => playTone(659.25, 987.77, 650), 500);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([350, 150, 350, 150, 600]); } catch (e) {}
+      }
+    }, 2400);
   };
 
   const startOutgoingRingback = () => {
@@ -410,6 +440,9 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     if (ringtoneIntervalRef.current) {
       clearInterval(ringtoneIntervalRef.current);
       ringtoneIntervalRef.current = null;
+    }
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(0); } catch (e) {}
     }
   };
 
@@ -509,25 +542,30 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       peerConnectionRef.current = null;
     }
 
+    // Reset ICE candidates queue for fresh call handshake
+    iceCandidatesQueue.current = [];
+
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ]
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 10
     });
     peerConnectionRef.current = pc;
 
     pc.onicecandidate = (event) => {
       if (event.candidate && socket && roomId) {
+        const otherId = activeCallRef.current?.recipientId || activeCallRef.current?.callerId;
         socket.emit('webrtc-ice-candidate', {
           roomId,
-          candidate: event.candidate
+          candidate: event.candidate,
+          targetUserId: otherId,
+          caller: activeCallRef.current?.callerId,
+          recipientId: activeCallRef.current?.recipientId
         });
       }
     };
 
     pc.ontrack = (event) => {
+      console.log('WebRTC ontrack received:', event.track.kind);
       const remoteStream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = remoteStream;
@@ -535,12 +573,35 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       }
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch((e) => console.warn('Remote video autoplay:', e));
       }
     };
 
     pc.onconnectionstatechange = () => {
+      console.log('WebRTC connectionState:', pc.connectionState);
       if (pc.connectionState === 'connected') {
-        setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
+        if (callTimeoutRef.current) {
+          clearTimeout(callTimeoutRef.current);
+          callTimeoutRef.current = null;
+        }
+        stopCallRingtones();
+        setActiveCall((prev) => (prev ? { ...prev, status: 'connected', error: null } : null));
+      } else if (pc.connectionState === 'failed') {
+        if (pc.restartIce) {
+          pc.restartIce();
+        }
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('WebRTC iceConnectionState:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (callTimeoutRef.current) {
+          clearTimeout(callTimeoutRef.current);
+          callTimeoutRef.current = null;
+        }
+        stopCallRingtones();
+        setActiveCall((prev) => (prev ? { ...prev, status: 'connected', error: null } : null));
       }
     };
 
@@ -564,6 +625,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       if (other) recipientId = typeof other === 'object' ? (other._id || other.id) : other;
     }
 
+    const myId = currentUser?._id || currentUser?.id;
+
     setActiveCall({
       type,
       recipientName: recipient,
@@ -574,7 +637,9 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       isSpeakerOn: true,
       isScreenSharing: false,
       error: null,
-      roomId
+      roomId,
+      recipientId,
+      callerId: myId
     });
     setCallDuration(0);
     setShowDialpad(false);
@@ -583,7 +648,40 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     // Play outgoing ringback tone
     startOutgoingRingback();
 
+    // 32-second auto-timeout if user does not answer / network unreachable
+    if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
+    callTimeoutRef.current = setTimeout(() => {
+      if (activeCallRef.current && activeCallRef.current.status === 'calling') {
+        stopCallRingtones();
+        setActiveCall((prev) => (prev ? {
+          ...prev,
+          status: 'ended',
+          error: 'User did not answer (Unavailable)'
+        } : null));
+        if (socket && roomId) {
+          socket.emit('call-timeout', {
+            roomId,
+            caller: myId,
+            recipientId
+          });
+        }
+        setTimeout(() => endCall(true), 2500);
+      }
+    }, 32000);
+
     const stream = await initLocalMedia(type);
+    if (!stream) {
+      stopCallRingtones();
+      if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
+      setActiveCall((prev) => (prev ? {
+        ...prev,
+        status: 'ended',
+        error: 'Microphone/Camera access denied. Please allow permission in browser settings.'
+      } : null));
+      setTimeout(() => endCall(false), 3000);
+      return;
+    }
+
     const pc = createPeerConnection(roomId);
     if (stream && pc) {
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
@@ -593,8 +691,9 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       socket.emit('call-user', {
         roomId,
         recipientId,
+        recipientName: recipient,
         callType: type,
-        caller: currentUser?._id || currentUser?.id,
+        caller: myId,
         callerName: currentUser?.name || currentUser?.username || 'Team Member',
         callerAvatar: currentUser?.avatar || null
       });
@@ -603,11 +702,19 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
 
   const endCall = (shouldEmit = true) => {
     stopCallRingtones();
+    if (callTimeoutRef.current) {
+      clearTimeout(callTimeoutRef.current);
+      callTimeoutRef.current = null;
+    }
+    iceCandidatesQueue.current = [];
+
     const currentRoomId = activeCallRef.current?.roomId || activeGroup?._id;
     if (shouldEmit && socket && currentRoomId) {
       socket.emit('end-call', {
         roomId: currentRoomId,
-        from: currentUser?._id || currentUser?.id
+        from: currentUser?._id || currentUser?.id,
+        recipientId: activeCallRef.current?.recipientId,
+        caller: activeCallRef.current?.callerId
       });
     }
 
@@ -659,7 +766,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       setCallDuration(0);
       setShowDialpad(false);
       setDialpadDigits('');
-    }, 1000);
+    }, 1200);
   };
 
   const toggleMute = () => {
@@ -730,7 +837,13 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     const roomId = incomingCall.roomId;
     const callerName = incomingCall.callerName || 'Team Member';
     const callerId = incomingCall.caller || null;
+    const myId = currentUser?._id || currentUser?.id;
     setIncomingCall(null);
+
+    // Make sure callee is actively joined to the socket room
+    if (socket && roomId) {
+      socket.emit('join-room', roomId);
+    }
 
     setActiveCall({
       type,
@@ -742,13 +855,26 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       isSpeakerOn: true,
       isScreenSharing: false,
       error: null,
-      roomId
+      roomId,
+      callerId,
+      recipientId: myId
     });
     setCallDuration(0);
     setShowDialpad(false);
     setDialpadDigits('');
 
     const stream = await initLocalMedia(type);
+    if (!stream) {
+      stopCallRingtones();
+      setActiveCall((prev) => (prev ? {
+        ...prev,
+        status: 'ended',
+        error: 'Microphone/Camera access denied. Please allow permission in browser settings.'
+      } : null));
+      setTimeout(() => endCall(false), 3000);
+      return;
+    }
+
     const pc = createPeerConnection(roomId);
     if (stream && pc) {
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
@@ -758,7 +884,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       socket.emit('accept-call', {
         roomId,
         caller: callerId,
-        accepter: currentUser?._id || currentUser?.id
+        accepter: myId
       });
     }
   };
@@ -1152,11 +1278,18 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       }
     };
 
-    const handleCallAccepted = async () => {
+    const handleCallAccepted = async (data) => {
+      if (callTimeoutRef.current) {
+        clearTimeout(callTimeoutRef.current);
+        callTimeoutRef.current = null;
+      }
       stopCallRingtones();
       setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
       const pc = peerConnectionRef.current;
       const rId = activeCallRef.current?.roomId || activeGroupIdRef.current;
+      const myId = currentUser?._id || currentUser?.id;
+      const otherId = data?.accepter || activeCallRef.current?.recipientId;
+
       if (pc && rId) {
         try {
           const offer = await pc.createOffer();
@@ -1164,7 +1297,9 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
           if (socket) {
             socket.emit('webrtc-offer', {
               roomId: rId,
-              offer
+              offer,
+              caller: myId,
+              recipientId: otherId
             });
           }
         } catch (err) {
@@ -1176,15 +1311,23 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     const handleWebRtcOffer = async (data) => {
       if (!data || !data.offer) return;
       const pc = peerConnectionRef.current;
+      const myId = currentUser?._id || currentUser?.id;
       if (pc) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          // Drain buffered candidates
+          while (iceCandidatesQueue.current.length > 0) {
+            const cand = iceCandidatesQueue.current.shift();
+            try { await pc.addIceCandidate(cand); } catch (e) {}
+          }
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           if (socket && data.roomId) {
             socket.emit('webrtc-answer', {
               roomId: data.roomId,
-              answer
+              answer,
+              caller: data.caller,
+              recipientId: myId
             });
           }
         } catch (err) {
@@ -1199,6 +1342,11 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       if (pc) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          // Drain buffered candidates
+          while (iceCandidatesQueue.current.length > 0) {
+            const cand = iceCandidatesQueue.current.shift();
+            try { await pc.addIceCandidate(cand); } catch (e) {}
+          }
         } catch (err) {
           console.error('Failed to handle WebRTC answer:', err);
         }
@@ -1209,12 +1357,31 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       if (!data || !data.candidate) return;
       const pc = peerConnectionRef.current;
       if (pc) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (err) {
-          console.warn('Failed to add ICE candidate:', err);
+        const candidate = new RTCIceCandidate(data.candidate);
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (err) {
+            console.warn('Failed to add ICE candidate:', err);
+          }
+        } else {
+          iceCandidatesQueue.current.push(candidate);
         }
       }
+    };
+
+    const handleCallFailed = (data) => {
+      if (callTimeoutRef.current) {
+        clearTimeout(callTimeoutRef.current);
+        callTimeoutRef.current = null;
+      }
+      stopCallRingtones();
+      setActiveCall((prev) => (prev ? {
+        ...prev,
+        status: 'ended',
+        error: data?.message || 'User is currently offline or unreachable'
+      } : null));
+      setTimeout(() => endCall(false), 3000);
     };
 
     const handleCallDeclined = () => {
@@ -1243,6 +1410,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
     socket.on('call-accepted', handleCallAccepted);
     socket.on('call-declined', handleCallDeclined);
     socket.on('call-ended', handleCallEnded);
+    socket.on('call-failed', handleCallFailed);
     socket.on('webrtc-offer', handleWebRtcOffer);
     socket.on('webrtc-answer', handleWebRtcAnswer);
     socket.on('webrtc-ice-candidate', handleWebRtcIceCandidate);
@@ -1263,6 +1431,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
       socket.off('call-accepted', handleCallAccepted);
       socket.off('call-declined', handleCallDeclined);
       socket.off('call-ended', handleCallEnded);
+      socket.off('call-failed', handleCallFailed);
       socket.off('webrtc-offer', handleWebRtcOffer);
       socket.off('webrtc-answer', handleWebRtcAnswer);
       socket.off('webrtc-ice-candidate', handleWebRtcIceCandidate);
@@ -5486,8 +5655,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         }
       `}</style>
 
-      {/* ─── INCOMING CALL BANNER / NOTIFICATION ─── */}
-      {incomingCall && (
+      {/* ─── INCOMING CALL BANNER / NOTIFICATION (Portal to document.body so it rings over any screen) ─── */}
+      {incomingCall && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div style={{
           position: 'fixed',
           top: '24px',
@@ -5587,11 +5756,12 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
               <Phone size={18} />
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ─── ACTIVE CALL MODAL (VOICE & VIDEO CALL SUITE) ─── */}
-      {activeCall && (
+      {/* ─── ACTIVE CALL MODAL (Portal to document.body so call stays visible over any screen) ─── */}
+      {activeCall && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div style={{
           position: 'fixed',
           inset: 0,
@@ -5993,7 +6163,8 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* WebRTC Remote Audio Player (auto-plays incoming voice on speaker) */}
