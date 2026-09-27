@@ -35,7 +35,11 @@ import {
   Video as VideoIcon,
   LayoutGrid,
   List,
-  ShieldAlert
+  ShieldAlert,
+  Play,
+  Pause,
+  ChevronDown,
+  MessageSquare
 } from 'lucide-react';
 import { triggerPushNotification } from './NotificationToast';
 import DesignImage from './DesignImage';
@@ -325,6 +329,14 @@ const DesignerScreen = forwardRef(function DesignerScreen(
   // View Mode & Operational Stage Tabs
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [stageTab, setStageTab] = useState('ALL'); // 'ALL' | 'DROW' | 'CM' | 'STAGE_3' | 'APPROVED' | 'REVISION'
+  const [openStatusDropdownId, setOpenStatusDropdownId] = useState(null);
+
+  // Table view: Multiple image upload and comment inline editing states
+  const [uploadingRowId, setUploadingRowId] = useState(null);
+  const [uploadRowProgress, setUploadRowProgress] = useState(0);
+  const [editingCommentTaskId, setEditingCommentTaskId] = useState(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [savingCommentId, setSavingCommentId] = useState(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -332,7 +344,11 @@ const DesignerScreen = forwardRef(function DesignerScreen(
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [selectedDesigner, setSelectedDesigner] = useState('All');
+  const [selectedColourMatcher, setSelectedColourMatcher] = useState('All');
   const [selectedFabric, setSelectedFabric] = useState('All');
+  const [selectedPriority, setSelectedPriority] = useState('All');
+  const [selectedMachine, setSelectedMachine] = useState('All');
+  const [selectedCreatedBy, setSelectedCreatedBy] = useState('All');
   const [drowFilter, setDrowFilter] = useState('All');
   const [cmFilter, setCmFilter] = useState('All');
   const [stage3Filter, setStage3Filter] = useState('All');
@@ -388,7 +404,19 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       const dList = Array.isArray(t.designers) ? t.designers : (t.designerName ? t.designerName.split(',') : []);
       dList.forEach(d => {
         const clean = String(d || '').trim();
-        if (clean) set.add(clean);
+        if (clean && clean !== '--') set.add(clean);
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tasks]);
+
+  const availableColourMatchers = useMemo(() => {
+    const set = new Set();
+    (tasks || []).forEach(t => {
+      const list = Array.isArray(t.colourMatches) ? t.colourMatches : (t.colourMatching ? t.colourMatching.split(',') : []);
+      list.forEach(c => {
+        const clean = String(c || '').trim();
+        if (clean && clean !== '--') set.add(clean);
       });
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
@@ -400,8 +428,30 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       const fList = Array.isArray(t.fabrics) ? t.fabrics : (t.fabricName ? t.fabricName.split(',') : []);
       fList.forEach(f => {
         const clean = String(f || '').trim();
-        if (clean) set.add(clean);
+        if (clean && clean !== '--') set.add(clean);
       });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tasks]);
+
+  const availableMachines = useMemo(() => {
+    const set = new Set();
+    (tasks || []).forEach(t => {
+      const m = t.machineName || t.machine;
+      if (m && String(m).trim() && String(m).trim() !== '--') {
+        set.add(String(m).trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tasks]);
+
+  const availableCreatedBy = useMemo(() => {
+    const set = new Set();
+    (tasks || []).forEach(t => {
+      const c = t.createdByName || t.createdBy;
+      if (c && String(c).trim() && String(c).trim() !== '--') {
+        set.add(String(c).trim());
+      }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [tasks]);
@@ -636,8 +686,8 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       });
     }
 
-    // Filter by Operational Stage Tab (only in standalone mode)
-    if (!embedded && stageTab !== 'ALL') {
+    // Filter by Operational Stage Tab (Drawing, Colour Match, Hold, Approved, Revisions)
+    if (stageTab !== 'ALL') {
       result = result.filter(t => {
         const isApproved = t.finalDesignStatus === 'Approved' || t.finalDesignStatus === 'APPROVED SAMPLE' || t.status === 'Approved';
         const isRevision = String(t.finalDesignStatus || '').toLowerCase().startsWith('reject');
@@ -672,43 +722,41 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       });
     }
 
-    // Embedded Image 1 filters
-    if (embedded) {
-      // Filter by Category
-      if (categoryFilter && categoryFilter !== 'All') {
-        result = result.filter(t => {
-          const cat = t.category || (Array.isArray(t.fabrics) ? t.fabrics[0] : t.fabricName);
-          return cat && String(cat).toLowerCase() === categoryFilter.toLowerCase();
-        });
-      }
+    // Filter by colour matching
+    if (selectedColourMatcher && selectedColourMatcher !== 'All') {
+      result = result.filter(t => {
+        const matchers = Array.isArray(t.colourMatches) ? t.colourMatches : (t.colourMatching || '').split(',').map(s => s.trim());
+        return matchers.some(m => m && m.toLowerCase() === selectedColourMatcher.toLowerCase());
+      });
+    }
 
-      // Filter by Color
-      if (colorFilter && colorFilter !== 'All') {
-        result = result.filter(t => {
-          const cMatches = Array.isArray(t.colourMatches) ? t.colourMatches : (t.colourMatching ? [t.colourMatching] : []);
-          const col = t.colors ? [t.colors] : [];
-          const allC = [...cMatches, ...col];
-          return allC.some(c => c && String(c).toLowerCase().includes(colorFilter.toLowerCase()));
-        });
-      }
+    // Filter by priority
+    if (selectedPriority && selectedPriority !== 'All') {
+      result = result.filter(t => String(t.priority || 'Medium').toLowerCase() === selectedPriority.toLowerCase());
+    }
 
-      // Filter by Party
-      if (partyFilter && partyFilter !== 'All') {
-        result = result.filter(t => {
-          const pList = Array.isArray(t.parties) ? t.parties : (t.partyName || t.party ? [t.partyName || t.party] : []);
-          return pList.some(p => p && String(p).toLowerCase().includes(partyFilter.toLowerCase()));
-        });
-      }
+    // Filter by machine
+    if (selectedMachine && selectedMachine !== 'All') {
+      result = result.filter(t => {
+        const m = t.machineName || t.machine || '';
+        return String(m).toLowerCase() === selectedMachine.toLowerCase();
+      });
+    }
 
-      // Filter by Status (Active / Inactive / All)
-      if (statusFilter && statusFilter !== 'All') {
-        result = result.filter(t => {
-          const isInactive = t.status === 'Inactive' || t.status === 'Cancelled' || String(t.finalDesignStatus || '').toLowerCase().startsWith('reject');
-          if (statusFilter === 'Active') return !isInactive;
-          if (statusFilter === 'Inactive') return isInactive;
-          return true;
-        });
-      }
+    // Filter by createdBy
+    if (selectedCreatedBy && selectedCreatedBy !== 'All') {
+      result = result.filter(t => {
+        const c = t.createdByName || t.createdBy || '';
+        return String(c).toLowerCase().includes(selectedCreatedBy.toLowerCase());
+      });
+    }
+
+    // Filter by Party (if filtered)
+    if (partyFilter && partyFilter !== 'All') {
+      result = result.filter(t => {
+        const pList = Array.isArray(t.parties) ? t.parties : (t.partyName || t.party ? [t.partyName || t.party] : []);
+        return pList.some(p => p && String(p).toLowerCase().includes(partyFilter.toLowerCase()));
+      });
     }
 
     // Search query
@@ -717,17 +765,23 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       result = result.filter((t) => {
         const taskNo = String(t.taskNo || '').toLowerCase();
         const designName = String(t.designName || '').toLowerCase();
-        const designer = String(t.designerName || '').toLowerCase();
-        const fabric = String(t.fabricName || '').toLowerCase();
-        const cm = String(t.colourMatching || '').toLowerCase();
-        const party = String(t.partyName || t.party || '').toLowerCase();
+        const designer = String(t.designerName || (Array.isArray(t.designers) ? t.designers.join(' ') : '')).toLowerCase();
+        const cm = String(t.colourMatching || (Array.isArray(t.colourMatches) ? t.colourMatches.join(' ') : '')).toLowerCase();
+        const fabric = String(t.fabricName || (Array.isArray(t.fabrics) ? t.fabrics.join(' ') : '')).toLowerCase();
+        const machine = String(t.machineName || t.machine || '').toLowerCase();
+        const createdBy = String(t.createdByName || t.createdBy || '').toLowerCase();
+        const priority = String(t.priority || '').toLowerCase();
+        const party = String(t.partyName || t.party || (Array.isArray(t.parties) ? t.parties.join(' ') : '')).toLowerCase();
         const notes = String(t.notes || '').toLowerCase();
         return (
           taskNo.includes(q) ||
           designName.includes(q) ||
           designer.includes(q) ||
-          fabric.includes(q) ||
           cm.includes(q) ||
+          fabric.includes(q) ||
+          machine.includes(q) ||
+          createdBy.includes(q) ||
+          priority.includes(q) ||
           party.includes(q) ||
           notes.includes(q)
         );
@@ -738,12 +792,32 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       let cmp = 0;
       if (sortBy === 'date' || sortBy === 'createdAt') {
         cmp = new Date(a.date || a.createdAt || 0) - new Date(b.date || b.createdAt || 0);
+      } else if (sortBy === 'priority') {
+        const order = { urgent: 4, high: 3, medium: 2, low: 1 };
+        const pA = order[String(a.priority || '').toLowerCase()] || 0;
+        const pB = order[String(b.priority || '').toLowerCase()] || 0;
+        cmp = pA - pB;
       } else {
         cmp = (a.designName || '').localeCompare(b.designName || '', undefined, { numeric: true, sensitivity: 'base' });
       }
       return sortOrder === 'asc' ? cmp : -cmp;
     });
-  }, [tasks, searchQuery, stageTab, isUserRestricted, effectiveDesignerTokens, selectedFabric, selectedDesigner, sortBy, sortOrder, embedded, categoryFilter, colorFilter, partyFilter, statusFilter]);
+  }, [
+    tasks,
+    searchQuery,
+    stageTab,
+    isUserRestricted,
+    effectiveDesignerTokens,
+    selectedFabric,
+    selectedDesigner,
+    selectedColourMatcher,
+    selectedPriority,
+    selectedMachine,
+    selectedCreatedBy,
+    sortBy,
+    sortOrder,
+    partyFilter
+  ]);
 
   // Create & Edit Task Handlers
   const handleOpenCreate = () => {
@@ -939,6 +1013,228 @@ const DesignerScreen = forwardRef(function DesignerScreen(
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
     setFilePreviews((prev) => prev.filter((_, i) => i !== index));
   };
+
+  // Close status dropdown when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.status-dropdown-container')) {
+        setOpenStatusDropdownId(null);
+      }
+    };
+    if (openStatusDropdownId) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [openStatusDropdownId]);
+
+  // Directly update task status without opening form modal
+  const handleDirectStatusChange = async (task, opt) => {
+    setOpenStatusDropdownId(null);
+    try {
+      const payload = {
+        category: opt.category,
+        statusType: opt.statusType,
+        statusValue: opt.value,
+        stage: opt.value,
+        images: [],
+        note: `Status updated to ${opt.value}`,
+        outputLink: '',
+      };
+      await api.updateDesignerTaskStage(task._id, payload);
+      triggerPushNotification(
+        '🎨 Status Updated',
+        `${task.designName}: Status updated to "${opt.value}"`,
+        'success'
+      );
+      // Optimistically update local task state to reflect immediately
+      setTasks(prev => prev.map(t => {
+        if (t._id !== task._id) return t;
+        const updated = { ...t };
+        if (opt.category === 'drow_design') updated.drowDesignStatus = opt.value;
+        else if (opt.category === 'colour_matching') updated.colourMatchingStatus = opt.value;
+        else if (opt.category === 'stage_3') updated.stage3Status = opt.value;
+        else if (opt.category === 'final_design') updated.finalDesignStatus = opt.value;
+        return updated;
+      }));
+      loadData(true);
+    } catch (err) {
+      alert('Failed to update status: ' + err.message);
+    }
+  };
+
+  // Upload multiple images directly from table row
+  const handleTableMultipleImageUpload = async (task, fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    setUploadingRowId(task._id);
+    setUploadRowProgress(10);
+
+    try {
+      const uploadedUrls = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let fileToUpload = file;
+        if (file.type.startsWith('image/')) {
+          try {
+            const options = { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true };
+            fileToUpload = await imageCompression(file, options);
+          } catch (compErr) {
+            console.warn('Image compression skipped for', file.name, compErr);
+          }
+        }
+        const res = await api.uploadImage(fileToUpload, 'designs/outputs');
+        if (res && res.url) {
+          uploadedUrls.push(res.url);
+        }
+        setUploadRowProgress(Math.round(((i + 1) / files.length) * 85));
+      }
+
+      if (uploadedUrls.length > 0) {
+        const currentOutputImages = Array.isArray(task.outputImages) ? task.outputImages : [];
+        const updatedImages = Array.from(new Set([...currentOutputImages, ...uploadedUrls]));
+
+        await api.updateDesignerTask(task._id, {
+          newOutputImages: uploadedUrls,
+          outputImages: updatedImages,
+          outputImage: updatedImages[0] || '',
+        });
+
+        // Also update local task state immediately for instant feedback
+        setTasks((prev) =>
+          prev.map((t) =>
+            t._id === task._id
+              ? {
+                  ...t,
+                  outputImages: updatedImages,
+                  outputImage: updatedImages[0] || t.outputImage,
+                }
+              : t
+          )
+        );
+
+        triggerPushNotification(
+          '📷 Images Uploaded',
+          `${task.designName}: ${uploadedUrls.length} image(s) uploaded successfully`,
+          'success'
+        );
+        loadData(true);
+      }
+    } catch (err) {
+      console.error('Failed to upload images:', err);
+      alert('Failed to upload image(s): ' + (err.message || 'Network error'));
+    } finally {
+      setUploadingRowId(null);
+      setUploadRowProgress(0);
+    }
+  };
+
+  // Save comment/note for task directly from table row
+  const handleSaveComment = async (taskId) => {
+    if (!taskId) return;
+    setSavingCommentId(taskId);
+    try {
+      const trimmed = commentDraft.trim();
+      await api.updateDesignerTask(taskId, { notes: trimmed });
+      setTasks((prev) =>
+        prev.map((t) => (t._id === taskId ? { ...t, notes: trimmed } : t))
+      );
+      setEditingCommentTaskId(null);
+      setCommentDraft('');
+      triggerPushNotification('💬 Comment Saved', 'Task note updated successfully', 'success');
+    } catch (err) {
+      console.error('Failed to save comment:', err);
+      alert('Failed to save comment: ' + (err.message || 'Error'));
+    } finally {
+      setSavingCommentId(null);
+    }
+  };
+
+  const getTaskCurrentStatusBadge = (task) => {
+    if (task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE') {
+      return { label: 'Approved', icon: Check, color: '#16a34a', bg: '#f0fdf4', border: '#86efac' };
+    }
+    if (String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')) {
+      return { label: 'Rejected', icon: X, color: '#dc2626', bg: '#fef2f2', border: '#fca5a5' };
+    }
+    if (task.stage3Status === 'Hold') {
+      return { label: 'On Hold', icon: Pause, color: '#ea580c', bg: '#fff7ed', border: '#fdba74' };
+    }
+    if (task.stage3Status === 'Continue') {
+      return { label: 'Continuing', icon: Play, color: '#0284c7', bg: '#eff6ff', border: '#bfdbfe' };
+    }
+    if (task.colourMatchingStatus) {
+      return { label: `Colour Match: ${task.colourMatchingStatus}`, icon: Palette, color: '#db2777', bg: '#fdf2f8', border: '#f472b6' };
+    }
+    if (task.drowDesignStatus) {
+      return { label: `Drow: ${task.drowDesignStatus}`, icon: Play, color: '#0284c7', bg: '#f0f9ff', border: '#38bdf8' };
+    }
+    return { label: 'Select Status', icon: null, color: '#475569', bg: '#f8fafc', border: '#cbd5e1' };
+  };
+
+  const getStatusDropdownOptions = (task) => [
+    {
+      id: 'drow_design',
+      category: 'drow_design',
+      statusType: 'DROW DESIGN STATUS',
+      value: 'Start Design',
+      label: '1. Start Design (Drow)',
+      icon: Play,
+      color: '#0284c7',
+      bg: '#eff6ff',
+      border: '#bfdbfe',
+      isActive: task.drowDesignStatus === 'Start Design' || task.drowDesignStatus === 'START WORKING'
+    },
+    {
+      id: 'colour_matching',
+      category: 'colour_matching',
+      statusType: 'COLOUR MATCHING STATUS',
+      value: 'Start Design',
+      label: '2. Start Design (Colour Match)',
+      icon: Palette,
+      color: '#db2777',
+      bg: '#fdf2f8',
+      border: '#fbcfe8',
+      isActive: task.colourMatchingStatus === 'Start Design'
+    },
+    {
+      id: 'stage_3',
+      category: 'stage_3',
+      statusType: 'STAGE 3 STATUS',
+      value: task.stage3Status === 'Hold' ? 'Continue' : 'Hold',
+      label: task.stage3Status === 'Hold' ? '3. Continue (Resume)' : '3. Hold Task',
+      icon: task.stage3Status === 'Hold' ? Play : Pause,
+      color: '#ea580c',
+      bg: '#fff7ed',
+      border: '#ffedd5',
+      isActive: task.stage3Status === 'Hold'
+    },
+    {
+      id: 'final_approved',
+      category: 'final_design',
+      statusType: 'FINAL DESIGN STATUS',
+      value: 'Approved',
+      label: '4. Approved',
+      icon: Check,
+      color: '#16a34a',
+      bg: '#f0fdf4',
+      border: '#bbf7d0',
+      isActive: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
+    },
+    {
+      id: 'final_reject',
+      category: 'final_design',
+      statusType: 'FINAL DESIGN STATUS',
+      value: 'Reject',
+      label: '5. Reject',
+      icon: X,
+      color: '#dc2626',
+      bg: '#fef2f2',
+      border: '#fecaca',
+      isActive: String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
+    }
+  ];
 
   // Submit Status Change & Upload Images to Cloudflare R2
   const handleSubmitStatusUpdate = async (e) => {
@@ -1199,224 +1495,89 @@ const DesignerScreen = forwardRef(function DesignerScreen(
 
 
 
-      {/* ─── Operational Stage Navigation Tabs (Only in standalone mode) ── */}
-      {!embedded && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '0.4rem',
-            overflowX: 'auto',
-            paddingBottom: '0.35rem',
-            marginBottom: '1rem',
-            scrollbarWidth: 'thin',
-          }}
-        >
-          {[
-            { id: 'ALL', label: 'All Designs', count: stageCounts.all, color: '#1d4ed8', bg: '#eff6ff' },
-            { id: 'DROW', label: '1. Drawing', count: stageCounts.drow, color: '#0284c7', bg: '#f0f9ff' },
-            { id: 'CM', label: '2. Colour Match', count: stageCounts.cm, color: '#db2777', bg: '#fdf2f8' },
-            { id: 'STAGE_3', label: '3. Hold / Continue', count: stageCounts.stage3, color: '#ea580c', bg: '#fff7ed' },
-            { id: 'APPROVED', label: 'Approved', count: stageCounts.approved, color: '#16a34a', bg: '#f0fdf4' },
-            { id: 'REVISION', label: 'Reject / Revisions', count: stageCounts.revision, color: '#dc2626', bg: '#fef2f2' },
-          ].map((tab) => {
-            const isActive = stageTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStageTab(tab.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  padding: '0.45rem 0.85rem',
-                  borderRadius: '8px',
-                  border: isActive ? `1.5px solid ${tab.color}` : '1px solid #cbd5e1',
-                  background: isActive ? tab.color : '#ffffff',
-                  color: isActive ? '#ffffff' : '#475569',
-                  fontSize: '0.78rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: isActive ? `0 2px 8px ${tab.color}35` : 'none',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <span>{tab.label}</span>
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    fontWeight: 800,
-                    padding: '0.1rem 0.45rem',
-                    borderRadius: '10px',
-                    background: isActive ? 'rgba(255, 255, 255, 0.25)' : tab.bg,
-                    color: isActive ? '#ffffff' : tab.color,
-                  }}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            );
-          })}
-          </div>
-      )}
-
-      {/* ─── Search & Filters Toolbar ───────────────────────────────────── */}
-      {embedded ? (
-        /* Single clean toolbar exactly matching Image 1 */
-        <div
-          className="glass-panel"
-          style={{
-            background: '#ffffff',
-            borderRadius: '12px',
-            border: '1px solid #e2e8f0',
-            padding: '0.75rem 1rem',
-            marginBottom: '1.25rem',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
-          <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Search Input */}
-            <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '200px' }}>
-              <label htmlFor="sample-search-field" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', border: 0 }}>
-                Search Design name, fabric, matching, designer
-              </label>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                id="sample-search-field"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search Design name, fabric, matching, designer..."
-                style={{ paddingLeft: 32, width: '100%', fontSize: '0.85rem', height: '36px', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '8px' }}
-              />
-            </div>
-
-            {/* Categories select filter */}
-            <div style={{ minWidth: 150 }}>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.7rem', fontSize: '0.85rem', height: '36px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#ffffff', cursor: 'pointer' }}
-              >
-                <option value="All">All Categories</option>
-                {availableCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Colors select filter */}
-            <div style={{ minWidth: 150 }}>
-              <select
-                value={colorFilter}
-                onChange={(e) => setColorFilter(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.7rem', fontSize: '0.85rem', height: '36px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#ffffff', cursor: 'pointer' }}
-              >
-                <option value="All">All Colors</option>
-                {availableColors.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Party (Client) select filter */}
-            <div style={{ minWidth: 160 }}>
-              <select
-                value={partyFilter}
-                onChange={(e) => setPartyFilter(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.7rem', fontSize: '0.85rem', height: '36px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#ffffff', cursor: 'pointer' }}
-              >
-                <option value="All">All Parties</option>
-                {availableParties.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Buttons: Active | Inactive | All */}
-            {['Active', 'Inactive', 'All'].map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatusFilter(s)}
-                style={{
-                  padding: '0.45rem 0.9rem',
-                  fontSize: '0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: '1px solid',
-                  borderColor: statusFilter === s ? 'var(--primary, #2563eb)' : '#cbd5e1',
-                  background: statusFilter === s ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
-                  color: statusFilter === s ? '#1d4ed8' : '#64748b',
-                  transition: 'all 0.15s',
-                  height: '36px',
-                }}
-              >
-                {s}
-              </button>
-            ))}
-
-            {/* Sorting */}
-            <div style={{ minWidth: 140 }}>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.7rem', fontSize: '0.85rem', height: '36px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#ffffff', cursor: 'pointer' }}
-              >
-                <option value="designName">Sort by Name</option>
-                <option value="createdAt">Sort by Date</option>
-              </select>
-            </div>
-
-            {/* Sort Order Button */}
+      {/* ─── Operational Stage Navigation Tabs (Drawing, Colour Match, Hold, Approved, Revisions) ── */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.45rem',
+          overflowX: 'auto',
+          paddingBottom: '0.4rem',
+          marginBottom: '0.85rem',
+          scrollbarWidth: 'thin',
+        }}
+      >
+        {[
+          { id: 'ALL', label: 'All Designs', count: stageCounts.all, color: '#1d4ed8', bg: '#eff6ff' },
+          { id: 'DROW', label: '1. Drawing', count: stageCounts.drow, color: '#0284c7', bg: '#f0f9ff' },
+          { id: 'CM', label: '2. Colour Match', count: stageCounts.cm, color: '#db2777', bg: '#fdf2f8' },
+          { id: 'STAGE_3', label: '3. Hold / Continue', count: stageCounts.stage3, color: '#ea580c', bg: '#fff7ed' },
+          { id: 'APPROVED', label: 'Approved', count: stageCounts.approved, color: '#16a34a', bg: '#f0fdf4' },
+          { id: 'REVISION', label: 'Reject / Revisions', count: stageCounts.revision, color: '#dc2626', bg: '#fef2f2' },
+        ].map((tab) => {
+          const isActive = stageTab === tab.id;
+          return (
             <button
-              type="button"
-              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              key={tab.id}
+              onClick={() => setStageTab(tab.id)}
               style={{
-                padding: '0.45rem 0.9rem',
-                fontSize: '0.8rem',
-                borderRadius: 'var(--radius-sm)',
-                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: isActive ? `1.5px solid ${tab.color}` : '1px solid #cbd5e1',
+                background: isActive ? tab.color : '#ffffff',
+                color: isActive ? '#ffffff' : '#475569',
+                fontSize: '0.78rem',
+                fontWeight: 800,
                 cursor: 'pointer',
-                border: '1px solid #cbd5e1',
-                background: 'transparent',
-                color: '#64748b',
-                transition: 'all 0.15s',
-                height: '36px',
+                whiteSpace: 'nowrap',
+                boxShadow: isActive ? `0 2px 8px ${tab.color}35` : 'none',
+                transition: 'all 0.15s ease',
               }}
             >
-              {sortOrder === 'asc' ? '▲ Asc' : '▼ Desc'}
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '10px',
+                  background: isActive ? 'rgba(255, 255, 255, 0.25)' : tab.bg,
+                  color: isActive ? '#ffffff' : tab.color,
+                }}
+              >
+                {tab.count}
+              </span>
             </button>
-          </div>
-        </div>
-      ) : (
-        /* Standalone toolbar */
-        <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '12px',
-            border: '1px solid #e2e8f0',
-            padding: '0.85rem 1rem',
-            marginBottom: '1.25rem',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-            alignItems: 'center',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
+          );
+        })}
+      </div>
+
+      {/* ─── Search & Filters Toolbar (Tailored for Sample Design Screen) ── */}
+      <div
+        className="glass-panel"
+        style={{
+          padding: '0.85rem 1.15rem',
+          marginBottom: '1rem',
+          background: '#ffffff',
+          borderRadius: '12px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+        }}
+      >
+        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Search Input */}
-          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '220px' }}>
-            <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+          <div style={{ position: 'relative', flex: '1 1 230px', minWidth: '200px' }}>
+            <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search design, task #, fabric, designer..."
+              placeholder="Search design, task #, designer, fabric..."
               style={{
                 width: '100%',
-                padding: '0.48rem 0.75rem 0.48rem 2.1rem',
+                padding: '0.45rem 0.75rem 0.45rem 2.1rem',
                 borderRadius: '8px',
                 border: '1px solid #cbd5e1',
                 fontSize: '0.82rem',
@@ -1428,8 +1589,9 @@ const DesignerScreen = forwardRef(function DesignerScreen(
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
-                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
               >
                 <X size={14} />
               </button>
@@ -1449,44 +1611,45 @@ const DesignerScreen = forwardRef(function DesignerScreen(
             />
           </div>
 
-          {/* Designer Filter */}
-          <div style={{ flex: '0 0 auto' }}>
+          {/* Assign Design (Designer) Filter */}
+          <div style={{ minWidth: '150px' }}>
             {isUserRestricted ? (
               <div
                 style={{
-                  padding: '0.45rem 0.85rem',
+                  padding: '0.45rem 0.75rem',
                   borderRadius: '8px',
                   border: '1.5px solid #bfdbfe',
-                  fontSize: '0.82rem',
+                  fontSize: '0.8rem',
                   background: '#eff6ff',
                   color: '#1d4ed8',
                   fontWeight: 800,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
+                  gap: '0.35rem',
                 }}
-                title="Locked to your assigned designs & colour matching tasks"
+                title="Locked to your assigned designs"
               >
                 <User size={13} color="#2563eb" />
-                <span>👤 My Designs & C.M.: {userAssignedName || 'Not Configured'}</span>
+                <span>👤 {userAssignedName || 'My Designs'}</span>
               </div>
             ) : (
               <select
                 value={selectedDesigner}
                 onChange={(e) => setSelectedDesigner(e.target.value)}
                 style={{
-                  padding: '0.48rem 0.75rem',
+                  width: '100%',
+                  padding: '0.45rem 0.7rem',
+                  fontSize: '0.82rem',
                   borderRadius: '8px',
                   border: '1px solid #cbd5e1',
-                  fontSize: '0.82rem',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontWeight: 600,
+                  background: selectedDesigner !== 'All' ? 'rgba(37, 99, 235, 0.08)' : '#ffffff',
+                  color: selectedDesigner !== 'All' ? '#1d4ed8' : '#0f172a',
+                  fontWeight: selectedDesigner !== 'All' ? 700 : 500,
                   cursor: 'pointer',
                   outline: 'none',
                 }}
               >
-                <option value="All">👤 All Designers & Staff</option>
+                <option value="All">👤 Assign Design: All</option>
                 {availableDesigners.map((d, i) => (
                   <option key={i} value={d}>{d}</option>
                 ))}
@@ -1494,60 +1657,306 @@ const DesignerScreen = forwardRef(function DesignerScreen(
             )}
           </div>
 
-          {/* Fabric Dropdown Filter */}
-          <div style={{ flex: '0 0 auto' }}>
+          {/* Colour Matching Filter */}
+          <div style={{ minWidth: '150px' }}>
             <select
-              value={selectedFabric}
-              onChange={(e) => setSelectedFabric(e.target.value)}
+              value={selectedColourMatcher}
+              onChange={(e) => setSelectedColourMatcher(e.target.value)}
               style={{
-                padding: '0.48rem 0.75rem',
+                width: '100%',
+                padding: '0.45rem 0.7rem',
+                fontSize: '0.82rem',
                 borderRadius: '8px',
                 border: '1px solid #cbd5e1',
-                fontSize: '0.82rem',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontWeight: 600,
+                background: selectedColourMatcher !== 'All' ? 'rgba(219, 39, 119, 0.08)' : '#ffffff',
+                color: selectedColourMatcher !== 'All' ? '#be185d' : '#0f172a',
+                fontWeight: selectedColourMatcher !== 'All' ? 700 : 500,
                 cursor: 'pointer',
                 outline: 'none',
               }}
             >
-              <option value="All">🧵 All Fabrics</option>
+              <option value="All">🎨 Colour Match: All</option>
+              {availableColourMatchers.map((cm, i) => (
+                <option key={i} value={cm}>{cm}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fabric Filter */}
+          <div style={{ minWidth: '140px' }}>
+            <select
+              value={selectedFabric}
+              onChange={(e) => setSelectedFabric(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.7rem',
+                fontSize: '0.82rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: selectedFabric !== 'All' ? 'rgba(5, 150, 105, 0.08)' : '#ffffff',
+                color: selectedFabric !== 'All' ? '#047857' : '#0f172a',
+                fontWeight: selectedFabric !== 'All' ? 700 : 500,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="All">🧵 Fabric: All</option>
               {availableFabrics.map((f, i) => (
                 <option key={i} value={f}>{f}</option>
               ))}
             </select>
           </div>
 
-          {/* Reset Filters */}
-          {(datePreset !== 'all' || (!isDesignerRestricted && selectedDesigner !== 'All') || selectedFabric !== 'All' || drowFilter !== 'All' || cmFilter !== 'All' || finalFilter !== 'All' || stageTab !== 'ALL' || searchQuery) && (
+          {/* Priority Filter */}
+          <div style={{ minWidth: '130px' }}>
+            <select
+              value={selectedPriority}
+              onChange={(e) => setSelectedPriority(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.7rem',
+                fontSize: '0.82rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: selectedPriority !== 'All' ? 'rgba(234, 88, 12, 0.08)' : '#ffffff',
+                color: selectedPriority !== 'All' ? '#c2410c' : '#0f172a',
+                fontWeight: selectedPriority !== 'All' ? 700 : 500,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="All">⚡ Priority: All</option>
+              <option value="Urgent">🔴 Urgent</option>
+              <option value="High">🟠 High</option>
+              <option value="Medium">🟡 Medium</option>
+              <option value="Low">🟢 Low</option>
+            </select>
+          </div>
+
+          {/* Machine Filter */}
+          {availableMachines.length > 0 && (
+            <div style={{ minWidth: '130px' }}>
+              <select
+                value={selectedMachine}
+                onChange={(e) => setSelectedMachine(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.7rem',
+                  fontSize: '0.82rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: selectedMachine !== 'All' ? 'rgba(99, 102, 241, 0.08)' : '#ffffff',
+                  color: selectedMachine !== 'All' ? '#4338ca' : '#0f172a',
+                  fontWeight: selectedMachine !== 'All' ? 700 : 500,
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="All">🖨️ Machine: All</option>
+                {availableMachines.map((m, i) => (
+                  <option key={i} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Created By Filter */}
+          {availableCreatedBy.length > 0 && (
+            <div style={{ minWidth: '140px' }}>
+              <select
+                value={selectedCreatedBy}
+                onChange={(e) => setSelectedCreatedBy(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.7rem',
+                  fontSize: '0.82rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: selectedCreatedBy !== 'All' ? 'rgba(79, 70, 229, 0.08)' : '#ffffff',
+                  color: selectedCreatedBy !== 'All' ? '#3730a3' : '#0f172a',
+                  fontWeight: selectedCreatedBy !== 'All' ? 700 : 500,
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="All">✍️ Created By: All</option>
+                {availableCreatedBy.map((c, i) => (
+                  <option key={i} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Sorting */}
+          <div style={{ minWidth: '130px' }}>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.7rem',
+                fontSize: '0.82rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="designName">Sort: Name</option>
+              <option value="date">Sort: Date</option>
+              <option value="priority">Sort: Priority</option>
+            </select>
+          </div>
+
+          {/* Sort Order Toggle */}
+          <button
+            type="button"
+            onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+            style={{
+              padding: '0.45rem 0.65rem',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              background: '#f8fafc',
+              color: '#475569',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title={sortOrder === 'asc' ? 'Ascending Order' : 'Descending Order'}
+          >
+            {sortOrder === 'asc' ? '▲ Asc' : '▼ Desc'}
+          </button>
+
+          {/* View Mode Switcher: Cards vs Table */}
+          <div
+            style={{
+              display: 'inline-flex',
+              background: '#f1f5f9',
+              padding: '3px',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              marginLeft: 'auto',
+            }}
+          >
             <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.38rem 0.7rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: viewMode === 'grid' ? '#ffffff' : 'transparent',
+                color: viewMode === 'grid' ? '#2563eb' : '#64748b',
+                boxShadow: viewMode === 'grid' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+              title="Cards Grid View"
+            >
+              <LayoutGrid size={13} /> <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.38rem 0.7rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: viewMode === 'table' ? '#ffffff' : 'transparent',
+                color: viewMode === 'table' ? '#2563eb' : '#64748b',
+                boxShadow: viewMode === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+              title="Table List View"
+            >
+              <List size={13} /> <span>Table</span>
+            </button>
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={() => loadData(false)}
+            disabled={loading}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.45rem 0.75rem',
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              color: '#334155',
+              cursor: 'pointer',
+            }}
+            title="Refresh Data"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+
+          {/* Reset Filters Button */}
+          {(datePreset !== 'all' ||
+            (!isDesignerRestricted && selectedDesigner !== 'All') ||
+            selectedColourMatcher !== 'All' ||
+            selectedFabric !== 'All' ||
+            selectedPriority !== 'All' ||
+            selectedMachine !== 'All' ||
+            selectedCreatedBy !== 'All' ||
+            stageTab !== 'ALL' ||
+            searchQuery) && (
+            <button
+              type="button"
               onClick={() => {
                 setDatePreset('all');
                 if (!isDesignerRestricted) setSelectedDesigner('All');
+                setSelectedColourMatcher('All');
                 setSelectedFabric('All');
-                setDrowFilter('All');
-                setCmFilter('All');
-                setStage3Filter('All');
-                setFinalFilter('All');
+                setSelectedPriority('All');
+                setSelectedMachine('All');
+                setSelectedCreatedBy('All');
                 setStageTab('ALL');
                 setSearchQuery('');
               }}
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem',
                 padding: '0.45rem 0.75rem',
-                background: '#f1f5f9',
-                border: '1px solid #cbd5e1',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
                 borderRadius: '8px',
                 fontSize: '0.78rem',
                 fontWeight: 700,
-                color: '#64748b',
+                color: '#dc2626',
                 cursor: 'pointer',
               }}
+              title="Reset all filters"
             >
-              Reset Filters
+              <X size={13} />
+              <span>Reset Filters</span>
             </button>
           )}
         </div>
-      )}
+      </div>
 
       {/* ─── Task Content: Cards Grid vs Table View ───────────────────────── */}
       {loading ? (
@@ -1700,18 +2109,16 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       ) : viewMode === 'table' ? (
         /* ─── TABLE VIEW ──────────────────────────────────────────────── */
         <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', minHeight: '360px', paddingBottom: openStatusDropdownId ? '160px' : '20px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Task # / Date</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Design & Priority</th>
-                  <th style={{ padding: '0.85rem 0.75rem', fontWeight: 800 }}>Sample Ref</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Design, Date &amp; Priority</th>
+                  <th style={{ padding: '0.85rem 0.75rem', fontWeight: 800, minWidth: '85px' }}>Sample Ref</th>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Assigned Team</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>1. Drow Status</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>2. Colour Match</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>3. Hold / Continue</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>4. Final Approval</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Stage / Status</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Image upload multiple</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: 800 }}>Comment</th>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 800, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -1733,6 +2140,17 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                   const stage3Imgs = task.stage3Images || [];
                   const finalImgs = task.finalDesignImages || [];
 
+                  const taskImages = Array.from(
+                    new Set([
+                      ...(Array.isArray(task.outputImages) ? task.outputImages : []),
+                      ...(task.outputImage ? [task.outputImage] : []),
+                      ...(Array.isArray(task.finalDesignImages) ? task.finalDesignImages : []),
+                      ...(Array.isArray(task.drowDesignImages) ? task.drowDesignImages : []),
+                      ...(Array.isArray(task.colourMatchingImages) ? task.colourMatchingImages : []),
+                      ...(Array.isArray(task.stage3Images) ? task.stage3Images : []),
+                    ])
+                  ).filter(Boolean);
+
                   return (
                     <tr
                       key={task._id}
@@ -1742,27 +2160,20 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                         transition: 'background 0.1s ease',
                       }}
                     >
-                      {/* Task # & Date */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'inline-block', fontSize: '0.72rem', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '0.15rem 0.5rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                          {task.taskNo}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
-                          {task.date}
-                        </div>
-                      </td>
-
-                      {/* Design & Priority */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.9rem' }}>
+                      {/* Design, Date & Priority (Combined in one cell) */}
+                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', minWidth: '150px' }}>
+                        <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.92rem' }}>
                           {task.designName}
                         </div>
-                        <div style={{ marginTop: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Calendar size={11} color="#64748b" /> {task.date || '--'}
+                          </span>
                           <span
                             style={{
-                              fontSize: '0.66rem',
+                              fontSize: '0.65rem',
                               fontWeight: 800,
-                              padding: '0.15rem 0.45rem',
+                              padding: '0.14rem 0.45rem',
                               borderRadius: '5px',
                               background: priorityConfig.bg,
                               color: priorityConfig.color,
@@ -1778,36 +2189,64 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                         </div>
                       </td>
 
-                      {/* Sample Ref */}
+                      {/* Sample Ref (Enlarged to 68px) */}
                       <td style={{ padding: '0.85rem 0.75rem', verticalAlign: 'middle' }}>
                         {task.sampleImage ? (
                           <div
                             onClick={() => handleOpenLightbox([task.sampleImage], 0, `Sample: ${task.designName}`)}
                             style={{
-                              width: '40px',
-                              height: '40px',
-                              borderRadius: '6px',
+                              width: '68px',
+                              height: '68px',
+                              borderRadius: '8px',
                               overflow: 'hidden',
-                              border: '1px solid #cbd5e1',
+                              border: '1.5px solid #cbd5e1',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
                               cursor: 'pointer',
                               position: 'relative',
+                              background: '#f8fafc',
+                              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                             }}
-                            title="Click to view sample"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'scale(1.05)';
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.06)';
+                            }}
+                            title="Click to zoom sample image"
                           >
-                            <img src={task.sampleImage} alt="Sample" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img
+                              src={task.sampleImage}
+                              alt="Sample"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              loading="lazy"
+                            />
                           </div>
                         ) : task.sampleLink ? (
                           <a
                             href={task.sampleLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.75rem', fontWeight: 700 }}
+                            style={{
+                              color: '#2563eb',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              background: '#eff6ff',
+                              padding: '0.35rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid #bfdbfe',
+                              textDecoration: 'none',
+                            }}
                             title="Open reference link"
                           >
-                            <ExternalLink size={14} /> Link
+                            <ExternalLink size={13} /> Link
                           </a>
                         ) : (
-                          <span style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>--</span>
+                          <span style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>--</span>
                         )}
                       </td>
 
@@ -1832,236 +2271,377 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                         </div>
                       </td>
 
-                      {/* 1. Drow Status */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
+                      {/* Stage / Status Dropdown Menu (5 options, direct update without form) */}
+                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', position: 'relative' }}>
+                        {(() => {
+                          const currentBadge = getTaskCurrentStatusBadge(task);
+                          const statusOpts = getStatusDropdownOptions(task);
+                          const isOpen = openStatusDropdownId === task._id;
+                          const CurrentIcon = currentBadge.icon;
+
+                          return (
+                            <div className="status-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenStatusDropdownId(isOpen ? null : task._id)}
+                                  style={{
+                                    padding: '0.35rem 0.65rem',
+                                    borderRadius: '7px',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    border: `1.5px solid ${currentBadge.border}`,
+                                    background: currentBadge.bg,
+                                    color: currentBadge.color,
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  title="Click to select status action"
+                                >
+                                  {CurrentIcon && <CurrentIcon size={12} />}
+                                  <span>{currentBadge.label}</span>
+                                  <ChevronDown size={12} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                                </button>
+
+                                {/* Proof thumbnails / count if available */}
+                                {drowImgs.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenLightbox(drowImgs, 0, `Drow Proof: ${task.designName}`)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0284c7', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
+                                    title={`${drowImgs.length} Drow proof image(s)`}
+                                  >
+                                    🖼️ {drowImgs.length}
+                                  </button>
+                                )}
+                                {cmImgs.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenLightbox(cmImgs, 0, `Colour Proof: ${task.designName}`)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#db2777', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
+                                    title={`${cmImgs.length} Colour proof image(s)`}
+                                  >
+                                    🎨 {cmImgs.length}
+                                  </button>
+                                )}
+                                {stage3Imgs.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenLightbox(stage3Imgs, 0, `Stage 3 Proof: ${task.designName}`)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ea580c', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
+                                    title={`${stage3Imgs.length} Stage 3 proof image(s)`}
+                                  >
+                                    ⏸️ {stage3Imgs.length}
+                                  </button>
+                                )}
+                                {finalImgs.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenLightbox(finalImgs, 0, `Final Proof: ${task.designName}`)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
+                                    title={`${finalImgs.length} Final proof image(s)`}
+                                  >
+                                    ✨ {finalImgs.length}
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Floating Dropdown Menu with 5 options */}
+                              {isOpen && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    left: 0,
+                                    zIndex: 9999,
+                                    background: '#ffffff',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                                    minWidth: '220px',
+                                    padding: '0.35rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.2rem',
+                                  }}
+                                >
+                                  <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', padding: '0.2rem 0.45rem', borderBottom: '1px solid #f1f5f9' }}>
+                                    Select Stage Status
+                                  </div>
+                                  {statusOpts.map((opt) => {
+                                    const OptIcon = opt.icon;
+                                    return (
+                                      <button
+                                        key={opt.id}
+                                        type="button"
+                                        onClick={() => handleDirectStatusChange(task, opt)}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.45rem',
+                                          width: '100%',
+                                          padding: '0.42rem 0.55rem',
+                                          borderRadius: '6px',
+                                          border: opt.isActive ? `1px solid ${opt.border}` : '1px solid transparent',
+                                          background: opt.isActive ? opt.bg : 'transparent',
+                                          color: opt.color,
+                                          fontSize: '0.74rem',
+                                          fontWeight: opt.isActive ? 800 : 700,
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          transition: 'background 0.12s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (!opt.isActive) e.currentTarget.style.background = '#f8fafc';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (!opt.isActive) e.currentTarget.style.background = 'transparent';
+                                        }}
+                                      >
+                                        <OptIcon size={13} color={opt.color} />
+                                        <span style={{ flex: 1 }}>{opt.label}</span>
+                                        {opt.isActive && <span style={{ fontSize: '0.65rem', fontWeight: 800 }}>✓</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Image upload multiple Column */}
+                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', minWidth: '170px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {embedded ? (
-                            <span
+                          {/* Display existing uploaded images */}
+                          {taskImages.slice(0, 3).map((imgUrl, imgIdx) => (
+                            <div
+                              key={imgIdx}
+                              onClick={() => handleOpenLightbox(taskImages, imgIdx, `Uploaded Images: ${task.designName}`)}
                               style={{
-                                padding: '0.25rem 0.55rem',
+                                width: '42px',
+                                height: '42px',
                                 borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                border: task.drowDesignStatus ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                                background: task.drowDesignStatus === 'FINAL SAMPLE' ? '#eef2ff' : task.drowDesignStatus ? '#eff6ff' : '#f8fafc',
-                                color: task.drowDesignStatus === 'FINAL SAMPLE' ? '#4338ca' : task.drowDesignStatus ? '#1d4ed8' : '#94a3b8',
+                                overflow: 'hidden',
+                                border: '1px solid #cbd5e1',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                background: '#f1f5f9',
+                                flexShrink: 0,
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                               }}
+                              title="Click to view image"
                             >
-                              {task.drowDesignStatus || 'Pending'}
-                            </span>
-                          ) : (
+                              <img
+                                src={imgUrl}
+                                alt={`Uploaded ${imgIdx + 1}`}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            </div>
+                          ))}
+
+                          {/* +N More indicator if > 3 images */}
+                          {taskImages.length > 3 && (
                             <button
-                              onClick={() => handleOpenStatusModal(task, 'drow_design', 'DROW DESIGN STATUS', task.drowDesignStatus)}
+                              type="button"
+                              onClick={() => handleOpenLightbox(taskImages, 3, `Uploaded Images: ${task.designName}`)}
                               style={{
-                                padding: '0.25rem 0.55rem',
+                                width: '42px',
+                                height: '42px',
                                 borderRadius: '6px',
-                                fontSize: '0.7rem',
+                                background: '#f1f5f9',
+                                border: '1px solid #cbd5e1',
+                                color: '#475569',
+                                fontSize: '0.72rem',
                                 fontWeight: 800,
                                 cursor: 'pointer',
-                                border: task.drowDesignStatus ? '1px solid #bfdbfe' : '1px dashed #cbd5e1',
-                                background: task.drowDesignStatus === 'FINAL SAMPLE' ? '#eef2ff' : task.drowDesignStatus ? '#eff6ff' : '#f8fafc',
-                                color: task.drowDesignStatus === 'FINAL SAMPLE' ? '#4338ca' : task.drowDesignStatus ? '#1d4ed8' : '#94a3b8',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
                               }}
+                              title={`View all ${taskImages.length} images`}
                             >
-                              {task.drowDesignStatus || '+ Set Status'}
+                              +{taskImages.length - 3}
                             </button>
                           )}
-                          {drowImgs.length > 0 && (
-                            <button
-                              onClick={() => handleOpenLightbox(drowImgs, 0, `Drow Proof: ${task.designName}`)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
-                              title={`${drowImgs.length} proof image(s)`}
-                            >
-                              🖼️ {drowImgs.length}
-                            </button>
-                          )}
+
+                          {/* Multiple Image Upload Button */}
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              padding: '0.35rem 0.55rem',
+                              borderRadius: '6px',
+                              background: uploadingRowId === task._id ? '#e0e7ff' : '#f0fdf4',
+                              border: uploadingRowId === task._id ? '1px dashed #6366f1' : '1px dashed #86efac',
+                              color: uploadingRowId === task._id ? '#4338ca' : '#16a34a',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: uploadingRowId === task._id ? 'wait' : 'pointer',
+                              transition: 'all 0.15s ease',
+                              userSelect: 'none',
+                              flexShrink: 0,
+                            }}
+                            title="Upload multiple design images"
+                          >
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              disabled={uploadingRowId === task._id}
+                              onChange={(e) => {
+                                handleTableMultipleImageUpload(task, e.target.files);
+                                e.target.value = '';
+                              }}
+                              style={{ display: 'none' }}
+                            />
+                            {uploadingRowId === task._id ? (
+                              <>
+                                <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                                <span>{uploadRowProgress}%</span>
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={11} />
+                                <span>+ Upload</span>
+                              </>
+                            )}
+                          </label>
                         </div>
                       </td>
 
-                      {/* 2. Colour Match */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {embedded ? (
-                            <span
+                      {/* Comment Column */}
+                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', minWidth: '180px', maxWidth: '260px' }}>
+                        {editingCommentTaskId === task._id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                            <textarea
+                              value={commentDraft}
+                              onChange={(e) => setCommentDraft(e.target.value)}
+                              placeholder="Write a comment..."
+                              rows={2}
                               style={{
-                                padding: '0.25rem 0.55rem',
+                                width: '100%',
+                                fontSize: '0.75rem',
+                                padding: '0.35rem 0.5rem',
                                 borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                border: task.colourMatchingStatus ? '1px solid #fbcfe8' : '1px solid #e2e8f0',
-                                background: task.colourMatchingStatus === 'FINAL SAMPLE' ? '#eef2ff' : task.colourMatchingStatus ? '#fdf2f8' : '#f8fafc',
-                                color: task.colourMatchingStatus === 'FINAL SAMPLE' ? '#4338ca' : task.colourMatchingStatus ? '#be185d' : '#94a3b8',
+                                border: '1.5px solid #3b82f6',
+                                outline: 'none',
+                                fontFamily: 'inherit',
+                                resize: 'vertical',
+                                background: '#ffffff',
+                                color: '#1e293b',
+                              }}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  handleSaveComment(task._id);
+                                } else if (e.key === 'Escape') {
+                                  setEditingCommentTaskId(null);
+                                  setCommentDraft('');
+                                }
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveComment(task._id)}
+                                disabled={savingCommentId === task._id}
+                                style={{
+                                  padding: '0.25rem 0.55rem',
+                                  borderRadius: '5px',
+                                  background: '#2563eb',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                }}
+                              >
+                                {savingCommentId === task._id ? (
+                                  <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                                ) : (
+                                  <Check size={11} />
+                                )}
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCommentTaskId(null);
+                                  setCommentDraft('');
+                                }}
+                                style={{
+                                  padding: '0.25rem 0.45rem',
+                                  borderRadius: '5px',
+                                  background: '#f1f5f9',
+                                  color: '#64748b',
+                                  border: '1px solid #cbd5e1',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => {
+                              setEditingCommentTaskId(task._id);
+                              setCommentDraft(task.notes || '');
+                            }}
+                            style={{
+                              cursor: 'pointer',
+                              padding: '0.4rem 0.6rem',
+                              borderRadius: '7px',
+                              background: task.notes ? '#f8fafc' : '#fbfcfd',
+                              border: task.notes ? '1px solid #e2e8f0' : '1px dashed #cbd5e1',
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              justifyContent: 'space-between',
+                              gap: '0.4rem',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = '#94a3b8';
+                              e.currentTarget.style.background = '#f1f5f9';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = task.notes ? '#e2e8f0' : '#cbd5e1';
+                              e.currentTarget.style.background = task.notes ? '#f8fafc' : '#fbfcfd';
+                            }}
+                            title="Click to view or edit comment"
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                fontSize: '0.75rem',
+                                color: task.notes ? '#1e293b' : '#94a3b8',
+                                fontStyle: task.notes ? 'normal' : 'italic',
+                                wordBreak: 'break-word',
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: '56px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                lineHeight: '1.3',
                               }}
                             >
-                              {task.colourMatchingStatus || 'Pending'}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleOpenStatusModal(task, 'colour_matching', 'COLOUR MATCHING STATUS', task.colourMatchingStatus)}
-                              style={{
-                                padding: '0.25rem 0.55rem',
-                                borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                border: task.colourMatchingStatus ? '1px solid #fbcfe8' : '1px dashed #cbd5e1',
-                                background: task.colourMatchingStatus === 'FINAL SAMPLE' ? '#eef2ff' : task.colourMatchingStatus ? '#fdf2f8' : '#f8fafc',
-                                color: task.colourMatchingStatus === 'FINAL SAMPLE' ? '#4338ca' : task.colourMatchingStatus ? '#be185d' : '#94a3b8',
-                              }}
-                            >
-                              {task.colourMatchingStatus || '+ Set Status'}
-                            </button>
-                          )}
-                          {cmImgs.length > 0 && (
-                            <button
-                              onClick={() => handleOpenLightbox(cmImgs, 0, `Colour Proof: ${task.designName}`)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#db2777', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
-                              title={`${cmImgs.length} proof image(s)`}
-                            >
-                              🎨 {cmImgs.length}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 3. Hold / Continue */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {embedded ? (
-                            <span
-                              style={{
-                                padding: '0.25rem 0.55rem',
-                                borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                border: task.stage3Status === 'Continue'
-                                  ? '1px solid #bfdbfe'
-                                  : task.stage3Status === 'Hold'
-                                  ? '1px solid #fed7aa'
-                                  : '1px solid #e2e8f0',
-                                background: task.stage3Status === 'Continue'
-                                  ? '#eff6ff'
-                                  : task.stage3Status === 'Hold'
-                                  ? '#fff7ed'
-                                  : '#f8fafc',
-                                color: task.stage3Status === 'Continue'
-                                  ? '#0284c7'
-                                  : task.stage3Status === 'Hold'
-                                  ? '#ea580c'
-                                  : '#94a3b8',
-                              }}
-                            >
-                              {task.stage3Status || 'Pending'}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleOpenStatusModal(task, 'stage_3', 'STAGE 3 STATUS', task.stage3Status)}
-                              style={{
-                                padding: '0.25rem 0.55rem',
-                                borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                border: task.stage3Status === 'Continue'
-                                  ? '1px solid #bfdbfe'
-                                  : task.stage3Status === 'Hold'
-                                  ? '1px solid #fed7aa'
-                                  : '1px dashed #cbd5e1',
-                                background: task.stage3Status === 'Continue'
-                                  ? '#eff6ff'
-                                  : task.stage3Status === 'Hold'
-                                  ? '#fff7ed'
-                                  : '#f8fafc',
-                                color: task.stage3Status === 'Continue'
-                                  ? '#0284c7'
-                                  : task.stage3Status === 'Hold'
-                                  ? '#ea580c'
-                                  : '#94a3b8',
-                              }}
-                            >
-                              {task.stage3Status || '+ Set Status'}
-                            </button>
-                          )}
-                          {stage3Imgs.length > 0 && (
-                            <button
-                              onClick={() => handleOpenLightbox(stage3Imgs, 0, `Stage 3 Proof: ${task.designName}`)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ea580c', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
-                              title={`${stage3Imgs.length} proof image(s)`}
-                            >
-                              ⏸️ {stage3Imgs.length}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 4. Final Approval */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {embedded ? (
-                            <span
-                              style={{
-                                padding: '0.25rem 0.55rem',
-                                borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                border: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '1.5px solid #16a34a'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '1.5px solid #dc2626'
-                                  : '1px solid #e2e8f0',
-                                background: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '#dcfce7'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '#fee2e2'
-                                  : '#f8fafc',
-                                color: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '#15803d'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '#b91c1c'
-                                  : '#94a3b8',
-                              }}
-                            >
-                              {task.finalDesignStatus || 'Pending Gate'}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleOpenStatusModal(task, 'final_design', 'FINAL DESIGN STATUS', task.finalDesignStatus)}
-                              style={{
-                                padding: '0.25rem 0.55rem',
-                                borderRadius: '6px',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                border: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '1.5px solid #16a34a'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '1.5px solid #dc2626'
-                                  : '1px dashed #cbd5e1',
-                                background: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '#dcfce7'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '#fee2e2'
-                                  : '#f8fafc',
-                                color: task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE'
-                                  ? '#15803d'
-                                  : String(task.finalDesignStatus || '').toLowerCase().startsWith('reject')
-                                  ? '#b91c1c'
-                                  : '#94a3b8',
-                              }}
-                            >
-                              {task.finalDesignStatus || '+ Gate Review'}
-                            </button>
-                          )}
-                          {finalImgs.length > 0 && (
-                            <button
-                              onClick={() => handleOpenLightbox(finalImgs, 0, `Final Proof: ${task.designName}`)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: '0.72rem', fontWeight: 700, padding: 0 }}
-                              title={`${finalImgs.length} final proof image(s)`}
-                            >
-                              ✨ {finalImgs.length}
-                            </button>
-                          )}
-                        </div>
+                              {task.notes || '+ Add comment...'}
+                            </div>
+                            <Edit2 size={12} color="#94a3b8" style={{ marginTop: '2px', flexShrink: 0 }} />
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -2135,84 +2715,84 @@ const DesignerScreen = forwardRef(function DesignerScreen(
       ) : (
         /* ─── CARDS GRID VIEW ─────────────────────────────────────────── */
         <div>
-          {/* Count + Sort Row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', padding: '0 0.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#334155' }}>
-                Total Samples:
-              </span>
-              <span style={{
-                fontSize: '0.82rem',
-                fontWeight: 800,
-                color: '#ffffff',
-                background: '#2563eb',
-                padding: '2px 10px',
-                borderRadius: '20px',
-                minWidth: '28px',
-                textAlign: 'center',
-              }}>
-                {filteredTasks.length}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Sort:</span>
-              <button
-                type="button"
-                onClick={() => setSortBy('designName')}
-                style={{
-                  padding: '0.3rem 0.65rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  border: '1px solid',
-                  borderColor: sortBy === 'designName' ? '#2563eb' : '#cbd5e1',
-                  background: sortBy === 'designName' ? '#eff6ff' : '#f8fafc',
-                  color: sortBy === 'designName' ? '#1d4ed8' : '#64748b',
-                }}
-              >
-                Name
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy('createdAt')}
-                style={{
-                  padding: '0.3rem 0.65rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  border: '1px solid',
-                  borderColor: sortBy === 'createdAt' ? '#2563eb' : '#cbd5e1',
-                  background: sortBy === 'createdAt' ? '#eff6ff' : '#f8fafc',
-                  color: sortBy === 'createdAt' ? '#1d4ed8' : '#64748b',
-                }}
-              >
-                Date
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                title={sortOrder === 'asc' ? 'Currently Ascending - click for Descending' : 'Currently Descending - click for Ascending'}
-                style={{
-                  padding: '0.3rem 0.65rem',
+          {/* Total count & Sort bar - only show in standalone view */}
+          {!embedded && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Total Samples:</span>
+                <span style={{
                   fontSize: '0.82rem',
                   fontWeight: 800,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  border: '1px solid #2563eb',
-                  background: '#eff6ff',
-                  color: '#1d4ed8',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.2rem',
-                }}
-              >
-                {sortOrder === 'asc' ? 'A' : 'D'}
-                <span style={{ fontSize: '0.7rem' }}>{sortOrder === 'asc' ? 'Asc' : 'Desc'}</span>
-              </button>
+                  color: '#ffffff',
+                  background: '#2563eb',
+                  padding: '2px 10px',
+                  borderRadius: '20px',
+                  minWidth: '28px',
+                  textAlign: 'center',
+                }}>
+                  {filteredTasks.length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Sort:</span>
+                <button
+                  type="button"
+                  onClick={() => setSortBy('designName')}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    borderColor: sortBy === 'designName' ? '#2563eb' : '#cbd5e1',
+                    background: sortBy === 'designName' ? '#eff6ff' : '#f8fafc',
+                    color: sortBy === 'designName' ? '#1d4ed8' : '#64748b',
+                  }}
+                >
+                  Name
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortBy('createdAt')}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    border: '1px solid',
+                    borderColor: sortBy === 'createdAt' ? '#2563eb' : '#cbd5e1',
+                    background: sortBy === 'createdAt' ? '#eff6ff' : '#f8fafc',
+                    color: sortBy === 'createdAt' ? '#1d4ed8' : '#64748b',
+                  }}
+                >
+                  Date
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                  title={sortOrder === 'asc' ? 'Currently Ascending - click for Descending' : 'Currently Descending - click for Ascending'}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    border: '1px solid #2563eb',
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.2rem',
+                  }}
+                >
+                  {sortOrder === 'asc' ? 'A' : 'D'}
+                  <span style={{ fontSize: '0.7rem' }}>{sortOrder === 'asc' ? 'Asc' : 'Desc'}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: '1rem' }}>
           {filteredTasks.map((task) => {
             const priorityConfig = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.Medium;
@@ -2237,7 +2817,59 @@ const DesignerScreen = forwardRef(function DesignerScreen(
 
             if (embedded) {
               const heroImg = task.sampleImage || finalImgs[0] || stage3Imgs[0] || cmImgs[0] || drowImgs[0] || task.outputImage || (task.sampleLink && /\.(jpg|jpeg|png|webp|gif)/i.test(task.sampleLink) ? task.sampleLink : '');
-              const isInactive = task.status === 'Inactive' || task.status === 'Cancelled' || String(task.finalDesignStatus || '').toLowerCase().startsWith('reject');
+              const isApproved = task.finalDesignStatus === 'Approved' || task.finalDesignStatus === 'APPROVED SAMPLE' || task.status === 'Approved';
+              const isRevision = String(task.finalDesignStatus || '').toLowerCase().startsWith('reject');
+
+              let processBadge = {
+                label: '1. Drawing',
+                color: '#0284c7',
+                bg: 'rgba(2, 132, 199, 0.12)',
+                border: '1px solid rgba(2, 132, 199, 0.3)',
+              };
+
+              if (isApproved) {
+                processBadge = {
+                  label: 'Approved',
+                  color: '#16a34a',
+                  bg: 'rgba(22, 163, 74, 0.12)',
+                  border: '1px solid rgba(22, 163, 74, 0.3)',
+                };
+              } else if (isRevision) {
+                processBadge = {
+                  label: 'Reject / Revisions',
+                  color: '#dc2626',
+                  bg: 'rgba(220, 38, 38, 0.12)',
+                  border: '1px solid rgba(220, 38, 38, 0.3)',
+                };
+              } else if (task.stage3Status === 'Hold') {
+                processBadge = {
+                  label: '3. Hold',
+                  color: '#ea580c',
+                  bg: 'rgba(234, 88, 12, 0.12)',
+                  border: '1px solid rgba(234, 88, 12, 0.3)',
+                };
+              } else if (task.stage3Status === 'Continue') {
+                processBadge = {
+                  label: '3. Continue',
+                  color: '#0284c7',
+                  bg: 'rgba(2, 132, 199, 0.12)',
+                  border: '1px solid rgba(2, 132, 199, 0.3)',
+                };
+              } else if (task.colourMatchingStatus) {
+                processBadge = {
+                  label: '2. Colour Match',
+                  color: '#db2777',
+                  bg: 'rgba(219, 39, 119, 0.12)',
+                  border: '1px solid rgba(219, 39, 119, 0.3)',
+                };
+              } else {
+                processBadge = {
+                  label: '1. Drawing',
+                  color: '#0284c7',
+                  bg: 'rgba(2, 132, 199, 0.12)',
+                  border: '1px solid rgba(2, 132, 199, 0.3)',
+                };
+              }
 
               return (
                 <div
@@ -2250,20 +2882,17 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                     gap: '0.8rem',
                     transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                     position: 'relative',
-                    background: '#ffffff',
-                    borderRadius: '14px',
-                    border: '1px solid #e2e8f0',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = '';
                     e.currentTarget.style.boxShadow = '';
                   }}
                 >
-                  {/* Category badge (Top-Left) */}
+                  {/* Category / Fabric badge (Top-Left) */}
                   <span
                     style={{
                       position: 'absolute',
@@ -2283,26 +2912,29 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                     {allFabrics[0] || task.category || 'ALLOWER'}
                   </span>
 
-                  {/* Status badge (Top-Right) */}
+                  {/* Current Process / Stage badge (Top-Right) */}
                   <span
                     style={{
                       position: 'absolute',
                       top: 16,
                       right: 16,
-                      background: isInactive ? 'rgba(255,255,255,0.05)' : 'rgba(52,211,153,0.15)',
-                      color: isInactive ? 'var(--text-muted)' : '#34d399',
+                      background: processBadge.bg,
+                      color: processBadge.color,
                       fontSize: '0.65rem',
                       fontWeight: 800,
-                      padding: '2px 6px',
+                      padding: '2px 8px',
                       borderRadius: '4px',
-                      border: isInactive ? '1px solid var(--border-light)' : '1px solid rgba(52,211,153,0.3)',
+                      border: processBadge.border,
                       zIndex: 2,
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
                     }}
+                    title={`Current Process: ${processBadge.label}`}
                   >
-                    {isInactive ? 'Inactive' : 'Active'}
+                    {processBadge.label}
                   </span>
 
-                  {/* Main Image View (180px, #04070d, identical to Design Catalog Image 1) */}
+                  {/* Main Image View (180px, #04070d, identical to Design Catalog Image) */}
                   <div
                     style={{
                       height: '180px',
@@ -2331,82 +2963,67 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                   {/* Design Info */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary, #2563eb)' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)' }}>
                         {task.designName}
                       </span>
                     </div>
 
-                    {/* Brand / Assigned Parties badge -- only show if party data exists */}
-                    {(task.partyName || (Array.isArray(task.parties) && task.parties[0])) && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-                        <span
-                          style={{
-                            fontSize: '0.68rem',
-                            color: '#10b981',
-                            fontWeight: 700,
-                            background: 'rgba(16, 185, 129, 0.12)',
-                            padding: '2px 7px',
-                            borderRadius: '4px',
-                            border: '1px solid rgba(16, 185, 129, 0.25)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                          }}
-                          title={`Party (Client): ${task.partyName || (Array.isArray(task.parties) && task.parties[0])}`}
-                        >
-                          <span style={{ fontSize: '0.72rem' }}>🏢</span> {task.partyName || (Array.isArray(task.parties) && task.parties[0])}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Parameters grid: only show required design details */}
+                    {/* Parameters grid: Exactly 3 rows as requested */}
                     <div
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 1fr',
                         gap: '0.3rem 0.5rem',
                         fontSize: '0.78rem',
-                        borderTop: '1px dashed var(--border-light, #cbd5e1)',
+                        borderTop: '1px dashed var(--border-light)',
                         paddingTop: '0.5rem',
                       }}
                     >
-                      {[
-                        ['Designer', allDesigners.join(', ') || '--'],
-                        ['Colour Match', allColourMatches.join(', ') || '--'],
-                        ['Fabric', allFabrics.join(', ') || '--'],
-                        ['Created By', task.createdByName || task.createdBy || '--'],
-                      ].map(([k, v]) => (
-                        <div key={k} style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>{k}</span>
-                          <span style={{ color: 'var(--text-primary, #0f172a)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {v || '--'}
-                          </span>
-                        </div>
-                      ))}
+                      {/* 1 row: Assign Design , Colour matching */}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Assign Design</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={allDesigners.join(', ') || task.designerName || '--'}>
+                          {allDesigners.join(', ') || task.designerName || '--'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colour Matching</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={allColourMatches.join(', ') || task.colourMatching || '--'}>
+                          {allColourMatches.join(', ') || task.colourMatching || '--'}
+                        </span>
+                      </div>
+
+                      {/* 2 row: Priority , Machine */}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Priority</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {task.priority || 'Medium'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Machine</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.machineName || task.machine || '--'}>
+                          {task.machineName || task.machine || '--'}
+                        </span>
+                      </div>
+
+                      {/* 3 row: created by */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 'span 2' }}>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Created By</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={task.createdByName || task.createdBy || '--'}>
+                          {task.createdByName || task.createdBy || '--'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Actions identical to Design Catalog */}
-                  <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px solid var(--border-light, #e2e8f0)', paddingTop: '0.7rem', marginTop: 'auto' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.7rem', marginTop: 'auto' }}>
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(task)}
                       className="btn-secondary"
-                      style={{
-                        flex: 1,
-                        padding: '0.4rem',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        justifyContent: 'center',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        background: '#f8fafc',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        color: '#334155',
-                      }}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', justifyContent: 'center' }}
                     >
                       <Edit2 size={13} /> Edit Design
                     </button>
@@ -2417,7 +3034,7 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                         style={{
                           padding: '0.4rem 0.7rem',
                           fontSize: '0.78rem',
-                          borderRadius: '6px',
+                          borderRadius: 'var(--radius-sm)',
                           background: 'rgba(239,68,68,0.08)',
                           border: '1px solid rgba(239,68,68,0.2)',
                           color: '#f87171',
@@ -2531,19 +3148,6 @@ const DesignerScreen = forwardRef(function DesignerScreen(
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          color: '#2563eb',
-                          background: '#eff6ff',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '6px',
-                          border: '1px solid #bfdbfe',
-                        }}
-                      >
-                        {task.taskNo}
-                      </span>
                       <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>
                         {task.date}
                       </span>
