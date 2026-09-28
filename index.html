@@ -23,18 +23,44 @@
       })();
     </script>
     <link rel="icon" type="image/png" href="/Logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Elite ERP" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- Self-Hosted Inter WOFF2 Fonts Preload (100% Offline PWA Ready) -->
+    <link rel="preload" href="/fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter-500.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!-- High-Priority Preload for Brand Logo -->
+    <link rel="preload" as="image" href="/Logo.png" type="image/png" fetchpriority="high" />
+
+    <!-- Zero-CLS Critical CSS Placeholder & Light Theme Background -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #ffffff;
+        color: #0f172a;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overscroll-behavior: contain;
+      }
+      #root {
+        min-height: 100dvh;
+        background-color: #ffffff;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
+
     <!-- Primary SEO Meta Tags -->
     <title>Elite Edition Enterprise ERP - Digital Printing, Stitching & Fabric Management System</title>
-    <!-- Google Fonts: Nunito Sans (Phoenix Theme) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;0,6..12,800;1,6..12,400;1,6..12,600&display=swap" rel="stylesheet">
-
     <meta name="title" content="Elite Edition Enterprise ERP - Digital Printing, Stitching & Fabric Management System" />
     <meta name="description" content="Elite Edition Enterprise ERP System: Advanced Job Card Tracking, Digital Textile Printing, Fabric Inventory Management, GST Invoicing, Garment Stitching & Inter-Department Operations." />
     <meta name="keywords" content="Elite Edition, Elite Digital Print, Elite Stitching, Textile Printing ERP, Job Card System, Fabric Inventory Management, GST Billing Software, Digital Printing ERP, Garment Manufacturing System" />
@@ -59,11 +85,6 @@
     <meta name="twitter:description" content="Next-gen Enterprise Resource Planning for Digital Printing, Fabric Inventory, Job Card Tracking, Stitching & Accounts." />
     <meta name="twitter:image" content="https://erp.eliteedition.in/Logo.png" />
 
-    <!-- PWA & Mobile Optimization -->
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0f172a" />
-    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
-
     <!-- Schema.org JSON-LD Structured Data for Search Engines -->
     <script type="application/ld+json">
       {
@@ -82,8 +103,8 @@
       }
     </script>
 
-    <!-- JsBarcode library for client-side barcode sticker printing -->
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <!-- JsBarcode library loaded asynchronously (Non-render blocking) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   </head>
   <body>
     <div id="root"></div>

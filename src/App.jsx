@@ -2,55 +2,46 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { api, getBaseUrl, setBaseUrl } from './services/api';
 import Login from './components/Login';
-import ClientLogin from './components/ClientLogin';
-import ClientPortal from './components/ClientPortal';
-import DashboardStats from './components/DashboardStats';
-import InventoryGrid from './components/InventoryGrid';
-import ProductCatalogGrid from './components/ProductCatalogGrid';
-import InventoryForm from './components/InventoryForm';
-import BulkInwardModal from './components/BulkInwardModal';
-import SalesGrid from './components/SalesGrid';
-import StockOutForm from './components/StockOutForm';
-import CatalogManagerModal from './components/CatalogManagerModal';
-import JobCardPanel from './components/JobCardPanel';
-import StitchingSettings from './components/StitchingSettings';
-import AdminPanel from './components/AdminPanel';
-import Workspace from './components/Workspace';
-import CommunicationPanel from './components/CommunicationPanel';
-import TaskManagerPanel from './components/TaskManagerPanel';
-import EliteModalDialog from './components/EliteModalDialog';
-import AutoUpdateNotification from './components/AutoUpdateNotification';
-import CompanySettingsPanel from './components/CompanySettingsPanel';
-import { matchSkuOrBrandCode } from './utils/skuHelper';
-import EliteBillingDepartment from './components/EliteBillingDepartment';
-import CompanyDevelopmentWorkspace from './components/CompanyDevelopmentWorkspace';
-import DigitalPrintComplainModule from './components/DigitalPrintComplainModule';
-import DigitalPrintExpenseModule from './components/DigitalPrintExpenseModule';
-import CompanyDedicatedDashboard from './components/CompanyDedicatedDashboard';
-import GarmentJobCardDashboard from './components/GarmentJobCardDashboard';
-import CrmPanel from './components/CrmPanel';
-import BusinessConnectionPanel from './components/BusinessConnectionPanel';
-import { COMPANIES, getCompanyById } from './config/companiesConfig';
 
-// Code-splitting lazy loads for heavy tab modules
+// Dynamic code-splitting for all route and workspace modules
+const ClientLogin = lazy(() => import('./components/ClientLogin'));
+const ClientPortal = lazy(() => import('./components/ClientPortal'));
+const DashboardStats = lazy(() => import('./components/DashboardStats'));
+const InventoryGrid = lazy(() => import('./components/InventoryGrid'));
+const ProductCatalogGrid = lazy(() => import('./components/ProductCatalogGrid'));
+const InventoryForm = lazy(() => import('./components/InventoryForm'));
+const BulkInwardModal = lazy(() => import('./components/BulkInwardModal'));
+const SalesGrid = lazy(() => import('./components/SalesGrid'));
+const StockOutForm = lazy(() => import('./components/StockOutForm'));
+const CatalogManagerModal = lazy(() => import('./components/CatalogManagerModal'));
+const JobCardPanel = lazy(() => import('./components/JobCardPanel'));
+const StitchingSettings = lazy(() => import('./components/StitchingSettings'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const Workspace = lazy(() => import('./components/Workspace'));
+const CommunicationPanel = lazy(() => import('./components/CommunicationPanel'));
+const TaskManagerPanel = lazy(() => import('./components/TaskManagerPanel'));
+const CompanySettingsPanel = lazy(() => import('./components/CompanySettingsPanel'));
+const EliteBillingDepartment = lazy(() => import('./components/EliteBillingDepartment'));
+const CompanyDevelopmentWorkspace = lazy(() => import('./components/CompanyDevelopmentWorkspace'));
+const DigitalPrintComplainModule = lazy(() => import('./components/DigitalPrintComplainModule'));
+const DigitalPrintExpenseModule = lazy(() => import('./components/DigitalPrintExpenseModule'));
+const CompanyDedicatedDashboard = lazy(() => import('./components/CompanyDedicatedDashboard'));
+const GarmentJobCardDashboard = lazy(() => import('./components/GarmentJobCardDashboard'));
+const CrmPanel = lazy(() => import('./components/CrmPanel'));
+const BusinessConnectionPanel = lazy(() => import('./components/BusinessConnectionPanel'));
 const ReportsCenter = lazy(() => import('./components/ReportsCenter'));
 const UnicommerceHub = lazy(() => import('./components/UnicommerceHub'));
 const MyntraHub = lazy(() => import('./components/MyntraHub'));
 const ReturnsManager = lazy(() => import('./components/ReturnsManager'));
-import DesignerModule from './components/DesignerModule';
-import DesignerScreen from './components/DesignerScreen';
-import CalendarModule from './components/CalendarModule';
-import FileManager from './components/FileManager';
-import InboxModule from './components/InboxModule';
-import ActivityFeed from './components/ActivityFeed';
-import GanttChart from './components/GanttChart';
-import GeographicMap from './components/GeographicMap';
-import AdvancedDashboard from './components/AdvancedDashboard';
-import Gallery from './components/Gallery';
-import ThemeCustomizer from './components/ThemeCustomizer';
-import {
-  LogOut,
-  LayoutGrid, 
+const DesignerModule = lazy(() => import('./components/DesignerModule'));
+const DesignerScreen = lazy(() => import('./components/DesignerScreen'));
+
+import EliteModalDialog from './components/EliteModalDialog';
+import AutoUpdateNotification from './components/AutoUpdateNotification';
+import { matchSkuOrBrandCode } from './utils/skuHelper';
+import { COMPANIES, getCompanyById } from './config/companiesConfig';
+import { 
+  LogOut, 
   LayoutDashboard, 
   Database, 
   RefreshCw, 
@@ -89,14 +80,6 @@ import {
   Sparkles,
   Sliders,
   Bot,
-  Sun,
-  Moon,
-  Search as SearchIcon,
-  Folder,
-  Mail,
-  Calendar as CalendarIcon,
-  Globe,
-  Image as ImageIcon,
   Phone,
   PhoneOff
 } from 'lucide-react';
@@ -105,6 +88,11 @@ import NotificationToastContainer, { triggerPushNotification, triggerGlobalDataR
 import WebDevicePermissionsModal from './components/WebDevicePermissionsModal';
 import PermissionHelpModal from './components/PermissionHelpModal';
 import { useSocket } from './contexts/SocketContext';
+import { socketManager } from './services/socketManager';
+import GlobalSearchModal from './components/common/GlobalSearchModal';
+import MobileBottomNav from './components/common/MobileBottomNav';
+import UndoToastContainer from './components/common/UndoToast';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 
 
@@ -132,8 +120,16 @@ export default function App() {
 
   const initialNav = getSavedNavState();
   const socket = useSocket();
+  const [connectionStatus, setConnectionStatus] = useState(() => socketManager.getStatus());
+  const [conflictRecord, setConflictRecord] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(api.isAuthenticated());
   const [currentUser, setCurrentUser] = useState(() => api.getCurrentUser());
+
+  useEffect(() => {
+    return socketManager.onStatusChange((newStatus) => {
+      setConnectionStatus(newStatus);
+    });
+  }, []);
 
   const checkIsClientUrl = () => {
     try {
@@ -185,82 +181,14 @@ export default function App() {
   // Notification Toasts state
   const [toasts, setToasts] = useState([]);
   const [globalIncomingCall, setGlobalIncomingCall] = useState(null);
-
-  // Dark mode state and effect
-  const [isDarkMode, setIsDarkMode] = useState(() => {
+  const [showPermHelpModal, setShowPermHelpModal] = useState(false);
+  const [permSnoozedSession, setPermSnoozedSession] = useState(() => {
     try {
-      const saved = localStorage.getItem('elite_dark_mode');
-      return saved === 'true';
+      return sessionStorage.getItem('elite_perm_snoozed_session') === 'true';
     } catch {
       return false;
     }
   });
-
-  useEffect(() => {
-    try {
-      if (isDarkMode) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-      } else {
-        document.documentElement.removeAttribute('data-theme');
-      }
-      localStorage.setItem('elite_dark_mode', String(isDarkMode));
-    } catch (e) {}
-  }, [isDarkMode]);
-
-  // Global search state
-  const [globalSearch, setGlobalSearch] = useState('');
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const searchRef = useRef(null);
-
-  useEffect(() => {
-    const handleOutsideClick = (e) => {
-      if (searchRef.current && !searchRef.current.contains(e.target)) {
-        setShowSearchResults(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
-
-  // Notification inline dropdown state
-  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-  const notifDropdownRef = useRef(null);
-
-  useEffect(() => {
-    const handleOutsideNotif = (e) => {
-      if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target)) {
-        setShowNotifDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideNotif);
-    return () => document.removeEventListener('mousedown', handleOutsideNotif);
-  }, []);
-
-  // Theme customizer drawer state
-  const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
-
-  const SEARCHABLE_MODULES = [
-    { label: 'Dashboard Overview', tab: 'dashboard', category: 'General' },
-    { label: 'Calendar Schedule & Events', tab: 'calendar', category: 'Apps' },
-    { label: 'Email & Inbox Messages', tab: 'inbox', category: 'Apps' },
-    { label: 'File Manager & Documents', tab: 'file_manager', category: 'Apps' },
-    { label: 'Activity & Team Feed', tab: 'activity_feed', category: 'Apps' },
-    { label: 'Production Gantt Timeline', tab: 'gantt', category: 'Production' },
-    { label: 'Territory Revenue Map', tab: 'geo_map', category: 'Analytics' },
-    { label: 'Advanced Analytics & Projections', tab: 'advanced_dashboard', category: 'Analytics' },
-    { label: 'Design & Media Gallery', tab: 'gallery', category: 'Design' },
-    { label: 'Job Cards & Production', tab: 'jobcards', category: 'Production' },
-    { label: 'Printing Department Log', tab: 'jobcards_printing_log', category: 'Production' },
-    { label: 'Fusing & Heat Press', tab: 'jobcards_fusing_log', category: 'Production' },
-    { label: 'Fabric Inventory Management', tab: 'jobcards_fabric', category: 'Inventory' },
-    { label: 'Elite Billing & Finance', tab: 'jobcards_billing', category: 'Finance' },
-    { label: 'Designer Screen & Tasks', tab: 'designer_screen', category: 'Design' },
-    { label: 'Sample Design Screen', tab: 'jobcards_sample', category: 'Design' },
-    { label: 'Stitching Job Cards', tab: 'jobcards_list', category: 'Stitching' },
-    { label: 'Team Communication & Chat', tab: 'communication', category: 'Collaboration' },
-    { label: 'Task Management Kanban', tab: 'task_management', category: 'Tasks' },
-    { label: 'Admin Security Panel', tab: 'admin', category: 'Admin' }
-  ];
 
   // Chat unread count tracking for notification badges
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
@@ -290,36 +218,158 @@ export default function App() {
   const [activeDepartment, setActiveDepartment] = useState(initialNav.dept);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showCompanyQuickSheet, setShowCompanyQuickSheet] = useState(false);
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 850);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
 
-  const longPressTimerRef = useRef(null);
-  const isLongPressRef = useRef(false);
-
-  const handleTouchStart = () => {
-    isLongPressRef.current = false;
-    longPressTimerRef.current = setTimeout(() => {
-      isLongPressRef.current = true;
-      setShowCompanyQuickSheet(true);
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(50);
+  // Global Ctrl/Cmd + K shortcut for Global Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowGlobalSearch((prev) => !prev);
       }
-    }, 350);
-  };
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
-  const handleTouchEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+  const handleSelectSearchResult = (item) => {
+    if (!item) return;
+    if (item.type === 'jobcard') {
+      setActiveTab('jobcards');
+    } else if (item.type === 'invoice') {
+      setActiveTab('ee_invoices');
+    } else if (item.type === 'party') {
+      setActiveTab('jobcards_crm');
+    } else if (item.type === 'inventory') {
+      setActiveTab('inventory');
+    } else if (item.route) {
+      window.location.hash = item.route;
     }
   };
 
-  const handleMenuButtonClick = () => {
-    if (isLongPressRef.current) {
-      isLongPressRef.current = false;
-      return;
+  // PWA & Native App State Management
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(display-mode: standalone)').matches || Boolean(window.navigator.standalone);
+  });
+  const [showIosInstallHint, setShowIosInstallHint] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || Boolean(window.navigator.standalone);
+    const dismissed = localStorage.getItem('dismissed_ios_install_hint');
+    return isIos && isSafari && !standalone && !dismissed;
+  });
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [updateWaitingWorker, setUpdateWaitingWorker] = useState(null);
+
+  // Capture beforeinstallprompt and appinstalled
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    const handleAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      setIsStandalone(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  // Monitor Network Connectivity (Offline status)
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Monitor Service Worker Updates
+  useEffect(() => {
+    const handlePwaUpdate = (e) => {
+      const reg = e.detail?.registration;
+      if (reg && reg.waiting) {
+        setUpdateWaitingWorker(reg.waiting);
+      }
+    };
+    window.addEventListener('pwa-update-available', handlePwaUpdate);
+    return () => window.removeEventListener('pwa-update-available', handlePwaUpdate);
+  }, []);
+
+  // Back button / gesture navigation handling: close drawer or modals before exit
+  useEffect(() => {
+    const handlePopState = () => {
+      if (mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      } else if (showCompanyQuickSheet) {
+        setShowCompanyQuickSheet(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [mobileMenuOpen, showCompanyQuickSheet]);
+
+  // Keep navigation in app scope: external links open in browser
+  useEffect(() => {
+    const handleExternalLinks = (e) => {
+      const anchor = e.target.closest('a');
+      if (anchor && anchor.href) {
+        try {
+          const url = new URL(anchor.href, window.location.origin);
+          if (url.origin !== window.location.origin) {
+            anchor.target = '_blank';
+            anchor.rel = 'noopener noreferrer';
+          }
+        } catch (err) {}
+      }
+    };
+    document.addEventListener('click', handleExternalLinks);
+    return () => document.removeEventListener('click', handleExternalLinks);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredInstallPrompt(null);
     }
-    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const handleApplyUpdate = () => {
+    if (updateWaitingWorker) {
+      updateWaitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      window.location.reload();
+    }
+  };
+
+  // Lock body scroll when mobile drawer or company quick sheet is open
+  useEffect(() => {
+    if (mobileMenuOpen || showCompanyQuickSheet) {
+      document.body.classList.add('body-scroll-lock');
+    } else {
+      document.body.classList.remove('body-scroll-lock');
+    }
+    return () => {
+      document.body.classList.remove('body-scroll-lock');
+    };
+  }, [mobileMenuOpen, showCompanyQuickSheet]);
+
+  const handleMenuButtonClick = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setMobileMenuOpen(prev => !prev);
   };
 
   // Preserve activeTab and activeDepartment across hard refreshes and browser history
@@ -350,7 +400,7 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 850);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -377,21 +427,11 @@ export default function App() {
   // Department permission helpers
   // Department permission helpers
   const ELITE_ONLINE_PERMISSIONS = ['dashboard', 'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra'];
-  const EDP_PERMISSIONS = ['jobcards', 'jobcards_status_dashboard', 'jobcards_status', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_sample', 'jobcards_sample_design', 'jobcards_master', 'designer_screen', 'designer_module', 'jobcards_settings', 'jobcards_raw_materials', 'jobcards_complain', 'jobcards_complaints', 'complaint_dashboard', 'complaint_create', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard', 'expense_create', 'jobcards_crm', 'crm_department', 'crm', 'jobcards_master_ai', 'master_ai_agent', 'jobcards_business_connection', 'business_connection'];
+  const EDP_PERMISSIONS = ['jobcards', 'jobcards_status_dashboard', 'jobcards_status', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_master', 'designer_screen', 'designer_module', 'jobcards_settings', 'jobcards_raw_materials', 'jobcards_complain', 'jobcards_complaints', 'complaint_dashboard', 'complaint_create', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard', 'expense_create', 'jobcards_crm', 'crm_department', 'crm', 'crm_profiles', 'crm_leads', 'jobcards_master_ai', 'master_ai_agent', 'jobcards_business_connection', 'business_connection'];
   const STITCHING_PERMISSIONS = [
     'stitching_jobcards', 'stitching_design', 'stitching_fabric', 'stitching_settings',
     'jobcards_stitching_challan', 'jobcards_stitching_settings', 'stitching'
   ];
-
-  const isMasterAdmin = Boolean(
-    currentUser?.isMainAdmin ||
-    (currentUser?.role || '').toLowerCase() === 'admin' ||
-    (currentUser?.role || '').toLowerCase() === 'master_admin' ||
-    (currentUser?.username || '').toLowerCase() === 'admin' ||
-    (currentUser?.username || '').toLowerCase() === 'master' ||
-    (currentUser?.email || '').toLowerCase() === 'harshitsidapara2468@gmail.com' ||
-    (currentUser?.email || '').toLowerCase() === 'admin@elite.com'
-  );
 
   const isCompanyAllowed = (companyName) => {
     if (!currentUser) return false;
@@ -412,7 +452,7 @@ export default function App() {
 
   const getFirstJobCardsTab = () => {
     if (!currentUser || currentUser.role === 'admin') return 'jobcards';
-    const subTabs = ['jobcards', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_sample', 'jobcards_master', 'jobcards_settings', 'jobcards_raw_materials'];
+    const subTabs = ['jobcards', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_master', 'jobcards_settings', 'jobcards_raw_materials'];
     const allowed = subTabs.filter(t => currentUser.permissions?.includes(t));
     return allowed[0] || 'jobcards';
   };
@@ -492,6 +532,12 @@ export default function App() {
   const handleSwitchDepartment = (dept) => {
     setActiveDepartment(dept);
     const comp = getCompanyById(dept);
+    socketManager.setCompany(dept, comp?.code);
+    setItems([]);
+    setCatalogItems([]);
+    setSales([]);
+    setParties([]);
+    triggerGlobalDataRefresh('company-switch');
     triggerPushNotification('Switched Department 🔄', `Now viewing ${comp.name} (${comp.type}).`, 'info');
     if (dept === 'digital_print') {
       const firstTab = getFirstJobCardsTab();
@@ -534,9 +580,8 @@ export default function App() {
       'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master', 'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings',
       'jobcards_stitching_challan', 'jobcards_stitching_settings',
       'jobcards_printing_log', 'jobcards_fusing_log', 'jobcards_print_entry', 'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_split_view', 'jobcards_challan', 'jobcards_complain', 'jobcards_expense',
-      'jobcards_expenses', 'expense_dashboard', 'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard', 'jobcards_crm', 'crm_department', 'crm', 'jobcards_master_ai', 'master_ai_agent',
-      'jobcards_business_connection', 'business_connection', 'complaint_dashboard', 'complaint_create',
-      'calendar', 'file_manager', 'inbox', 'activity_feed', 'gantt', 'geo_map', 'advanced_dashboard', 'gallery'
+      'jobcards_expenses', 'expense_dashboard', 'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard', 'jobcards_crm', 'crm_department', 'crm', 'crm_profiles', 'crm_leads', 'jobcards_master_ai', 'master_ai_agent',
+      'jobcards_business_connection', 'business_connection', 'complaint_dashboard', 'complaint_create'
     ];
 
     if (currentUser.role === 'admin') {
@@ -548,7 +593,6 @@ export default function App() {
       // For non-admin users, check if activeTab or any parent category is allowed
       const isAllowed = currentUser.permissions.some(p => {
         if (p === activeTab) return true;
-        if (['calendar', 'file_manager', 'inbox', 'activity_feed', 'gantt', 'geo_map', 'advanced_dashboard', 'gallery'].includes(activeTab)) return isMasterAdmin;
         if (activeTab.startsWith('ee_') || activeTab.startsWith('ef_') || activeTab.startsWith('es_') || activeTab.startsWith('eo_')) return true;
         if (activeTab === 'catalog' && p === 'inventory') return true;
         if (activeTab === 'jobcards_list' && (p === 'stitching_jobcards' || p === 'jobcards_list' || p === 'jobcards')) return true;
@@ -556,14 +600,14 @@ export default function App() {
         if ((activeTab === 'jobcards_stitching_challan' || activeTab === 'jobcards_fabric') && (p === 'stitching_fabric' || p === 'jobcards_stitching_challan' || p === 'jobcards_fabric')) return true;
         if (activeTab === 'jobcards_stitching_settings' && (p === 'stitching_settings' || p === 'jobcards_stitching_settings')) return true;
         if ((activeTab === 'jobcards_business_connection' || activeTab === 'business_connection') && (p === 'jobcards_business_connection' || p === 'business_connection' || p === 'jobcards_master_ai' || p === 'jobcards')) return true;
-        if ((activeTab === 'jobcards_crm' || activeTab === 'crm_leads') && (p === 'jobcards_crm' || p === 'crm_department' || p === 'crm' || p === 'crm_leads' || p === 'jobcards')) return true;
+        if ((activeTab === 'jobcards_crm' || activeTab === 'crm_leads' || activeTab === 'crm_profiles') && (p === 'jobcards_crm' || p === 'crm_department' || p === 'crm' || p === 'crm_leads' || p === 'crm_profiles' || p === 'jobcards')) return true;
         if (activeTab.startsWith('jobcards_') && (p === 'jobcards' || p === activeTab)) return true;
         if (activeTab === 'jobcards' && p.startsWith('jobcards')) return true;
         if (activeTab.startsWith('stitching_') && (p.startsWith('stitching_') || p === 'jobcards')) return true;
         return false;
       });
 
-      if (!isAllowed && !(isMasterAdmin && ['calendar', 'file_manager', 'inbox', 'activity_feed', 'gantt', 'geo_map', 'advanced_dashboard', 'gallery'].includes(activeTab)) && !['workspace', 'dashboard'].includes(activeTab)) {
+      if (!isAllowed && !['workspace', 'dashboard'].includes(activeTab)) {
         if (hasStitchingAccess && activeDepartment === 'stitching') {
           setActiveTab(getFirstStitchingTab());
         } else if (hasDigitalPrintAccess && activeDepartment === 'digital_print') {
@@ -602,36 +646,6 @@ export default function App() {
   });
 
   const [notificationPerm, setNotificationPerm] = useState(() => ('Notification' in window ? Notification.permission : 'unsupported'));
-  const [showPermHelpModal, setShowPermHelpModal] = useState(false);
-  const [permSnoozedSession, setPermSnoozedSession] = useState(() => {
-    try {
-      return sessionStorage.getItem('elite_perm_snoozed_session') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
-
-  // Keep permission state in sync when returning to tab or when permissions change
-  useEffect(() => {
-    const updatePerm = () => {
-      if ('Notification' in window) {
-        const curr = Notification.permission;
-        setNotificationPerm(curr);
-        if (curr === 'granted') {
-          try {
-            sessionStorage.removeItem('elite_perm_snoozed_session');
-          } catch (e) {}
-          setPermSnoozedSession(false);
-        }
-      }
-    };
-    window.addEventListener('focus', updatePerm);
-    window.addEventListener('elite-permission-change', updatePerm);
-    return () => {
-      window.removeEventListener('focus', updatePerm);
-      window.removeEventListener('elite-permission-change', updatePerm);
-    };
-  }, []);
 
   useEffect(() => {
     const handleNotifUpdate = () => {
@@ -641,11 +655,11 @@ export default function App() {
     return () => window.removeEventListener('elite-notification-history-update', handleNotifUpdate);
   }, []);
 
-  // Auto-request push notification permission as soon as user enters app unless already granted
+  // Auto-request push notification permission as soon as user logs in or reloads page
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    if ('Notification' in window && Notification.permission === 'default' && !permSnoozedSession) {
+    if ('Notification' in window && Notification.permission === 'default') {
       const askPerm = async () => {
         try {
           const res = await requestNotificationPermission();
@@ -701,7 +715,7 @@ export default function App() {
 
   // Global Socket.io Real-Time Push Notification & Multi-Department Listener
   useEffect(() => {
-    if (!socket || !isAuthenticated) return;
+    if (!socket || !isAuthenticated || typeof socket.emit !== 'function' || typeof socket.on !== 'function') return;
 
     if (currentUser) {
       const uId = currentUser.id || currentUser._id;
@@ -767,16 +781,37 @@ export default function App() {
       triggerGlobalDataRefresh();
     };
 
-    const handleDataUpdate = () => {
-      triggerGlobalDataRefresh();
+    const handleDataUpdate = (event) => {
+      // If user is currently editing the record that was updated by someone else, show conflict notice
+      if (event && event.id && editingItem && (editingItem._id === event.id || editingItem.id === event.id)) {
+        setConflictRecord(event);
+        return; // Non-destructive: do NOT overwrite user's unsaved form input!
+      }
+
+      // Direct patch local state if payload is provided
+      if (event && event.entity) {
+        const id = event.id;
+        if (event.action === 'deleted') {
+          setItems(prev => prev.filter(i => i._id !== id && i.id !== id));
+          setSales(prev => prev.filter(s => s._id !== id && s.id !== id));
+          setCatalogItems(prev => prev.filter(c => c._id !== id && c.id !== id));
+        } else if (event.action === 'updated' && event.payload) {
+          setItems(prev => prev.map(i => (i._id === id || i.id === id) ? { ...i, ...event.payload } : i));
+          setSales(prev => prev.map(s => (s._id === id || s.id === id) ? { ...s, ...event.payload } : s));
+          setCatalogItems(prev => prev.map(c => (c._id === id || c.id === id) ? { ...c, ...event.payload } : c));
+        } else if (event.action === 'created' && event.payload) {
+          if (event.entity === 'item' || event.entity === 'inventory') {
+            setItems(prev => [event.payload, ...prev.filter(i => i._id !== id && i.id !== id)]);
+          } else if (event.entity === 'sale' || event.entity === 'sales') {
+            setSales(prev => [event.payload, ...prev.filter(s => s._id !== id && s.id !== id)]);
+          }
+        }
+      }
+
+      triggerGlobalDataRefresh(event || 'socket');
     };
 
     const handleIncomingCallGlobal = (data) => {
-      if (!data || !data.roomId) return;
-      const myId = String(currentUser?._id || currentUser?.id || '');
-      if (data.caller && String(data.caller) === myId) return;
-
-      // 1. Browser OS Push Notification
       try {
         if ('Notification' in window && Notification.permission === 'granted') {
           const n = new Notification(`📞 Incoming ${data.callType === 'video' ? 'Video' : 'Voice'} Call`, {
@@ -794,7 +829,6 @@ export default function App() {
         }
       } catch (e) {}
 
-      // 2. High-priority in-app notification
       triggerPushNotification(
         `📞 Incoming ${data.callType === 'video' ? 'Video' : 'Voice'} Call`,
         `${data.callerName || 'Team Member'} is calling you. Click to Answer!`,
@@ -802,7 +836,6 @@ export default function App() {
         'communication'
       );
 
-      // 3. Set global banner if not already in communication tab
       if (activeTab !== 'communication') {
         setGlobalIncomingCall(data);
       }
@@ -851,8 +884,10 @@ export default function App() {
     socket.on('catalog-updated', handleDataUpdate);
     socket.on('stock-out-created', handleDataUpdate);
     socket.on('returns-updated', handleDataUpdate);
+    socket.on('data-changed', handleDataUpdate);
 
     return () => {
+      if (!socket || typeof socket.off !== 'function') return;
       socket.off('incoming-call', handleIncomingCallGlobal);
       socket.off('call-ended', handleCallDismissGlobal);
       socket.off('call-declined', handleCallDismissGlobal);
@@ -892,6 +927,7 @@ export default function App() {
       socket.off('catalog-updated', handleDataUpdate);
       socket.off('stock-out-created', handleDataUpdate);
       socket.off('returns-updated', handleDataUpdate);
+      socket.off('data-changed', handleDataUpdate);
     };
   }, [socket, isAuthenticated, currentUser?._id]);
 
@@ -955,11 +991,24 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    socketManager.disconnect();
     api.logout();
     setIsAuthenticated(false);
     setCurrentUser(null);
     setItems([]);
     setSales([]);
+    try {
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((key) => {
+            if (key.includes('runtime') || key.includes('user') || key.includes('api')) {
+              caches.delete(key);
+            }
+          });
+        });
+      }
+      sessionStorage.clear();
+    } catch (e) {}
   };
 
   // Catalog Sync Handler
@@ -1259,15 +1308,21 @@ export default function App() {
   if (!isAuthenticated) {
     if (isClientPortalMode) {
       return (
-        <ClientLogin
-          onLoginSuccess={handleLoginSuccess}
-          onSwitchToStaff={() => {
-            if (window.location.hash.includes('client')) {
-              window.location.hash = '';
-            }
-            setIsClientPortalMode(false);
-          }}
-        />
+        <Suspense fallback={
+          <div style={{ minHeight: '100vh', background: '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+            <RefreshCw size={32} className="spin-loader" />
+          </div>
+        }>
+          <ClientLogin
+            onLoginSuccess={handleLoginSuccess}
+            onSwitchToStaff={() => {
+              if (window.location.hash.includes('client')) {
+                window.location.hash = '';
+              }
+              setIsClientPortalMode(false);
+            }}
+          />
+        </Suspense>
       );
     }
     return (
@@ -1287,904 +1342,500 @@ export default function App() {
       ? currentUser
       : api.getClientData();
     return (
-      <ClientPortal
-        client={activeClient}
-        onLogout={handleLogout}
-      />
+      <Suspense fallback={
+        <div style={{ minHeight: '100vh', background: '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+          <RefreshCw size={32} className="spin-loader" />
+        </div>
+      }>
+        <ClientPortal
+          client={activeClient}
+          onLogout={handleLogout}
+        />
+      </Suspense>
     );
   }
 
   return (
     <div style={styles.appContainer} className="app-container">
-      {/* ── Auto Push Notification & Calling Permissions Request Banner ── */}
-      {isAuthenticated && notificationPerm !== 'granted' && !permSnoozedSession && (
+      {/* PWA System Banners: Offline, Update Available & iOS Install Hint */}
+      {!isOnline && (
+        <div className="pwa-offline-bar">
+          <span>You are offline. Real-time actions and sync are paused.</span>
+        </div>
+      )}
+
+      {updateWaitingWorker && (
+        <div className="pwa-update-bar">
+          <span>Update available</span>
+          <button onClick={handleApplyUpdate}>Reload</button>
+        </div>
+      )}
+
+      {showIosInstallHint && !isStandalone && (
+        <div className="pwa-ios-hint">
+          <span>Install app: Tap Share then 'Add to Home Screen'</span>
+          <button onClick={() => {
+            try { localStorage.setItem('dismissed_ios_install_hint', 'true'); } catch (e) {}
+            setShowIosInstallHint(false);
+          }}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Notifications permission bar - minimal */}
+      {isAuthenticated && notificationPerm === 'denied' && !permSnoozedSession && (
         <div style={{
-          background: notificationPerm === 'denied'
-            ? 'linear-gradient(90deg, #b91c1c 0%, #dc2626 50%, #991b1b 100%)'
-            : 'linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)',
-          color: '#ffffff',
-          padding: '0.45rem 1rem',
+          background: 'var(--danger-bg, #fef2f2)',
+          borderBottom: '1px solid var(--danger-border, #fecaca)',
+          color: 'var(--danger-text, #991b1b)',
+          padding: '8px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          fontSize: '0.78rem',
-          fontWeight: 700,
-          boxShadow: notificationPerm === 'denied'
-            ? '0 2px 10px rgba(220,38,38,0.4)'
-            : '0 2px 8px rgba(37,99,235,0.3)',
+          fontSize: 'var(--font-size-meta, 0.75rem)',
+          gap: '8px',
+          flexWrap: 'wrap',
           zIndex: 9999,
-          position: 'relative',
-          gap: '0.75rem',
-          flexWrap: 'wrap'
+          position: 'relative'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: '240px' }}>
-            {notificationPerm === 'denied' ? (
-              <AlertTriangle size={18} color="#fef08a" style={{ flexShrink: 0 }} />
-            ) : (
-              <BellRing size={16} color="#ffffff" style={{ flexShrink: 0 }} />
-            )}
-            <span>
-              {notificationPerm === 'denied'
-                ? '⚠️ Incoming Voice/Video Call Rings & Notifications are BLOCKED in your browser! Please unblock to receive incoming calls & team alerts.'
-                : '🔔 Enable Notifications & Call Alerts to receive incoming voice/video call rings, team chats & job card updates instantly!'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            {notificationPerm === 'denied' ? (
-              <>
-                <button
-                  onClick={() => setShowPermHelpModal(true)}
-                  style={{
-                    background: '#ffffff',
-                    color: '#dc2626',
-                    border: 'none',
-                    padding: '0.32rem 0.85rem',
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-                  }}
-                >
-                  How to Unblock 🔓
-                </button>
-                <button
-                  onClick={() => {
-                    if ('Notification' in window) {
-                      setNotificationPerm(Notification.permission);
-                      if (Notification.permission === 'granted') {
-                        triggerPushNotification('Permissions Active 🎉', 'Notifications and calling alerts are active!', 'success');
-                      } else {
-                        setShowPermHelpModal(true);
-                      }
-                    }
-                  }}
-                  style={{
-                    background: 'rgba(255,255,255,0.18)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    padding: '0.32rem 0.65rem',
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Check Again 🔄
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={async () => {
-                  const res = await requestNotificationPermission();
-                  setNotificationPerm(res);
-                  if (res === 'denied') {
-                    setShowPermHelpModal(true);
-                  }
-                }}
-                style={{
-                  background: '#ffffff',
-                  color: '#2563eb',
-                  border: 'none',
-                  padding: '0.32rem 0.85rem',
-                  borderRadius: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
-                }}
-              >
-                Enable Notifications Now 🔔
-              </button>
-            )}
-
+          <span>Notifications are blocked. Please enable them in browser settings for alerts.</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
-              onClick={() => setShowPermissionsModal(true)}
-              style={{
-                background: 'rgba(255,255,255,0.15)',
-                color: '#ffffff',
-                border: 'none',
-                padding: '0.32rem 0.65rem',
-                borderRadius: '6px',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-              title="Open Device Hardware & Web APIs Hub"
+              onClick={() => setShowPermHelpModal(true)}
+              className="btn-secondary"
+              style={{ minHeight: '32px', padding: '4px 10px', fontSize: 'var(--font-size-meta, 0.75rem)' }}
             >
-              Device Hub ⚙️
+              Settings
             </button>
-
             <button
               onClick={() => {
-                try {
-                  sessionStorage.setItem('elite_perm_snoozed_session', 'true');
-                } catch (e) {}
+                try { sessionStorage.setItem('elite_perm_snoozed_session', 'true'); } catch (e) {}
                 setPermSnoozedSession(true);
               }}
-              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
-              title="Dismiss for current session only - will ask again when reopening app"
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted, #64748b)', cursor: 'pointer', fontSize: 'var(--font-size-meta, 0.75rem)' }}
             >
-              Dismiss (Ask next time)
+              Dismiss
             </button>
           </div>
         </div>
       )}
 
+
       {/* Top Navbar */}
-      <header className="phoenix-navbar-top">
-        <div className="phoenix-nav-left">
+      <header className="glass-panel app-header" style={styles.header}>
+        <div style={styles.headerLeft} className="header-left-wrap">
           <button
-            type="button"
-            onClick={isMobile ? handleMenuButtonClick : toggleSidebarCollapse}
-            onTouchStart={isMobile ? handleTouchStart : undefined}
-            onTouchEnd={isMobile ? handleTouchEnd : undefined}
-            onMouseDown={isMobile ? handleTouchStart : undefined}
-            onMouseUp={isMobile ? handleTouchEnd : undefined}
-            className="phoenix-navbar-toggle-btn"
-            aria-label="Toggle Navigation"
-            title={isMobile ? "Toggle Mobile Menu" : "Toggle Sidebar (Collapse/Expand)"}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--text-muted, #525b75)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '6px',
-              borderRadius: '6px',
-              marginRight: '6px',
-              transition: 'all 0.15s ease'
-            }}
+            onClick={handleMenuButtonClick}
+            className="mobile-menu-toggle"
+            aria-label="Toggle Navigation Menu"
+            title="Menu"
           >
-            {isMobile ? (mobileMenuOpen ? <X size={20} /> : <Menu size={20} />) : <Menu size={20} />}
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {/* Elite Edition Brand Logo */}
-          <div 
-            className="phoenix-brand-logo" 
-            onClick={() => setActiveTab('jobcards')}
-            title="Elite Edition Enterprise ERP"
-            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <img 
-              src={activeDepartment === 'digital_print' ? '/DigitalLogo.png' : '/Logo.png'} 
-              alt="Elite Edition" 
-              style={{ 
-                height: '24px', 
-                maxWidth: '150px', 
-                objectFit: 'contain', 
-                display: 'inline-block',
-                filter: isDarkMode ? 'brightness(0) invert(1)' : 'none'
-              }} 
-            />
-          </div>
-
-          {/* Interactive Company Switcher Pill */}
+          {/* Company Switcher Pill in Top Bar */}
           {(() => {
             const activeComp = getCompanyById(activeDepartment);
-            const ActiveIcon = activeComp?.iconName === 'Store' ? Store : activeComp?.iconName === 'Printer' ? Printer : activeComp?.iconName === 'Scissors' ? Scissors : Building;
-            const brandColor = activeComp?.iconColor || 'var(--primary)';
-
             return (
-              <div 
+              <button 
                 onClick={() => setShowCompanyQuickSheet(true)}
-                className="phoenix-dept-pill"
-                title="Click to switch company workspace"
+                className="btn-secondary"
+                style={{
+                  minHeight: '44px',
+                  padding: '8px 12px',
+                  fontSize: 'var(--font-size-body, 0.9375rem)',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Switch company"
               >
-                <ActiveIcon size={14} color={brandColor} />
                 <span>{activeTab === 'workspace' ? 'Workspace' : (activeComp?.name || 'Elite Online')}</span>
-                <ChevronDown size={13} color="var(--text-muted)" />
-              </div>
+                <span style={{ fontSize: 'var(--font-size-meta, 0.75rem)', color: 'var(--text-muted)' }}>▾</span>
+              </button>
             );
           })()}
+
+          {/* Master Company Switcher Buttons for Desktop */}
+          <div className="dept-switcher-header">
+            {COMPANIES.map(company => {
+              if (!isCompanyAllowed(company.name)) return null;
+              if (company.id === 'elite_online' && !hasEliteEditionAccess) return null;
+              if (company.id === 'digital_print' && !hasDigitalPrintAccess) return null;
+              if (company.id === 'stitching' && !hasStitchingAccess) return null;
+
+              const isActive = activeDepartment === company.id && activeTab !== 'workspace';
+
+              return (
+                <button
+                  key={company.id}
+                  onClick={() => handleSwitchDepartment(company.id)}
+                  className={`btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    minHeight: '38px',
+                    padding: '6px 12px',
+                    fontSize: 'var(--font-size-meta, 0.75rem)',
+                    fontWeight: isActive ? 600 : 400
+                  }}
+                  title={`Switch to ${company.name}`}
+                >
+                  {company.name}
+                </button>
+              );
+            })}
+
+            {hasWorkspaceAccess && (
+              <button
+                onClick={() => { setActiveTab('communication'); setMobileMenuOpen(false); }}
+                className={`btn ${activeTab === 'communication' || activeTab === 'workspace' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{
+                  minHeight: '38px',
+                  padding: '6px 12px',
+                  fontSize: 'var(--font-size-meta, 0.75rem)',
+                  fontWeight: (activeTab === 'communication' || activeTab === 'workspace') ? 600 : 400
+                }}
+                title="Inter-Department Communication"
+              >
+                Communication {chatUnreadCount > 0 ? `(${chatUnreadCount})` : ''}
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Global Search Bar (Phoenix Style) */}
-        {!isMobile && (
-          <div className="phoenix-nav-search" ref={searchRef}>
-            <SearchIcon size={14} className="phoenix-search-icon" />
-            <input
-              type="text"
-              className="phoenix-search-input"
-              placeholder="Search..."
-              value={globalSearch}
-              onChange={(e) => {
-                setGlobalSearch(e.target.value);
-                setShowSearchResults(e.target.value.trim().length > 0);
-              }}
-              onFocus={() => {
-                if (globalSearch.trim()) setShowSearchResults(true);
-              }}
-            />
-            {showSearchResults && (
-              <div
-                className="global-search-results"
-                style={{
-                  position: 'absolute',
-                  top: '115%',
-                  left: 0,
-                  right: 0,
-                  background: 'var(--bg-modal)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: 10,
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
-                  zIndex: 9999,
-                  maxHeight: 280,
-                  overflowY: 'auto',
-                  padding: '4px'
-                }}
-              >
-                {SEARCHABLE_MODULES.filter(m => 
-                  m.label.toLowerCase().includes(globalSearch.toLowerCase()) || 
-                  m.category.toLowerCase().includes(globalSearch.toLowerCase())
-                ).map((m, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      setActiveTab(m.tab);
-                      setShowSearchResults(false);
-                      setGlobalSearch('');
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      transition: 'background 0.15s ease'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--nav-active-bg)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span>{m.label}</span>
-                    <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
-                      {m.category}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Right Nav Controls (Phoenix Style) */}
-        <div className="phoenix-nav-right">
-          {/* Dark Mode Toggle */}
+        <div style={styles.headerRight} className="header-right-wrap">
           <button
             type="button"
-            onClick={() => setIsDarkMode(prev => !prev)}
-            className="phoenix-circle-btn"
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            aria-label="Toggle dark mode"
+            onClick={() => setShowGlobalSearch(true)}
+            className="btn-secondary"
+            title="Global Search (Ctrl/Cmd+K)"
+            style={{
+              minHeight: '38px',
+              padding: '6px 12px',
+              fontSize: 'var(--font-size-meta, 0.75rem)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
           >
-            {isDarkMode ? <Sun size={17} color="#f59e0b" /> : <Moon size={17} />}
+            <span>Search</span>
+            {!isMobile && (
+              <kbd style={{
+                fontSize: '10px',
+                background: '#f1f5f9',
+                color: '#475569',
+                padding: '1px 5px',
+                borderRadius: '4px',
+                border: '1px solid #cbd5e1'
+              }}>⌘K</kbd>
+            )}
           </button>
 
-          {/* Notification Bell Dropdown */}
-          <div style={{ position: 'relative' }} ref={notifDropdownRef}>
+          {deferredInstallPrompt && !isStandalone && (
             <button
-              onClick={() => setShowNotifDropdown(prev => !prev)}
-              className="phoenix-circle-btn"
-              title="Notifications"
+              onClick={handleInstallClick}
+              className="btn-primary"
+              title="Install Elite ERP App"
+              style={{ minHeight: '38px', padding: '6px 14px', fontSize: 'var(--font-size-meta, 0.75rem)', fontWeight: 600 }}
             >
-              <Bell size={17} color={unreadNotifCount > 0 ? 'var(--primary)' : 'currentColor'} />
-              {unreadNotifCount > 0 && <span className="phoenix-notif-dot" />}
+              Install App
             </button>
+          )}
 
-            {/* Inline Dropdown Menu */}
-            {showNotifDropdown && (
-              <div style={{
-                position: 'absolute',
-                top: '120%',
-                right: 0,
-                width: 340,
-                maxWidth: '90vw',
-                background: 'var(--bg-modal)',
-                border: '1px solid var(--border-light)',
-                borderRadius: 12,
-                boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
-                zIndex: 9999,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <div style={{
-                  padding: '0.75rem 1rem',
-                  borderBottom: '1px solid var(--border-light)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: 'var(--bg-card)'
-                }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800 }}>Notifications</div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>
-                    {unreadNotifCount} new
-                  </span>
-                </div>
-
-                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                  {(() => {
-                    const list = typeof getNotificationHistory === 'function' ? getNotificationHistory() : [];
-                    if (!list || list.length === 0) {
-                      return (
-                        <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          No recent notifications
-                        </div>
-                      );
-                    }
-                    return list.slice(0, 5).map((item, idx) => (
-                      <div
-                        key={item.id || idx}
-                        style={{
-                          padding: '0.65rem 1rem',
-                          borderBottom: '1px solid var(--border-light)',
-                          fontSize: '0.78rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '2px',
-                          background: item.read ? 'transparent' : 'rgba(56,116,255,0.04)'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--nav-active-bg)'}
-                        onMouseLeave={e => e.currentTarget.style.background = item.read ? 'transparent' : 'rgba(56,116,255,0.04)'}
-                      >
-                        <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{item.title}</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.message}
-                        </div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                          {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'Just now'}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-
-                <div style={{
-                  padding: '0.5rem 1rem',
-                  borderTop: '1px solid var(--border-light)',
-                  background: 'var(--bg-card)',
-                  textAlign: 'center'
-                }}>
-                  <button
-                    onClick={() => {
-                      setShowNotifDropdown(false);
-                      setShowNotificationDrawer(true);
-                    }}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--primary)',
-                      fontSize: '0.78rem',
-                      fontWeight: 800,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    View All Activity History →
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 9-Dots Quick App & Workspace Switcher Launcher */}
           <button
-            type="button"
-            onClick={() => setShowCompanyQuickSheet(prev => !prev)}
-            className="phoenix-circle-btn"
-            title="Apps & Workspaces Launcher"
+            onClick={() => setShowNotificationDrawer(true)}
+            className="btn-secondary"
+            title="Notifications & Alerts"
+            style={{ minHeight: '38px', padding: '6px 12px', fontSize: 'var(--font-size-meta, 0.75rem)' }}
           >
-            <LayoutGrid size={17} />
+            Alerts {unreadNotifCount > 0 ? `(${unreadNotifCount})` : ''}
           </button>
 
-          {/* User Profile Avatar with User Initial Badge */}
+          <button
+            onClick={() => {
+              fetchData();
+              triggerGlobalDataRefresh();
+              if (typeof window !== 'undefined' && window.showToast) {
+                window.showToast('Data refreshed', 'info');
+              }
+            }}
+            className="btn-secondary"
+            title="Refresh data"
+            style={{ minHeight: '38px', padding: '6px 12px', fontSize: 'var(--font-size-meta, 0.75rem)' }}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+
           {!isMobile && currentUser && (
-            <div style={{ position: 'relative', marginLeft: '6px' }}>
-              <div 
-                className="phoenix-user-avatar"
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #3874ff 0%, #1e40af 100%)',
-                  color: '#ffffff',
-                  fontSize: '0.92rem',
-                  fontWeight: 800,
-                  letterSpacing: '0.02em',
-                  boxShadow: '0 2px 6px rgba(56, 116, 255, 0.28)',
-                  userSelect: 'none',
-                  border: '2px solid rgba(255,255,255,0.85)'
-                }}
-                title={`${currentUser.name || currentUser.username} (${currentUser.role || 'user'})`}
-                onClick={() => setShowUserDropdown(prev => !prev)}
-              >
-                {(currentUser.name || currentUser.username || currentUser.email || 'A').trim().charAt(0).toUpperCase()}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              paddingLeft: '8px'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 'var(--font-size-body, 0.875rem)', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>{currentUser.name}</span>
+                <span style={{ fontSize: 'var(--font-size-meta, 0.75rem)', color: 'var(--text-muted)' }}>{currentUser.role || 'user'}</span>
               </div>
-
-              {/* Profile Dropdown */}
-              {showUserDropdown && (
-                <div className="phoenix-user-dropdown" onClick={() => setShowUserDropdown(false)}>
-                  <div style={{ padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
-                    <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{currentUser.name}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{currentUser.email || currentUser.role || 'Administrator'}</div>
-                  </div>
-
-                  <button
-                    className="phoenix-dropdown-item"
-                    onClick={() => {
-                      fetchData();
-                      if (typeof window !== 'undefined' && window.showToast) {
-                        window.showToast('🔄 Live data refreshed across all departments', 'info');
-                      }
-                    }}
-                  >
-                    <RefreshCw size={15} color="var(--primary)" className={loading ? 'spin-loader' : ''} />
-                    <span>Master Refresh</span>
-                  </button>
-
-                  <button
-                    className="phoenix-dropdown-item"
-                    onClick={() => setShowPermissionsModal(true)}
-                  >
-                    <ShieldAlert size={15} color="#10b981" />
-                    <span>Settings & Permissions</span>
-                  </button>
-
-                  <div style={{ height: '1px', background: 'var(--border-light)', margin: '0.25rem 0' }} />
-
-                  <button
-                    className="phoenix-dropdown-item"
-                    style={{ color: '#fa3b1d' }}
-                    onClick={handleLogout}
-                  >
-                    <LogOut size={15} />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={handleLogout}
+                className="btn-secondary"
+                title="Sign Out"
+                style={{ minHeight: '38px', padding: '6px 12px', fontSize: 'var(--font-size-meta, 0.75rem)' }}
+              >
+                Sign Out
+              </button>
             </div>
           )}
         </div>
       </header>
 
-      {/* Mobile Navigation Drawer Overlay */}
+      {/* Mobile Navigation Drawer Overlay (Minimal, Text links only, Safe Area) */}
       {mobileMenuOpen && (
         <div className="mobile-drawer-overlay" onClick={() => setMobileMenuOpen(false)}>
           <div className="mobile-drawer-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-              {(() => {
-                const comp = getCompanyById(activeDepartment);
-                const CompIcon = comp?.iconName === 'Store' ? Store : comp?.iconName === 'Printer' ? Printer : comp?.iconName === 'Scissors' ? Scissors : Building;
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                    <div style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      background: comp?.gradient || 'linear-gradient(135deg, #6366f1, #0891b2)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      boxShadow: `0 2px 8px ${comp?.iconColor || '#6366f1'}40`
-                    }}>
-                      <CompIcon size={16} color="#ffffff" />
-                    </div>
-                    <div>
-                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)', display: 'block', lineHeight: 1.2 }}>
-                        {comp?.name || 'Elite Online'}
-                      </span>
-                      <span style={{ fontSize: '0.68rem', color: comp?.iconColor || '#6366f1', fontWeight: 700 }}>
-                        {comp?.code} • {comp?.type}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })()}
-              <button onClick={() => setMobileMenuOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '0.25rem' }}>
+            {/* Header: Company Name + Close Button */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)', display: 'block' }}>
+                  {getCompanyById(activeDepartment)?.name || 'Elite Online'}
+                </span>
+                <span style={{ fontSize: 'var(--font-size-meta, 0.75rem)', color: 'var(--text-muted)' }}>
+                  Navigation & Company Switcher
+                </span>
+              </div>
+              <button 
+                onClick={() => setMobileMenuOpen(false)} 
+                className="btn-icon"
+                aria-label="Close menu"
+                style={{ minHeight: '44px', minWidth: '44px' }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            {/* Quick Switch Button in Mobile Drawer */}
-            <button
-              onClick={() => { setShowCompanyQuickSheet(true); setMobileMenuOpen(false); }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.55rem 0.75rem',
-                borderRadius: '8px',
-                background: 'rgba(99, 102, 241, 0.08)',
-                border: '1px solid rgba(99, 102, 241, 0.25)',
-                color: 'var(--text-primary)',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                marginTop: '0.5rem'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <Layers size={14} color="#6366f1" />
-                <span>Switch Company Workspace</span>
+            {/* Section 1: Company Switcher (Plain text list) */}
+            <div style={{ marginTop: '8px' }}>
+              <div className="nav-section-header">Switch Company</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                {COMPANIES.map(company => {
+                  if (!isCompanyAllowed(company.name)) return null;
+                  if (company.id === 'elite_online' && !hasEliteEditionAccess) return null;
+                  if (company.id === 'digital_print' && !hasDigitalPrintAccess) return null;
+                  if (company.id === 'stitching' && !hasStitchingAccess) return null;
+
+                  const isCurrent = activeDepartment === company.id;
+                  return (
+                    <button
+                      key={company.id}
+                      onClick={() => { handleSwitchDepartment(company.id); setMobileMenuOpen(false); }}
+                      className={`mobile-drawer-item ${isCurrent ? 'active' : ''}`}
+                    >
+                      <span>{company.name}</span>
+                      {isCurrent && <span style={{ fontSize: '0.75rem' }}>Active</span>}
+                    </button>
+                  );
+                })}
+
+                {hasWorkspaceAccess && (
+                  <button
+                    onClick={() => { setActiveTab('communication'); setMobileMenuOpen(false); }}
+                    className={`mobile-drawer-item ${activeTab === 'communication' ? 'active' : ''}`}
+                  >
+                    <span>Communication</span>
+                    {chatUnreadCount > 0 && <span style={{ fontSize: '0.75rem' }}>({chatUnreadCount})</span>}
+                  </button>
+                )}
               </div>
-              <ChevronRight size={14} color="#6366f1" />
-            </button>
-
-            {hasWorkspaceAccess && (
-              <button
-                onClick={() => { setActiveTab('communication'); setMobileMenuOpen(false); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.65rem 0.75rem',
-                  borderRadius: '8px',
-                  background: (activeTab === 'communication' || activeTab === 'workspace') ? 'linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)' : 'rgba(56, 189, 248, 0.1)',
-                  border: (activeTab === 'communication' || activeTab === 'workspace') ? 'none' : '1px solid rgba(56, 189, 248, 0.3)',
-                  color: (activeTab === 'communication' || activeTab === 'workspace') ? '#ffffff' : '#38bdf8',
-                  fontSize: '0.84rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  marginTop: '0.4rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <MessageSquare size={16} />
-                  <span>Inter-Dept Communication</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  {chatUnreadCount > 0 && (
-                    <span style={{
-                      background: '#ef4444',
-                      color: '#ffffff',
-                      borderRadius: '10px',
-                      minWidth: '18px',
-                      height: '18px',
-                      fontSize: '0.62rem',
-                      fontWeight: 900,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0 5px'
-                    }}>
-                      {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-                    </span>
-                  )}
-                  <ChevronRight size={14} />
-                </div>
-              </button>
-            )}
-
-            {/* Modules List inside Mobile Drawer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.75rem' }}>
-              {activeTab === 'workspace' ? (
-                <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-                  <div style={styles.sidebarSectionHeader}>
-                    <MessageSquare size={14} color="var(--primary)" />
-                    <span>Workspace & Chat Active</span>
-                  </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.4rem 0 0' }}>
-                    Access chats, channels & team updates in main view.
-                  </p>
-                </div>
-              ) : activeDepartment === 'stitching' ? (
-                <>
-                  <div style={styles.sidebarSectionHeader}>
-                    <Scissors size={14} color="var(--primary)" />
-                    <span>Elite Stitching Modules</span>
-                  </div>
-
-                  {/* 1. Jobcard */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list') || currentUser.permissions?.includes('stitching_jobcards')) && (
-                    <button onClick={() => { setActiveTab('jobcards_list'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_list' ? styles.navItemActive : {}) }}>
-                      <FileText size={18} /><span>Jobcard</span>
-                    </button>
-                  )}
-                  {/* 2. Design room */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_catalogue') || currentUser.permissions?.includes('stitching_design')) && (
-                    <button onClick={() => { setActiveTab('jobcards_catalogue'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_catalogue' ? styles.navItemActive : {}) }}>
-                      <BookOpen size={18} /><span>Design room</span>
-                    </button>
-                  )}
-                  {/* 3. Challan */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric') || currentUser.permissions?.includes('jobcards_stitching_challan') || currentUser.permissions?.includes('stitching_fabric')) && (
-                    <button onClick={() => { setActiveTab('jobcards_stitching_challan'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...((activeTab === 'jobcards_stitching_challan' || activeTab === 'jobcards_fabric') ? styles.navItemActive : {}) }}>
-                      <Database size={18} /><span>Challan</span>
-                    </button>
-                  )}
-                  {/* 4. Complaints */}
-                  <button onClick={() => { setActiveTab('es_complaints'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'es_complaints' ? styles.navItemActive : {}) }}>
-                    <AlertTriangle size={18} color="#f43f5e" /><span>Complaints</span>
-                  </button>
-                  {/* 5. Settings */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_stitching_settings') || currentUser.permissions?.includes('stitching_settings')) && (
-                    <button onClick={() => { setActiveTab('jobcards_stitching_settings'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_stitching_settings' ? styles.navItemActive : {}) }}>
-                      <Settings size={18} /><span>Settings</span>
-                    </button>
-                  )}
-                </>
-              ) : activeDepartment === 'digital_print' ? (
-                <>
-                  <div style={styles.sidebarSectionHeader}>
-                    <Printer size={14} color="var(--primary)" />
-                    <span>Digital Print Modules</span>
-                  </div>
-
-                  {/* 1. Prints Dashboard & Reports */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards')) && (
-                    <button onClick={() => { setActiveTab('jobcards'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards' ? styles.navItemActive : {}) }}>
-                      <BarChart3 size={18} /><span>Prints Dashboard</span>
-                    </button>
-                  )}
-                  {/* 1.5. Pending Status Overview (New Dedicated Tab) */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards') || currentUser.permissions?.includes('jobcards_status_dashboard')) && (
-                    <button onClick={() => { setActiveTab('jobcards_status_dashboard'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...((activeTab === 'jobcards_status_dashboard' || activeTab === 'jobcards_status') ? styles.navItemActive : {}) }}>
-                      <Clock size={18} /><span>Pending Status Overview</span>
-                    </button>
-                  )}
-                  {/* 2. Printing Department */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_printing_log')) && (
-                    <button onClick={() => { setActiveTab('jobcards_printing_log'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_printing_log' ? styles.navItemActive : {}) }}>
-                      <Printer size={18} /><span>Printing Department</span>
-                    </button>
-                  )}
-                  {/* Fusing Department */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fusing_log') || currentUser.permissions?.includes('jobcards')) && (
-                    <button onClick={() => { setActiveTab('jobcards_fusing_log'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_fusing_log' ? styles.navItemActive : {}) }}>
-                      <Flame size={18} /><span>Fusing Department</span>
-                    </button>
-                  )}
-                  {/* 2. Fabric Management */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric')) && (
-                    <button onClick={() => { setActiveTab('jobcards_fabric'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_fabric' ? styles.navItemActive : {}) }}>
-                      <Database size={18} /><span>Fabric Management</span>
-                    </button>
-                  )}
-                  {/* 3. Finance */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) && (
-                    <button onClick={() => { setActiveTab('jobcards_billing'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_billing' ? styles.navItemActive : {}) }}>
-                      <Receipt size={18} /><span>Finance</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_costing') || currentUser.permissions?.includes('jobcards_billing')) && (
-                    <button onClick={() => { setActiveTab('jobcards_costing'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_costing' ? styles.navItemActive : {}) }}>
-                      <TrendingUp size={18} /><span>Costing</span>
-                    </button>
-                  )}
-
-                  {/* CRM Department */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_crm') || currentUser.permissions?.includes('crm_department') || currentUser.permissions?.includes('crm')) && (
-                    <button onClick={() => { setActiveTab('jobcards_crm'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_crm' ? styles.navItemActive : {}) }}>
-                      <Users size={18} /><span>CRM Department</span>
-                    </button>
-                  )}
-
-                  {/* Business Connection */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_business_connection') || currentUser.permissions?.includes('jobcards_master_ai') || currentUser.permissions?.includes('jobcards')) && (
-                    <button onClick={() => { setActiveTab('jobcards_business_connection'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...((activeTab === 'jobcards_business_connection' || activeTab === 'jobcards_master_ai') ? styles.navItemActive : {}) }}>
-                      <Users size={18} /><span>Business Connection</span>
-                    </button>
-                  )}
-
-                  {/* 3. Job Card */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list')) && (
-                    <button onClick={() => { setActiveTab('jobcards_list'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_list' ? styles.navItemActive : {}) }}>
-                      <FileText size={18} /><span>Job Card</span>
-                    </button>
-                  )}
-                  {/* 5. Design Catalog */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_catalogue') || currentUser.permissions?.includes('jobcards_master')) && (
-                    <button onClick={() => { setActiveTab('jobcards_catalogue'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...((activeTab === 'jobcards_catalogue' || activeTab === 'jobcards_master') ? styles.navItemActive : {}) }}>
-                      <BookOpen size={18} /><span>Design Catalog</span>
-                    </button>
-                  )}
-                  {/* Designer Screen */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('designer_screen') || currentUser.permissions?.includes('designer_module')) && (
-                    <button onClick={() => { setActiveTab('designer_screen'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'designer_screen' ? styles.navItemActive : {}) }}>
-                      <Palette size={18} color="#2563eb" /><span>Designer Screen</span>
-                    </button>
-                  )}
-                  {/* 7. Print Settings */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_settings')) && (
-                    <button onClick={() => { setActiveTab('jobcards_settings'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_settings' ? styles.navItemActive : {}) }}>
-                      <Settings size={18} /><span>Print Settings</span>
-                    </button>
-                  )}
-                  {/* 8. Raw Materials */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_raw_materials')) && (
-                    <button onClick={() => { setActiveTab('jobcards_raw_materials'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_raw_materials' ? styles.navItemActive : {}) }}>
-                      <ShoppingBag size={18} /><span>Raw Materials</span>
-                    </button>
-                  )}
-                  {/* 9. Complain Module */}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_complain') || currentUser.permissions?.includes('jobcards_complaints') || currentUser.permissions?.includes('complaint_dashboard') || currentUser.permissions?.includes('complaint_create')) && (
-                    <button onClick={() => { setActiveTab('jobcards_complain'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'jobcards_complain' ? styles.navItemActive : {}) }}>
-                      <AlertTriangle size={18} color="#f43f5e" /><span>Complain Module</span>
-                    </button>
-                  )}
-                </>
-              ) : activeDepartment === 'elite_edition' ? (
-                <>
-                  <div style={styles.sidebarSectionHeader}>
-                    <Building size={14} color="var(--primary)" />
-                    <span>Elite Edition Modules</span>
-                  </div>
-                  <button onClick={() => { setActiveTab('ee_dashboard'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ee_dashboard' ? styles.navItemActive : {}) }}>
-                    <LayoutDashboard size={18} /><span>Dashboard</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ee_invoices'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ee_invoices' ? styles.navItemActive : {}) }}>
-                    <Receipt size={18} /><span>Billing</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ee_complaints'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ee_complaints' ? styles.navItemActive : {}) }}>
-                    <AlertTriangle size={18} color="#f43f5e" /><span>Complaints</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ee_settings'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ee_settings' ? styles.navItemActive : {}) }}>
-                    <Settings size={18} /><span>Settings</span>
-                  </button>
-                </>
-              ) : activeDepartment === 'elite_fabtex' ? (
-                <>
-                  <div style={styles.sidebarSectionHeader}>
-                    <Building size={14} color="var(--primary)" />
-                    <span>Elite Fabtex Modules</span>
-                  </div>
-                  <button onClick={() => { setActiveTab('ef_dashboard'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ef_dashboard' ? styles.navItemActive : {}) }}>
-                    <LayoutDashboard size={18} /><span>Dashboard</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ef_invoices'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ef_invoices' ? styles.navItemActive : {}) }}>
-                    <Receipt size={18} /><span>Billing</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ef_complaints'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ef_complaints' ? styles.navItemActive : {}) }}>
-                    <AlertTriangle size={18} color="#f43f5e" /><span>Complaints</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('ef_settings'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'ef_settings' ? styles.navItemActive : {}) }}>
-                    <Settings size={18} /><span>Settings</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div style={styles.sidebarSectionHeader}>
-                    <Store size={14} color="var(--primary)" />
-                    <span>Elite Online Modules</span>
-                  </div>
-
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('dashboard')) && (
-                    <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'dashboard' ? styles.navItemActive : {}) }}>
-                      <LayoutDashboard size={18} /><span>Dashboard Overview</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('inventory')) && (
-                    <button onClick={() => { setActiveTab('inventory'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'inventory' ? styles.navItemActive : {}) }}>
-                      <Database size={18} /><span>Store Inventory</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('returns')) && (
-                    <button onClick={() => { setActiveTab('returns'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'returns' ? styles.navItemActive : {}) }}>
-                      <PackageMinus size={18} /><span>Returns Department</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('sales')) && (
-                    <button onClick={() => { setActiveTab('sales'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'sales' ? styles.navItemActive : {}) }}>
-                      <ShoppingBag size={18} /><span>Sales Orders</span>
-                    </button>
-                  )}
-                  <button onClick={() => { setActiveTab('eo_complaints'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'eo_complaints' ? styles.navItemActive : {}) }}>
-                    <AlertTriangle size={18} color="#f43f5e" /><span>Complaints</span>
-                  </button>
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('reports')) && (
-                    <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'reports' ? styles.navItemActive : {}) }}>
-                      <BarChart3 size={18} /><span>Reports Center</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('unicommerce')) && (
-                    <button onClick={() => { setActiveTab('unicommerce'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'unicommerce' ? styles.navItemActive : {}) }}>
-                      <RefreshCw size={18} /><span>Uniware Integrations</span>
-                    </button>
-                  )}
-                  {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('myntra')) && (
-                    <button onClick={() => { setActiveTab('myntra'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'myntra' ? styles.navItemActive : {}) }}>
-                      <ShoppingBag size={18} /><span>Myntra Integrations</span>
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Apps & Analytics - Strictly Master Admin Only */}
-              {isMasterAdmin && (
-                <>
-                  <div style={{ ...styles.sidebarSectionHeader, marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
-                    <Sparkles size={14} color="var(--primary)" />
-                    <span>Apps & Analytics (Master Admin)</span>
-                  </div>
-                  <button onClick={() => { setActiveTab('calendar'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'calendar' ? styles.navItemActive : {}) }}>
-                    <CalendarIcon size={18} color="#0284c7" /><span>Calendar Schedule</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('inbox'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'inbox' ? styles.navItemActive : {}) }}>
-                    <Mail size={18} color="#8b5cf6" /><span>Email & Inbox</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('file_manager'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'file_manager' ? styles.navItemActive : {}) }}>
-                    <Folder size={18} color="#f59e0b" /><span>File Manager</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('activity_feed'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'activity_feed' ? styles.navItemActive : {}) }}>
-                    <Users size={18} color="#10b981" /><span>Activity Feed</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('gantt'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'gantt' ? styles.navItemActive : {}) }}>
-                    <Layers size={18} color="#38bdf8" /><span>Gantt Timeline</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('geo_map'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'geo_map' ? styles.navItemActive : {}) }}>
-                    <Globe size={18} color="#6366f1" /><span>Territory Map</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('advanced_dashboard'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'advanced_dashboard' ? styles.navItemActive : {}) }}>
-                    <BarChart3 size={18} color="#ec4899" /><span>Advanced Analytics</span>
-                  </button>
-                  <button onClick={() => { setActiveTab('gallery'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'gallery' ? styles.navItemActive : {}) }}>
-                    <ImageIcon size={18} color="#f43f5e" /><span>Design Gallery</span>
-                  </button>
-                </>
-              )}
-
-              {currentUser && currentUser.role === 'admin' && (
-                <button onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }} style={{ ...styles.navItem, ...(activeTab === 'admin' ? styles.navItemActive : {}) }}>
-                  <ShieldAlert size={18} color="var(--primary)" /><span>Admin Panel</span>
-                </button>
-              )}
             </div>
 
-            <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border-light)' }}>
+            {/* Section 2: Department Navigation Links (Plain text links only) */}
+            <div style={{ marginTop: '8px', flex: 1 }}>
+              <div className="nav-section-header">Modules</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                {activeDepartment === 'stitching' ? (
+                  <>
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list') || currentUser.permissions?.includes('stitching_jobcards')) && (
+                      <button onClick={() => { setActiveTab('jobcards_list'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_list' ? 'active' : ''}`}>
+                        Jobcard
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_catalogue') || currentUser.permissions?.includes('stitching_design')) && (
+                      <button onClick={() => { setActiveTab('jobcards_catalogue'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_catalogue' ? 'active' : ''}`}>
+                        Design Room
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric') || currentUser.permissions?.includes('jobcards_stitching_challan') || currentUser.permissions?.includes('stitching_fabric')) && (
+                      <button onClick={() => { setActiveTab('jobcards_stitching_challan'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${(activeTab === 'jobcards_stitching_challan' || activeTab === 'jobcards_fabric') ? 'active' : ''}`}>
+                        Challan
+                      </button>
+                    )}
+                    <button onClick={() => { setActiveTab('es_complaints'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'es_complaints' ? 'active' : ''}`}>
+                      Complaints
+                    </button>
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_stitching_settings') || currentUser.permissions?.includes('stitching_settings')) && (
+                      <button onClick={() => { setActiveTab('jobcards_stitching_settings'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_stitching_settings' ? 'active' : ''}`}>
+                        Settings
+                      </button>
+                    )}
+                  </>
+                ) : activeDepartment === 'digital_print' ? (
+                  <>
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards')) && (
+                      <button onClick={() => { setActiveTab('jobcards'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards' ? 'active' : ''}`}>
+                        Prints Dashboard
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards') || currentUser.permissions?.includes('jobcards_status_dashboard')) && (
+                      <button onClick={() => { setActiveTab('jobcards_status_dashboard'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${(activeTab === 'jobcards_status_dashboard' || activeTab === 'jobcards_status') ? 'active' : ''}`}>
+                        Pending Status Overview
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_printing_log')) && (
+                      <button onClick={() => { setActiveTab('jobcards_printing_log'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_printing_log' ? 'active' : ''}`}>
+                        Printing Department
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fusing_log') || currentUser.permissions?.includes('jobcards')) && (
+                      <button onClick={() => { setActiveTab('jobcards_fusing_log'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_fusing_log' ? 'active' : ''}`}>
+                        Fusing Department
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric')) && (
+                      <button onClick={() => { setActiveTab('jobcards_fabric'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_fabric' ? 'active' : ''}`}>
+                        Fabric Management
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) && (
+                      <button onClick={() => { setActiveTab('jobcards_billing'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_billing' ? 'active' : ''}`}>
+                        Finance
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_costing') || currentUser.permissions?.includes('jobcards_billing')) && (
+                      <button onClick={() => { setActiveTab('jobcards_costing'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_costing' ? 'active' : ''}`}>
+                        Costing
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_crm') || currentUser.permissions?.includes('crm_department') || currentUser.permissions?.includes('crm')) && (
+                      <button onClick={() => { setActiveTab('jobcards_crm'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_crm' ? 'active' : ''}`}>
+                        CRM Department
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list')) && (
+                      <button onClick={() => { setActiveTab('jobcards_list'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_list' ? 'active' : ''}`}>
+                        Job Card
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_catalogue') || currentUser.permissions?.includes('jobcards_master')) && (
+                      <button onClick={() => { setActiveTab('jobcards_catalogue'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${(activeTab === 'jobcards_catalogue' || activeTab === 'jobcards_master') ? 'active' : ''}`}>
+                        Design Catalog
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('designer_screen') || currentUser.permissions?.includes('designer_module')) && (
+                      <button onClick={() => { setActiveTab('designer_screen'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'designer_screen' ? 'active' : ''}`}>
+                        Designer Screen
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_settings')) && (
+                      <button onClick={() => { setActiveTab('jobcards_settings'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_settings' ? 'active' : ''}`}>
+                        Print Settings
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_complain') || currentUser.permissions?.includes('jobcards_complaints') || currentUser.permissions?.includes('complaint_dashboard') || currentUser.permissions?.includes('complaint_create')) && (
+                      <button onClick={() => { setActiveTab('jobcards_complain'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'jobcards_complain' ? 'active' : ''}`}>
+                        Complaints
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('dashboard')) && (
+                      <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'dashboard' ? 'active' : ''}`}>
+                        Dashboard Overview
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('inventory')) && (
+                      <button onClick={() => { setActiveTab('inventory'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'inventory' ? 'active' : ''}`}>
+                        Store Inventory
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('returns')) && (
+                      <button onClick={() => { setActiveTab('returns'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'returns' ? 'active' : ''}`}>
+                        Returns Department
+                      </button>
+                    )}
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('sales')) && (
+                      <button onClick={() => { setActiveTab('sales'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'sales' ? 'active' : ''}`}>
+                        Sales Orders
+                      </button>
+                    )}
+                    <button onClick={() => { setActiveTab('eo_complaints'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'eo_complaints' ? 'active' : ''}`}>
+                      Complaints
+                    </button>
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('reports')) && (
+                      <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'reports' ? 'active' : ''}`}>
+                        Reports Center
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {currentUser && currentUser.role === 'admin' && (
+                  <button onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'admin' ? 'active' : ''}`}>
+                    Admin Panel
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Section 3: User Info, Alerts, Refresh, and Sign Out */}
+            <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 'var(--font-size-meta, 0.75rem)', color: 'var(--text-muted)' }}>
+                  User: {currentUser?.name} ({currentUser?.role || 'user'})
+                </span>
+              </div>
+              {deferredInstallPrompt && !isStandalone && (
+                <button
+                  onClick={() => {
+                    handleInstallClick();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="btn-primary btn-mobile-full"
+                  style={{ minHeight: '44px', fontWeight: 600 }}
+                >
+                  Install App
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  fetchData();
+                  triggerGlobalDataRefresh();
+                  setMobileMenuOpen(false);
+                  if (typeof window !== 'undefined' && window.showToast) {
+                    window.showToast('Data refreshed', 'info');
+                  }
+                }}
+                className="btn-secondary btn-mobile-full"
+                style={{ minHeight: '44px' }}
+              >
+                Refresh Data
+              </button>
+              <button
+                onClick={() => { setShowNotificationDrawer(true); setMobileMenuOpen(false); }}
+                className="btn-secondary btn-mobile-full"
+                style={{ minHeight: '44px' }}
+              >
+                Alerts {unreadNotifCount > 0 ? `(${unreadNotifCount})` : ''}
+              </button>
               <button
                 onClick={handleLogout}
-                style={{
-                  width: '100%',
-                  justify: 'center',
-                  padding: '12px',
-                  borderRadius: '14px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  color: '#ef4444',
-                  fontWeight: '600',
-                  fontSize: '0.9rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  boxShadow: '0 4px 12px rgba(239, 68, 68, 0.15)'
-                }}
-                className="logout-icon-btn"
+                className="btn-danger btn-mobile-full"
+                style={{ minHeight: '44px' }}
               >
-                <LogOut size={16} /><span>Sign Out</span>
+                Sign Out
               </button>
             </div>
           </div>
@@ -2192,11 +1843,62 @@ export default function App() {
       )}
 
       {/* Main Layout */}
-      <div className="phoenix-main-wrapper">
+      <main style={styles.mainLayout} className="main-layout-container">
         
         {/* Left Navigation Sidebar */}
-        <aside className={`phoenix-navbar-vertical ${isSidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-          <div className="phoenix-vertical-content">
+        <aside
+          style={{
+            width: isSidebarCollapsed ? '64px' : '200px',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            position: 'sticky',
+            top: '62px',
+            alignSelf: 'flex-start',
+            maxHeight: 'calc(100vh - 74px)',
+            overflowY: 'auto',
+            transition: 'width 150ms ease',
+            zIndex: 90
+          }}
+          className="sidebar-wrap"
+        >
+          <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px', background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            {/* Collapse / Expand Toggle Button Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+              padding: '4px 8px',
+              borderBottom: '1px solid var(--border-color)',
+              marginBottom: '4px'
+            }}>
+              {!isSidebarCollapsed && (
+                <span style={{ fontSize: 'var(--font-size-meta, 0.75rem)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+                  Menu
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={toggleSidebarCollapse}
+                title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '4px',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 'auto'
+                }}
+              >
+                {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              </button>
+            </div>
+
             {(() => {
               const renderNavItem = (tabKey, label, IconComponent, customColor, shortLabel) => {
                 const isActive = activeTab === tabKey || (tabKey === 'jobcards_stitching_challan' && activeTab === 'jobcards_fabric');
@@ -2211,43 +1913,43 @@ export default function App() {
                       onClick={() => handleNavClick(tabKey)}
                       title={label}
                       style={{
-                        background: isActive ? 'rgba(56, 116, 255, 0.1)' : 'transparent',
+                        background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
                         border: 'none',
                         width: '100%',
-                        padding: '0.45rem 0.2rem',
-                        marginBottom: '2px',
+                        padding: '0.55rem 0.2rem',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '2px',
-                        borderRadius: '6px',
-                        color: isActive ? 'var(--primary, #3874ff)' : 'var(--text-muted, #6e7891)',
+                        gap: '3px',
+                        borderRadius: '10px',
+                        color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-muted, #94a3b8)',
                         cursor: 'pointer',
                         textAlign: 'center',
                         transition: 'all 0.15s ease',
+                        borderLeft: isActive ? '3.5px solid var(--primary, #6366f1)' : '3.5px solid transparent',
                         position: 'relative'
                       }}
                       onMouseEnter={e => {
-                        if (!isActive) e.currentTarget.style.background = 'rgba(56, 116, 255, 0.05)';
+                        if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
                       }}
                       onMouseLeave={e => {
                         if (!isActive) e.currentTarget.style.background = 'transparent';
                       }}
                     >
                       <NavIcon
-                        size={18}
-                        color={isActive ? 'var(--primary, #3874ff)' : (customColor || 'var(--text-muted, #8a94ad)')}
+                        size={22}
+                        color={customColor || (isActive ? 'var(--primary)' : undefined)}
                         style={{ flexShrink: 0 }}
                       />
                       <span
                         style={{
-                          fontSize: '0.64rem',
-                          fontWeight: isActive ? 700 : 500,
+                          fontSize: '0.67rem',
+                          fontWeight: isActive ? 800 : 600,
                           lineHeight: 1.15,
-                          color: isActive ? 'var(--primary, #3874ff)' : 'var(--text-muted, #6e7891)',
+                          color: isActive ? 'var(--primary, #6366f1)' : 'var(--text-muted, #94a3b8)',
                           wordBreak: 'break-word',
-                          maxWidth: '60px',
+                          maxWidth: '72px',
                           textAlign: 'center'
                         }}
                       >
@@ -2264,72 +1966,59 @@ export default function App() {
                     onClick={() => handleNavClick(tabKey)}
                     title={label}
                     style={{
-                      background: isActive ? 'rgba(56, 116, 255, 0.09)' : 'transparent',
+                      background: isActive ? 'var(--nav-active-bg, rgba(99,102,241,0.12))' : 'none',
                       border: 'none',
                       width: '100%',
-                      padding: '0.38rem 0.75rem',
-                      marginBottom: '2px',
+                      padding: '0.75rem 0.9rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'flex-start',
-                      gap: '0.55rem',
-                      borderRadius: '6px',
-                      color: isActive ? 'var(--primary, #3874ff)' : 'var(--text-secondary, #525b75)',
-                      fontSize: '0.8rem',
-                      fontWeight: isActive ? 700 : 600,
+                      gap: '0.75rem',
+                      borderRadius: 'var(--radius-sm, 8px)',
+                      color: isActive ? 'var(--text-primary, #ffffff)' : 'var(--text-muted, #94a3b8)',
+                      fontSize: '0.88rem',
+                      fontWeight: isActive ? '700' : '500',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.15s ease',
+                      borderLeft: isActive ? '3px solid var(--nav-active-border, #6366f1)' : '3px solid transparent',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden'
                     }}
-                    onMouseEnter={e => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'rgba(56, 116, 255, 0.04)';
-                        e.currentTarget.style.color = 'var(--text-primary, #141824)';
-                      }
-                    }}
-                    onMouseLeave={e => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = 'var(--text-secondary, #525b75)';
-                      }
-                    }}
                   >
-                    <NavIcon 
-                      size={16} 
-                      color={isActive ? 'var(--primary, #3874ff)' : (customColor || 'var(--text-muted, #8a94ad)')} 
-                      style={{ flexShrink: 0 }} 
-                    />
+                    <NavIcon size={18} color={customColor || (isActive ? 'var(--primary)' : undefined)} style={{ flexShrink: 0 }} />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
                   </button>
                 );
               };
 
-              const renderSectionHeader = (label, IconComponent, isFirst = false) => {
+              const renderSectionHeader = (label, IconComponent) => {
+                const HeaderIcon = IconComponent || MessageSquare;
                 return (
                   <div
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
-                      fontSize: '0.64rem',
+                      gap: '0.45rem',
+                      fontSize: '0.72rem',
                       fontWeight: '700',
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
-                      color: 'var(--text-muted, #8a94ad)',
-                      padding: '0 0.75rem',
-                      margin: isFirst ? '0.35rem 0 0.35rem 0' : '1.15rem 0 0.35rem 0'
+                      color: 'var(--text-muted)',
+                      padding: isSidebarCollapsed ? '0.35rem 0' : '0.4rem 0.75rem',
+                      borderBottom: '1px solid var(--border-light)',
+                      marginBottom: '0.35rem'
                     }}
                     title={label}
                   >
+                    <HeaderIcon size={15} color="var(--primary)" style={{ flexShrink: 0 }} />
                     {!isSidebarCollapsed && <span>{label}</span>}
                   </div>
                 );
               };
 
-              const renderDepartmentModules = () => {
-                if (activeTab === 'workspace') {
+              if (activeTab === 'workspace') {
                 return (
                   <div style={{ padding: isSidebarCollapsed ? '0.4rem 0.2rem' : '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
                     {renderSectionHeader('Workspace', MessageSquare)}
@@ -2393,7 +2082,7 @@ export default function App() {
                   <>
                     {renderSectionHeader('Digital Print Modules', Printer)}
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards')) &&
-                      renderNavItem('jobcards', 'Operations Dashboard', BarChart3, null, 'Dashboard')
+                      renderNavItem('jobcards', 'Prints Dashboard & Reports', BarChart3, null, 'Dashboard')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_printing_log')) &&
                       renderNavItem('jobcards_printing_log', 'Printing Department', Printer, null, 'Printing')
@@ -2405,38 +2094,38 @@ export default function App() {
                       renderNavItem('jobcards_fabric', 'Fabric Management', Database, null, 'Fabric')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) &&
-                      renderNavItem('jobcards_billing', 'Billing & Invoices', Receipt, null, 'Billing')
+                      renderNavItem('jobcards_billing', 'Finance', Receipt, null, 'Finance')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_costing') || currentUser.permissions?.includes('jobcards_billing')) &&
-                      renderNavItem('jobcards_costing', 'Job Costing & Profit', TrendingUp, null, 'Costing')
+                      renderNavItem('jobcards_costing', 'Costing', TrendingUp, null, 'Costing')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_crm') || currentUser.permissions?.includes('crm_department') || currentUser.permissions?.includes('crm')) &&
-                      renderNavItem('jobcards_crm', 'CRM & Clients', Users, null, 'CRM')
+                      renderNavItem('jobcards_crm', 'CRM Department', Users, null, 'CRM')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_business_connection') || currentUser.permissions?.includes('jobcards_master_ai') || currentUser.permissions?.includes('jobcards')) &&
-                      renderNavItem('jobcards_business_connection', 'Business Connections', Users, null, 'Connections')
+                      renderNavItem('jobcards_business_connection', 'Business Connection', Users, null, 'Connections')
                     }
 
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_list')) &&
-                      renderNavItem('jobcards_list', 'Job Cards Register', FileText, null, 'Job Cards')
+                      renderNavItem('jobcards_list', 'Job Card', FileText, null, 'Job Card')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_catalogue') || currentUser.permissions?.includes('jobcards_master')) &&
                       renderNavItem('jobcards_catalogue', 'Design Catalog', BookOpen, null, 'Catalog')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('designer_screen') || currentUser.permissions?.includes('designer_module')) &&
-                      renderNavItem('designer_screen', 'Designer Studio', Palette, null, 'Designer')
+                      renderNavItem('designer_screen', 'Designer Screen', Palette, null, 'Designer')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_settings')) &&
-                      renderNavItem('jobcards_settings', 'Machine & Print Settings', Settings, null, 'Settings')
+                      renderNavItem('jobcards_settings', 'Print Settings', Settings, null, 'Settings')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_raw_materials')) &&
-                      renderNavItem('jobcards_raw_materials', 'Inks & Paper Stock', ShoppingBag, null, 'Stock')
+                      renderNavItem('jobcards_raw_materials', 'Raw Materials', ShoppingBag, null, 'Materials')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_complain') || currentUser.permissions?.includes('jobcards_complaints') || currentUser.permissions?.includes('complaint_dashboard') || currentUser.permissions?.includes('complaint_create')) &&
-                      renderNavItem('jobcards_complain', 'Customer Complaints', AlertTriangle, null, 'Complaints')
+                      renderNavItem('jobcards_complain', 'Complain Module', AlertTriangle, null, 'Complain')
                     }
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_qa') || currentUser.permissions?.includes('qa') || currentUser.permissions?.includes('jobcards')) &&
-                      renderNavItem('jobcards_qa', 'QA & Quality Inspection', ShieldCheck, null, 'QA Check')
+                      renderNavItem('jobcards_qa', 'QA & Quality Checking', ShieldCheck, null, 'QA Check')
                     }
                   </>
                 );
@@ -2469,54 +2158,83 @@ export default function App() {
                   }
                 </>
               );
-            };
+            })()}
 
-            return (
-              <>
-                {renderDepartmentModules()}
+            {currentUser && currentUser.role === 'admin' && (
+              isSidebarCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('admin')}
+                  title="Admin Panel"
+                  style={{
+                    background: activeTab === 'admin' ? 'rgba(99,102,241,0.15)' : 'transparent',
+                    border: 'none',
+                    width: '100%',
+                    padding: '0.55rem 0.2rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '3px',
+                    borderRadius: '10px',
+                    color: activeTab === 'admin' ? 'var(--text-primary, #ffffff)' : 'var(--text-muted, #94a3b8)',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.15s ease',
+                    borderLeft: activeTab === 'admin' ? '3.5px solid var(--primary, #6366f1)' : '3.5px solid transparent',
+                    borderTop: '1px solid var(--border-light)',
+                    marginTop: '0.5rem',
+                    paddingTop: '0.65rem'
+                  }}
+                >
+                  <ShieldAlert size={22} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.67rem', fontWeight: activeTab === 'admin' ? 800 : 600, color: activeTab === 'admin' ? 'var(--primary)' : 'var(--text-muted)' }}>
+                    Admin
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('admin')}
+                  title="Admin Panel"
+                  style={{
+                    background: activeTab === 'admin' ? 'var(--nav-active-bg, rgba(99,102,241,0.12))' : 'none',
+                    border: 'none',
+                    width: '100%',
+                    padding: '0.75rem 0.9rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    gap: '0.75rem',
+                    borderRadius: 'var(--radius-sm, 8px)',
+                    color: activeTab === 'admin' ? 'var(--text-primary, #ffffff)' : 'var(--text-muted, #94a3b8)',
+                    fontSize: '0.88rem',
+                    fontWeight: activeTab === 'admin' ? '700' : '500',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                    borderLeft: activeTab === 'admin' ? '3px solid var(--nav-active-border, #6366f1)' : '3px solid transparent',
+                    borderTop: '1px solid var(--border-light)',
+                    marginTop: '0.5rem',
+                    paddingTop: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <ShieldAlert size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span>Admin Panel</span>
+                </button>
+              )
+            )}
 
-                {/* Apps & Tools Section - Strictly Master Admin Only */}
-                {isMasterAdmin && (
-                  <>
-                    {renderSectionHeader('Apps & Tools', Sparkles)}
-                    {[
-                      { tabKey: 'calendar', label: 'Calendar Schedule', icon: CalendarIcon, color: '#0284c7', short: 'Calendar' },
-                      { tabKey: 'inbox', label: 'Email & Inbox', icon: Mail, color: '#8b5cf6', short: 'Inbox' },
-                      { tabKey: 'file_manager', label: 'File Manager', icon: Folder, color: '#f59e0b', short: 'Files' },
-                      { tabKey: 'activity_feed', label: 'Activity Feed', icon: Users, color: '#10b981', short: 'Social' },
-                      { tabKey: 'gantt', label: 'Gantt Timeline', icon: Layers, color: '#38bdf8', short: 'Gantt' },
-                      { tabKey: 'geo_map', label: 'Territory Map', icon: Globe, color: '#6366f1', short: 'Geo Map' },
-                      { tabKey: 'advanced_dashboard', label: 'Advanced Analytics', icon: BarChart3, color: '#ec4899', short: 'Analytics' },
-                      { tabKey: 'gallery', label: 'Design Gallery', icon: ImageIcon, color: '#f43f5e', short: 'Gallery' }
-                    ].map(app => renderNavItem(app.tabKey, app.label, app.icon, app.color, app.short))}
-                  </>
-                )}
-
-                {currentUser && currentUser.role === 'admin' && (
-                  <>
-                    {renderSectionHeader('Administration', ShieldAlert)}
-                    {renderNavItem('admin', 'Admin Panel', ShieldAlert, 'var(--primary)', 'Admin')}
-                  </>
-                )}
-              </>
-            );
-          })()}
-
-          </div>
-          <div 
-            className="phoenix-vertical-footer"
-            onClick={toggleSidebarCollapse}
-            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            {!isSidebarCollapsed && <span>Collapsed View</span>}
           </div>
         </aside>
 
         {/* Right Content Panel */}
-        <main className={`phoenix-main-content ${isSidebarCollapsed ? 'sidebar-collapsed' : ''} ${['communication', 'workspace', 'task_management'].includes(activeTab) ? 'phoenix-full-viewport' : ''}`}>
+        <section style={styles.contentArea}>
           {error && <div style={styles.globalError}>{error}</div>}
 
+          <ErrorBoundary>
           <Suspense fallback={
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '1rem', color: 'var(--text-muted)' }}>
               <RefreshCw size={28} className="spin-loader" color="var(--primary)" />
@@ -2562,8 +2280,8 @@ export default function App() {
             <SalesGrid />
           ) : activeTab === 'reports' ? (
             <ReportsCenter department={activeDepartment === 'elite_online' ? 'elite-online' : 'elite-print'} />
-          ) : activeTab === 'jobcards_crm' || activeTab === 'crm_department' || activeTab === 'crm' ? (
-            <CrmPanel currentUser={currentUser} />
+          ) : activeTab === 'jobcards_crm' || activeTab === 'crm_department' || activeTab === 'crm' || activeTab === 'crm_profiles' || activeTab === 'crm_leads' ? (
+            <CrmPanel currentUser={currentUser} initialSubTab={activeTab === 'crm_profiles' ? 'profiles' : 'leads'} />
           ) : activeTab === 'jobcards_business_connection' || activeTab === 'jobcards_master_ai' || activeTab === 'master_ai_agent' || activeTab === 'business_connection' ? (
             <BusinessConnectionPanel currentUser={currentUser} />
           ) : activeTab.startsWith('jobcards') ? (
@@ -2619,22 +2337,6 @@ export default function App() {
             <DesignerScreen currentUser={currentUser} isAdmin={currentUser?.role === 'admin'} onNavigate={(t) => setActiveTab(t)} />
           ) : activeTab === 'admin' ? (
             <AdminPanel />
-          ) : activeTab === 'calendar' ? (
-            isMasterAdmin ? <CalendarModule currentUser={currentUser} /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'file_manager' ? (
-            isMasterAdmin ? <FileManager currentUser={currentUser} /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'inbox' ? (
-            isMasterAdmin ? <InboxModule currentUser={currentUser} /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'activity_feed' ? (
-            isMasterAdmin ? <ActivityFeed currentUser={currentUser} /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'gantt' ? (
-            isMasterAdmin ? <GanttChart currentUser={currentUser} /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'geo_map' ? (
-            isMasterAdmin ? <GeographicMap /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'advanced_dashboard' ? (
-            isMasterAdmin ? <AdvancedDashboard /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
-          ) : activeTab === 'gallery' ? (
-            isMasterAdmin ? <Gallery /> : <div style={styles.noAccessContainer}><ShieldAlert size={48} color="#ef4444" /><h3 style={{ marginTop: '1rem', color: 'var(--text-primary)' }}>Master Admin Only</h3><p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center' }}>This tool is restricted to Master Admin accounts only.</p></div>
           ) : ['communication', 'workspace', 'task_management'].includes(activeTab) ? null : (
             <div style={styles.noAccessContainer}>
               <ShieldAlert size={48} color="var(--primary)" />
@@ -2645,6 +2347,7 @@ export default function App() {
             </div>
           )}
           </Suspense>
+          </ErrorBoundary>
 
           {/* Persistent CommunicationPanel (Chat & Task Manager - preserved across tab navigation) */}
           <div style={{ display: (activeTab === 'communication' || activeTab === 'task_management' || activeTab === 'workspace') ? 'flex' : 'none', flex: 1, minHeight: 0, height: '100%', flexDirection: 'column' }}>
@@ -2655,26 +2358,8 @@ export default function App() {
               onUnreadChange={(count) => setChatUnreadCount(count)}
             />
           </div>
-        </main>
-      </div>
-
-      {/* Floating Phoenix Chat Demo Button */}
-      <button 
-        type="button"
-        className="phoenix-floating-chat-btn"
-        onClick={() => setActiveTab('communication')}
-        title="Open Phoenix Chat Demo & Activity Stream"
-      >
-        <MessageSquare size={16} color="var(--primary)" />
-        <span>Chat demo</span>
-        <span className="phoenix-status-dot-green"></span>
-        {chatUnreadCount > 0 && (
-          <span className="badge badge-danger" style={{ padding: '1px 5px', fontSize: '0.65rem' }}>
-            {chatUnreadCount}
-          </span>
-        )}
-      </button>
-
+        </section>
+      </main>
 
       {/* Global Incoming Call Banner (Displayed on ANY page across ERP) */}
       {globalIncomingCall && (
@@ -2787,6 +2472,76 @@ export default function App() {
         </div>
       )}
 
+      {/* Minimal Offline / Reconnecting Status (Zero decorative icons, hidden when connected) */}
+      {connectionStatus !== 'connected' && (
+        <div
+          data-testid="connection-status-banner"
+          style={{
+            position: 'fixed',
+            bottom: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#0f172a',
+            color: '#94a3b8',
+            border: '1px solid #334155',
+            padding: '4px 12px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 500,
+            letterSpacing: '0.02em',
+            zIndex: 99999,
+            boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+            pointerEvents: 'none'
+          }}
+        >
+          {connectionStatus === 'offline' ? 'Offline' : 'Reconnecting...'}
+        </div>
+      )}
+
+      {/* Minimal Record Conflict Notice (No overwrite of unsaved form inputs) */}
+      {conflictRecord && (
+        <div
+          data-testid="conflict-notice-banner"
+          style={{
+            position: 'fixed',
+            top: 14,
+            right: 14,
+            backgroundColor: '#0f172a',
+            color: '#e2e8f0',
+            border: '1px solid #475569',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: 500,
+            zIndex: 100000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          <span>Updated by another user</span>
+          <button
+            onClick={() => {
+              setConflictRecord(null);
+              setEditingItem(null);
+              triggerGlobalDataRefresh('conflict-reload');
+            }}
+            style={{
+              backgroundColor: '#334155',
+              color: '#f8fafc',
+              border: 'none',
+              borderRadius: '3px',
+              padding: '3px 8px',
+              fontSize: '11px',
+              cursor: 'pointer'
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
       {/* Global Push / Toast Notifications Container */}
       <NotificationToastContainer toasts={toasts} setToasts={setToasts} />
 
@@ -2797,56 +2552,58 @@ export default function App() {
         onSelectTab={(tab) => setActiveTab(tab)}
       />
 
-      {/* Modal Dialog */}
-      {isFormOpen && (
-        <InventoryForm
-          item={editingItem}
-          isCatalog={formMode === 'catalog'}
-          onSubmit={editingItem ? handleEditSubmit : handleAddSubmit}
-          onClose={() => {
-            setIsFormOpen(false);
-            setEditingItem(null);
-            restoreSavedScrollPos();
-          }}
-        />
-      )}
-
-      {isStockOutOpen && (
-        <StockOutForm
-          items={items}
-          parties={parties}
-          prefilledItem={stockOutItem}
-          onSubmit={handleStockOutSubmit}
-          onClose={() => {
-            setIsStockOutOpen(false);
-            setStockOutItem(null);
-            restoreSavedScrollPos();
-          }}
-        />
-      )}
-
-      {isManagerOpen && (
-        <CatalogManagerModal
-          initialTab={managerTab}
-          onClose={() => {
-            setIsManagerOpen(false);
-            fetchData().finally(() => {
+      {/* Modal Dialogs with Deferred Suspense Loading */}
+      <Suspense fallback={null}>
+        {isFormOpen && (
+          <InventoryForm
+            item={editingItem}
+            isCatalog={formMode === 'catalog'}
+            onSubmit={editingItem ? handleEditSubmit : handleAddSubmit}
+            onClose={() => {
+              setIsFormOpen(false);
+              setEditingItem(null);
               restoreSavedScrollPos();
-            });
-            restoreSavedScrollPos();
-          }}
-        />
-      )}
+            }}
+          />
+        )}
 
-      {isBulkInwardOpen && (
-        <BulkInwardModal
-          onSubmit={handleBulkInwardSubmit}
-          onClose={() => {
-            setIsBulkInwardOpen(false);
-            restoreSavedScrollPos();
-          }}
-        />
-      )}
+        {isStockOutOpen && (
+          <StockOutForm
+            items={items}
+            parties={parties}
+            prefilledItem={stockOutItem}
+            onSubmit={handleStockOutSubmit}
+            onClose={() => {
+              setIsStockOutOpen(false);
+              setStockOutItem(null);
+              restoreSavedScrollPos();
+            }}
+          />
+        )}
+
+        {isManagerOpen && (
+          <CatalogManagerModal
+            initialTab={managerTab}
+            onClose={() => {
+              setIsManagerOpen(false);
+              fetchData().finally(() => {
+                restoreSavedScrollPos();
+              });
+              restoreSavedScrollPos();
+            }}
+          />
+        )}
+
+        {isBulkInwardOpen && (
+          <BulkInwardModal
+            onSubmit={handleBulkInwardSubmit}
+            onClose={() => {
+              setIsBulkInwardOpen(false);
+              restoreSavedScrollPos();
+            }}
+          />
+        )}
+      </Suspense>
 
       {/* Loading Overlay */}
       {loading && items.length === 0 && sales.length === 0 && (
@@ -3098,13 +2855,34 @@ export default function App() {
         onOpenDeviceHub={() => setShowPermissionsModal(true)}
       />
 
-      {/* Phoenix Theme & Style Customizer Slide-out */}
-      <ThemeCustomizer
-        isOpen={showThemeCustomizer}
-        onClose={() => setShowThemeCustomizer(false)}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
+      {/* Mobile Bottom Navigation (4-5 items, text only, safe-area inset) */}
+      {isMobile && isAuthenticated && (
+        <MobileBottomNav
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setMobileMenuOpen(false);
+          }}
+          onOpenMenu={() => setMobileMenuOpen(true)}
+          badgeCounts={{
+            dashboard: 0,
+            jobcards: 0,
+            ee_invoices: 0,
+            inventory: 0
+          }}
+        />
+      )}
+
+      {/* Global Search Modal (Ctrl/Cmd+K) */}
+      <GlobalSearchModal
+        isOpen={showGlobalSearch}
+        onClose={() => setShowGlobalSearch(false)}
+        onSelectResult={handleSelectSearchResult}
+        activeCompanyId={activeDepartment}
       />
+
+      {/* Undo Toast Container */}
+      <UndoToastContainer />
     </div>
   );
 }
@@ -3122,14 +2900,15 @@ const styles = {
     minHeight: '400px'
   },
   appContainer: {
-    maxWidth: '100%',
+    maxWidth: '1280px',
     margin: '0 auto',
-    padding: '0.75rem 1rem',
+    padding: 'var(--app-padding, 12px)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
-    minHeight: '100vh',
-    boxSizing: 'border-box'
+    gap: '12px',
+    minHeight: '100dvh',
+    width: '100%',
+    boxSizing: 'border-box',
   },
   header: {
     position: 'sticky',
@@ -3138,13 +2917,13 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0.45rem 1rem',
-    flexWrap: 'wrap',
-    gap: '0.75rem',
-    borderBottom: '1px solid var(--border-light)',
+    padding: '8px 12px',
+    borderBottom: '1px solid var(--border-color)',
     backgroundColor: 'var(--bg-card, #ffffff)',
     minHeight: '52px',
-    boxShadow: '0 1px 3px rgba(36, 40, 46, 0.05)'
+    boxShadow: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
   },
   headerLeft: {
     display: 'flex',
@@ -3152,17 +2931,16 @@ const styles = {
     gap: '0.75rem',
   },
   logoBadge: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '8px',
-    background: 'var(--primary, #3874ff)',
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    background: 'linear-gradient(135deg, var(--primary), #0891b2)',
     color: '#fff',
     fontWeight: '700',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '1rem',
-    boxShadow: '0 2px 6px rgba(56, 116, 255, 0.3)'
+    fontSize: '1.1rem',
   },
   brandTitle: {
     fontSize: '1.2rem',
@@ -3225,11 +3003,11 @@ const styles = {
     transition: 'all var(--transition-fast)',
   },
   navItemActive: {
-    background: 'var(--nav-active-bg, #e5edff)',
-    color: 'var(--primary, #3874ff)',
-    fontWeight: '700',
-    borderLeft: '3px solid var(--primary, #3874ff)',
-    borderRadius: '0 var(--radius-sm, 6px) var(--radius-sm, 6px) 0',
+    background: 'var(--nav-active-bg)',
+    color: 'var(--text-primary)',
+    fontWeight: '600',
+    borderLeft: '3px solid var(--nav-active-border)',
+    borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
     paddingLeft: 'calc(1rem - 3px)',
   },
   navSubItem: {
@@ -3352,24 +3130,3 @@ const styles = {
     fontSize: '0.75rem',
   },
 };
-
-// Inject responsive grid stylesheet
-const styleEl = document.createElement('style');
-styleEl.innerHTML = `
-  @media (max-width: 900px) {
-    div[style*="display: grid; gridTemplateColumns: 280px 1fr"] {
-      grid-template-columns: 1fr !important;
-    }
-    aside {
-      display: grid !important;
-      grid-template-columns: 1fr 1.2fr;
-      gap: 1.2rem;
-    }
-  }
-  @media (max-width: 600px) {
-    aside {
-      grid-template-columns: 1fr !important;
-    }
-  }
-`;
-document.head.appendChild(styleEl);

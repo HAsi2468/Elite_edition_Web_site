@@ -4,13 +4,14 @@ import {
   TrendingDown, MoreVertical, Sparkles, Package, AlertTriangle, 
   CheckCircle2, XCircle, DollarSign, Download, Filter, Calendar,
   RefreshCw, FileText, TrendingUp, Layers3, IndianRupee, ArrowDownRight, ArrowUpRight, Building2, BookOpen, Eye, X,
-  ChevronDown, ChevronUp, Camera, Tag
+  ChevronDown, ChevronUp, Camera, Tag, Warehouse, Settings, Users
 } from 'lucide-react';
 import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import { matchSearchQuery } from '../utils/searchUtils';
 import { api } from '../services/api';
 import DateRangePicker from './DateRangePicker';
 import VendorPartyManagerModal from './VendorPartyManagerModal';
+import CatalogManagerModal from './CatalogManagerModal';
 import ProductCatalogGrid from './ProductCatalogGrid';
 
 const R2_PUBLIC_BASE = 'https://pub-66cb4aaa7dca442893dd7569e70ff7bd.r2.dev';
@@ -87,7 +88,39 @@ export default function InventoryGrid({
   const [showPartyManager, setShowPartyManager] = useState(false);
   const [viewingItem, setViewingItem] = useState(null);
 
+  // Settings & Dynamic Values Dropdown State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [localManagerTab, setLocalManagerTab] = useState('facilities');
+  const [isLocalManagerOpen, setIsLocalManagerOpen] = useState(false);
+  const settingsMenuRef = React.useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target)) {
+        setIsSettingsOpen(false);
+      }
+    };
+    if (isSettingsOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isSettingsOpen]);
+
+  const handleOpenDynamicManager = (tabName = 'facilities') => {
+    setIsSettingsOpen(false);
+    if (onOpenManager) {
+      onOpenManager(tabName);
+    } else {
+      setLocalManagerTab(tabName);
+      setIsLocalManagerOpen(true);
+    }
+  };
+
   // --- Sub-Screen 1: Stock Overview State ---
+  const [facilities, setFacilities] = useState([]);
+  const [facilityFilter, setFacilityFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [sizeFilter, setSizeFilter] = useState('All');
   const [overviewDateStart, setOverviewDateStart] = useState('');
@@ -99,6 +132,29 @@ export default function InventoryGrid({
   const [sortField, setSortField] = useState('itemName');
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
   const [updatingStockId, setUpdatingStockId] = useState(null);
+
+  // Load facilities from backend and listen for dynamic updates
+  const loadFacilities = useCallback(async () => {
+    try {
+      const res = await api.getFacilities();
+      if (Array.isArray(res)) {
+        setFacilities(res);
+      }
+    } catch (err) {
+      console.warn('Failed to load storage facilities:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFacilities();
+    const handleFacilitiesUpdate = () => {
+      loadFacilities();
+    };
+    window.addEventListener('elite_facilities_updated', handleFacilitiesUpdate);
+    return () => {
+      window.removeEventListener('elite_facilities_updated', handleFacilitiesUpdate);
+    };
+  }, [loadFacilities]);
 
   // --- Sub-Screen 2: Inward Stock State ---
   const [inwardDateStart, setInwardDateStart] = useState('');
@@ -201,21 +257,33 @@ export default function InventoryGrid({
   const sortedVendors = Array.from(brandSet).sort((a, b) => a.localeCompare(b));
   const vendors = ['All', ...sortedVendors];
 
-  // Overview Metrics
-  const totalSkus = safeItems.length;
-  const totalAvailableStock = safeItems.reduce((acc, item) => acc + (Number(item.currentlyAvailableStock) || 0), 0);
-  const lowStockCount = safeItems.filter(item => (Number(item.currentlyAvailableStock) || 0) > 0 && (Number(item.currentlyAvailableStock) || 0) <= 5).length;
-  const outOfStockCount = safeItems.filter(item => (Number(item.currentlyAvailableStock) || 0) === 0).length;
-  const totalBuyValuation = safeItems.reduce((acc, item) => acc + ((Number(item.purchasePrice) || 0) * (Number(item.currentlyAvailableStock) || 0)), 0);
+  // Facility-Scoped Items
+  const facilityScopedItems = useMemo(() => {
+    if (facilityFilter === 'All') return safeItems;
+    return safeItems.filter(item => {
+      const itemFac = (item.facility || '').trim();
+      if (!itemFac) {
+        return (item.party && item.party.trim().toLowerCase() === facilityFilter.toLowerCase()) || facilityFilter === 'Pankhudi';
+      }
+      return itemFac.toLowerCase() === facilityFilter.toLowerCase();
+    });
+  }, [safeItems, facilityFilter]);
+
+  // Overview Metrics (dynamically calculated for selected facility)
+  const totalSkus = facilityScopedItems.length;
+  const totalAvailableStock = facilityScopedItems.reduce((acc, item) => acc + (Number(item.currentlyAvailableStock) || 0), 0);
+  const lowStockCount = facilityScopedItems.filter(item => (Number(item.currentlyAvailableStock) || 0) > 0 && (Number(item.currentlyAvailableStock) || 0) <= 5).length;
+  const outOfStockCount = facilityScopedItems.filter(item => (Number(item.currentlyAvailableStock) || 0) === 0).length;
+  const totalBuyValuation = facilityScopedItems.reduce((acc, item) => acc + ((Number(item.purchasePrice) || 0) * (Number(item.currentlyAvailableStock) || 0)), 0);
 
   // --- Data Fetching for Inward & Outward Screens ---
-  const fetchInwardData = useCallback(async (start = inwardDateStart, end = inwardDateEnd) => {
+  const fetchInwardData = useCallback(async (start = inwardDateStart, end = inwardDateEnd, fac = facilityFilter) => {
     setInwardLoading(true);
     setInwardError('');
     try {
       const combinedStart = start ? `${start}T00:00:00` : '';
       const combinedEnd = end ? `${end}T23:59:59` : '';
-      const res = await api.getStockInwardReportData(combinedStart, combinedEnd);
+      const res = await api.getStockInwardReportData(combinedStart, combinedEnd, fac);
       setInwardData(res || { items: [], totalQty: 0, totalPurchase: 0 });
       if (!start && !end) {
         setTotalInwardCount(res?.items?.length || 0);
@@ -226,15 +294,15 @@ export default function InventoryGrid({
     } finally {
       setInwardLoading(false);
     }
-  }, [inwardDateStart, inwardDateEnd]);
+  }, [inwardDateStart, inwardDateEnd, facilityFilter]);
 
-  const fetchOutwardData = useCallback(async (start = outwardDateStart, end = outwardDateEnd) => {
+  const fetchOutwardData = useCallback(async (start = outwardDateStart, end = outwardDateEnd, fac = facilityFilter) => {
     setOutwardLoading(true);
     setOutwardError('');
     try {
       const combinedStart = start ? `${start}T00:00:00` : '';
       const combinedEnd = end ? `${end}T23:59:59` : '';
-      const res = await api.getStockOutwardReportData(combinedStart, combinedEnd);
+      const res = await api.getStockOutwardReportData(combinedStart, combinedEnd, fac);
       setOutwardData(res || { items: [], totalQty: 0, totalPurchase: 0, totalSell: 0, totalProfit: 0 });
       if (!start && !end) {
         setTotalOutwardCount(res?.items?.length || 0);
@@ -245,22 +313,22 @@ export default function InventoryGrid({
     } finally {
       setOutwardLoading(false);
     }
-  }, [outwardDateStart, outwardDateEnd]);
+  }, [outwardDateStart, outwardDateEnd, facilityFilter]);
 
   // Initial load on mount so Inward & Outward counts are populated immediately without clicking tabs
   useEffect(() => {
-    fetchInwardData('', '');
-    fetchOutwardData('', '');
-  }, []);
+    fetchInwardData('', '', facilityFilter);
+    fetchOutwardData('', '', facilityFilter);
+  }, [facilityFilter]);
 
   // Trigger data fetch when switching tabs
   useEffect(() => {
     if (activeSubTab === 'inward') {
-      fetchInwardData();
+      fetchInwardData(inwardDateStart, inwardDateEnd, facilityFilter);
     } else if (activeSubTab === 'outward') {
-      fetchOutwardData();
+      fetchOutwardData(outwardDateStart, outwardDateEnd, facilityFilter);
     }
-  }, [activeSubTab, fetchInwardData, fetchOutwardData]);
+  }, [activeSubTab, facilityFilter]);
 
   // Auto-refresh without page reload: listen to global event dispatched on inward, outward, or inventory transactions
   const refreshAllStockLogs = useCallback(async () => {
@@ -332,10 +400,10 @@ export default function InventoryGrid({
   };
 
   // Overview Filtered Items
-  const filteredOverviewItems = safeItems
+  const filteredOverviewItems = facilityScopedItems
     .filter(item => {
       const stock = Number(item.currentlyAvailableStock) || 0;
-      const matchSearch = matchSearchQuery(item, searchTerm, ['itemName', 'party', 'skuCode', 'category', 'notes']);
+      const matchSearch = matchSearchQuery(item, searchTerm, ['itemName', 'party', 'skuCode', 'category', 'notes', 'facility']);
       const matchSize = sizeFilter === 'All' || item.size === sizeFilter;
       
       const matchDate = (() => {
@@ -363,6 +431,11 @@ export default function InventoryGrid({
     .sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
+
+      if (sortField === 'facility') {
+        aVal = a.facility || a.party || '';
+        bVal = b.facility || b.party || '';
+      }
       
       if (aVal === undefined || aVal === null) aVal = '';
       if (bVal === undefined || bVal === null) bVal = '';
@@ -390,7 +463,7 @@ export default function InventoryGrid({
   const filteredInwardItems = (inwardData.items || [])
     .filter(item => {
       if (!inwardSearchTerm.trim()) return true;
-      return matchSearchQuery(item, inwardSearchTerm, ['itemName', 'party', 'skuCode', 'sku']);
+      return matchSearchQuery(item, inwardSearchTerm, ['itemName', 'party', 'skuCode', 'sku', 'facility']);
     })
     .sort((a, b) => {
       let aVal = a[inwardSortField];
@@ -816,7 +889,7 @@ export default function InventoryGrid({
   const filteredOutwardItems = (outwardData.items || [])
     .filter(item => {
       if (!outwardSearchTerm.trim()) return true;
-      return matchSearchQuery(item, outwardSearchTerm, ['itemName', 'party', 'skuCode', 'sku']);
+      return matchSearchQuery(item, outwardSearchTerm, ['itemName', 'party', 'skuCode', 'sku', 'facility']);
     })
     .sort((a, b) => {
       let aVal = a[outwardSortField];
@@ -1411,6 +1484,228 @@ export default function InventoryGrid({
             </span>
           </button>
         </div>
+
+        {/* Right side Settings & Dynamic Value Setters Button */}
+        <div style={{ position: 'relative', flexShrink: 0 }} ref={settingsMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.52rem 0.95rem',
+              borderRadius: '9px',
+              background: isSettingsOpen ? '#eff6ff' : '#ffffff',
+              border: isSettingsOpen ? '1.5px solid #2563eb' : '1.5px solid #cbd5e1',
+              color: isSettingsOpen ? '#1d4ed8' : '#1e293b',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxShadow: isSettingsOpen ? '0 0 0 3px rgba(37, 99, 235, 0.15)' : '0 2px 6px rgba(0, 0, 0, 0.04)',
+              transition: 'all 0.15s ease',
+            }}
+            title="Configure Dynamic Dropdown Values (Facilities, Brands, Categories, Vendors, Parties)"
+          >
+            <Settings size={16} color="#2563eb" style={{ transition: 'transform 0.3s ease', transform: isSettingsOpen ? 'rotate(45deg)' : 'none' }} />
+            <span>Settings</span>
+            <ChevronDown size={14} color="#64748b" style={{ transition: 'transform 0.2s ease', transform: isSettingsOpen ? 'rotate(180deg)' : 'none' }} />
+          </button>
+
+          {/* Settings Dropdown Menu */}
+          {isSettingsOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: 'calc(100% + 8px)',
+                width: '275px',
+                background: '#ffffff',
+                borderRadius: '14px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                padding: '0.5rem',
+                zIndex: 1000,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '3px',
+              }}
+            >
+              <div style={{ padding: '0.4rem 0.65rem', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #f1f5f9', marginBottom: '3px' }}>
+                Dynamic Dropdown Value Setters
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleOpenDynamicManager('facilities')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background 0.15s ease',
+                  width: '100%',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f9ff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Warehouse size={15} color="#0284c7" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>Storage Facilities</div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Pankhudi, Warehouse A, Godowns</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenDynamicManager('brands')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background 0.15s ease',
+                  width: '100%',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#eff6ff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Tag size={15} color="#2563eb" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>Catalog Brands</div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>ANOUK, ELITE EDITION, HERA...</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenDynamicManager('categories')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background 0.15s ease',
+                  width: '100%',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#ecfdf5'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <SlidersHorizontal size={15} color="#059669" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>Product Categories</div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Kurta Set, Dress, Saree, Lehenga...</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenDynamicManager('vendors')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background 0.15s ease',
+                  width: '100%',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f3ff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Building2 size={15} color="#7c3aed" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>Vendors & Suppliers</div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Fabric & Material Suppliers</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenDynamicManager('parties')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background 0.15s ease',
+                  width: '100%',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#fff7ed'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Users size={15} color="#ea580c" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>Client Parties</div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Customer Accounts & Receivers</div>
+                </div>
+              </button>
+
+              <div style={{ borderTop: '1px solid #f1f5f9', marginTop: '4px', paddingTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenDynamicManager('facilities')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    width: '100%',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#dbeafe'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#eff6ff'; }}
+                >
+                  <Settings size={14} />
+                  <span>Open Full Manager Panel →</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
 
@@ -1503,8 +1798,8 @@ export default function InventoryGrid({
 
               <div className="inv-pill-container" style={styles.pillContainer}>
                 {[
-                  { id: 'all', label: `All (${items.length})` },
-                  { id: 'instock', label: `In Stock (${items.length - outOfStockCount})` },
+                  { id: 'all', label: `All (${facilityScopedItems.length})` },
+                  { id: 'instock', label: `In Stock (${facilityScopedItems.length - outOfStockCount})` },
                   { id: 'lowstock', label: `Low Stock (${lowStockCount})` },
                   { id: 'outofstock', label: `Out of Stock (${outOfStockCount})` }
                 ].map(tab => (
@@ -1520,6 +1815,36 @@ export default function InventoryGrid({
             </div>
 
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
+              {/* Storage Facility Filter Dropdown */}
+              <div style={styles.filterBox}>
+                <Warehouse size={14} color="#0284c7" />
+                <select
+                  value={facilityFilter}
+                  onChange={(e) => setFacilityFilter(e.target.value)}
+                  style={{ ...styles.selectInput, fontWeight: 600, color: facilityFilter !== 'All' ? '#0369a1' : 'inherit' }}
+                  title="Filter inventory by Storage Facility"
+                >
+                  <option value="All">All Facilities ({safeItems.length})</option>
+                  {facilities.map((fac) => {
+                    const facName = fac.name;
+                    const countInFac = safeItems.filter(item => {
+                      const itemFac = (item.facility || '').trim();
+                      if (!itemFac) {
+                        return (item.party && item.party.trim().toLowerCase() === facName.toLowerCase()) || facName === 'Pankhudi';
+                      }
+                      return itemFac.toLowerCase() === facName.toLowerCase();
+                    }).length;
+                    return (
+                      <option key={fac._id || fac.id || facName} value={facName}>
+                        {facName} {fac.code ? `(${fac.code})` : ''} ({countInFac})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Quick Manage Facilities Button removed - centralized in Top Right Settings */}
+
               <div style={styles.filterBox}>
                 <SlidersHorizontal size={14} color="#64748b" />
                 <select
@@ -1577,6 +1902,14 @@ export default function InventoryGrid({
                           <span>SKU CODE</span>
                           <span style={{ fontSize: '0.75rem', color: sortField === 'skuCode' ? '#38bdf8' : '#94a3b8' }}>
                             {sortField === 'skuCode' ? (sortOrder === 'asc' ? '▲' : '▼') : '▲▼'}
+                          </span>
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort('facility')} style={styles.thSort} title="Sort by Storage Facility">
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>FACILITY</span>
+                          <span style={{ fontSize: '0.75rem', color: sortField === 'facility' ? '#38bdf8' : '#94a3b8' }}>
+                            {sortField === 'facility' ? (sortOrder === 'asc' ? '▲' : '▼') : '▲▼'}
                           </span>
                         </div>
                       </th>
@@ -1669,6 +2002,23 @@ export default function InventoryGrid({
                                 ))}
                               </div>
                             )}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              background: '#f0f9ff',
+                              color: '#0369a1',
+                              border: '1px solid #bae6fd',
+                              padding: '0.22rem 0.6rem',
+                              borderRadius: '6px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700
+                            }}>
+                              <Warehouse size={12} color="#0284c7" />
+                              <span>{item.facility || 'Pankhudi'}</span>
+                            </span>
                           </td>
                           <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: '#334155', fontWeight: 600 }}>
                             {item.party}
@@ -1795,6 +2145,28 @@ export default function InventoryGrid({
                 }}
               />
 
+              {/* Storage Facility Filter Dropdown for Inward */}
+              <div style={styles.filterBox}>
+                <Warehouse size={14} color="#0284c7" />
+                <select
+                  value={facilityFilter}
+                  onChange={(e) => {
+                    const newFac = e.target.value;
+                    setFacilityFilter(newFac);
+                    fetchInwardData(inwardDateStart, inwardDateEnd, newFac);
+                  }}
+                  style={{ ...styles.selectInput, fontWeight: 600, color: facilityFilter !== 'All' ? '#0369a1' : 'inherit' }}
+                  title="Filter Inward Stock by Storage Facility"
+                >
+                  <option value="All">All Facilities</option>
+                  {facilities.map((fac) => (
+                    <option key={fac._id || fac.id || fac.name} value={fac.name}>
+                      {fac.name} {fac.code ? `(${fac.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* View Switcher: Challan Wise (Default) vs Individual SKUs */}
               <div style={{
                 display: 'flex',
@@ -1875,14 +2247,6 @@ export default function InventoryGrid({
             </div>
 
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
-              <button onClick={() => fetchInwardData()} style={{ ...styles.refreshBtn, padding: '0.45rem 0.75rem' }} title="Refresh Inward Log">
-                <RefreshCw size={14} className={inwardLoading ? 'spin' : ''} />
-                <span>Refresh</span>
-              </button>
-              <button onClick={() => setShowVendorManager(true)} style={{ ...styles.vendorBtn, padding: '0.45rem 0.75rem' }} title="Manage Vendors & Suppliers">
-                <Building2 size={14} />
-                <span>Manage Vendors</span>
-              </button>
               <button 
                 onClick={handleDownloadInwardPdf} 
                 disabled={downloadingInwardPdf} 
@@ -2388,6 +2752,14 @@ export default function InventoryGrid({
                             </span>
                           </div>
                         </th>
+                        <th onClick={() => handleInwardSort('facility')} style={{ ...styles.thSort, padding: '0.65rem 0.5rem', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }} title="Sort by Storage Facility">
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span>FACILITY</span>
+                            <span style={{ fontSize: '0.7rem', color: inwardSortField === 'facility' ? '#0284c7' : '#94a3b8' }}>
+                              {inwardSortField === 'facility' ? (inwardSortOrder === 'asc' ? '▲' : '▼') : '▲▼'}
+                            </span>
+                          </div>
+                        </th>
                         <th style={{ ...styles.thStatic, padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }}>SIZES & QTY</th>
                         <th onClick={() => handleInwardSort('qty')} style={{ ...styles.thSort, padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }} title="Sort by Quantity Inwarded">
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
@@ -2462,6 +2834,23 @@ export default function InventoryGrid({
                             </td>
                             <td style={{ padding: '0.55rem 0.5rem', fontSize: '0.8rem', color: '#334155', fontWeight: 600, whiteSpace: 'nowrap' }}>
                               {item.party || 'N/A'}
+                            </td>
+                            <td style={{ padding: '0.55rem 0.5rem', whiteSpace: 'nowrap' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                background: '#f0f9ff',
+                                color: '#0369a1',
+                                border: '1px solid #bae6fd',
+                                padding: '0.18rem 0.5rem',
+                                borderRadius: '6px',
+                                fontSize: '0.74rem',
+                                fontWeight: 700
+                              }}>
+                                <Warehouse size={11} color="#0284c7" />
+                                <span>{item.facility || 'Pankhudi'}</span>
+                              </span>
                             </td>
                             <td style={{ padding: '0.55rem 0.5rem', textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -2650,6 +3039,28 @@ export default function InventoryGrid({
                 }}
               />
 
+              {/* Storage Facility Filter Dropdown for Outward */}
+              <div style={styles.filterBox}>
+                <Warehouse size={14} color="#ea580c" />
+                <select
+                  value={facilityFilter}
+                  onChange={(e) => {
+                    const newFac = e.target.value;
+                    setFacilityFilter(newFac);
+                    fetchOutwardData(outwardDateStart, outwardDateEnd, newFac);
+                  }}
+                  style={{ ...styles.selectInput, fontWeight: 600, color: facilityFilter !== 'All' ? '#c2410c' : 'inherit' }}
+                  title="Filter Outward Stock by Storage Facility"
+                >
+                  <option value="All">All Facilities</option>
+                  {facilities.map((fac) => (
+                    <option key={fac._id || fac.id || fac.name} value={fac.name}>
+                      {fac.name} {fac.code ? `(${fac.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* View Switcher: Challan Wise (Default) vs Individual SKUs */}
               <div style={{
                 display: 'flex',
@@ -2730,14 +3141,6 @@ export default function InventoryGrid({
             </div>
 
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
-              <button onClick={() => fetchOutwardData()} style={{ ...styles.refreshBtn, padding: '0.45rem 0.75rem' }} title="Refresh Outward Log">
-                <RefreshCw size={14} className={outwardLoading ? 'spin' : ''} />
-                <span>Refresh</span>
-              </button>
-              <button onClick={() => setShowPartyManager(true)} style={{ ...styles.partyBtn, padding: '0.45rem 0.75rem' }} title="Manage Recipient Parties">
-                <Building2 size={14} />
-                <span>Manage Parties</span>
-              </button>
               <button 
                 onClick={handleDownloadOutwardPdf} 
                 disabled={downloadingOutwardPdf} 
@@ -3226,6 +3629,14 @@ export default function InventoryGrid({
                           </span>
                         </div>
                       </th>
+                      <th onClick={() => handleOutwardSort('facility')} style={{ ...styles.thSort, padding: '0.65rem 0.5rem', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }} title="Sort by Dispatch Facility">
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <span>FACILITY</span>
+                          <span style={{ fontSize: '0.7rem', color: outwardSortField === 'facility' ? '#ea580c' : '#94a3b8' }}>
+                            {outwardSortField === 'facility' ? (outwardSortOrder === 'asc' ? '▲' : '▼') : '▲▼'}
+                          </span>
+                        </div>
+                      </th>
                       <th style={{ ...styles.thStatic, padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }}>SIZES & QTY</th>
                       <th onClick={() => handleOutwardSort('total')} style={{ ...styles.thSort, padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--text-primary, #1e293b)', whiteSpace: 'nowrap' }} title="Sort by Total Qty Out">
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
@@ -3325,6 +3736,23 @@ export default function InventoryGrid({
                           <td style={{ padding: '0.55rem 0.5rem', fontSize: '0.8rem', color: '#334155', fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {item.party || 'N/A'}
                           </td>
+                          <td style={{ padding: '0.55rem 0.5rem', whiteSpace: 'nowrap' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              background: '#fff7ed',
+                              color: '#c2410c',
+                              border: '1px solid #fed7aa',
+                              padding: '0.18rem 0.5rem',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700
+                            }}>
+                              <Warehouse size={11} color="#ea580c" />
+                              <span>{item.facility || 'Pankhudi'}</span>
+                            </span>
+                          </td>
                           <td style={{ padding: '0.55rem 0.5rem', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', justifyContent: 'center' }}>
                               {item.sizes?.map((s, sIdx) => (
@@ -3392,6 +3820,16 @@ export default function InventoryGrid({
         <VendorPartyManagerModal
           mode="parties"
           onClose={() => setShowPartyManager(false)}
+        />
+      )}
+
+      {isLocalManagerOpen && (
+        <CatalogManagerModal
+          initialTab={localManagerTab}
+          onClose={() => {
+            setIsLocalManagerOpen(false);
+            loadFacilities();
+          }}
         />
       )}
 
@@ -4438,22 +4876,25 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '1rem',
+    gap: '0.75rem',
     background: '#ffffff',
-    padding: '0.75rem 1rem',
+    padding: '0.55rem 0.85rem',
     borderRadius: '16px',
     border: '1px solid #e2e8f0',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.04)',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
+    width: '100%',
+    boxSizing: 'border-box',
   },
   subTabBar: {
     display: 'flex',
-    gap: '0.4rem',
+    gap: '0.35rem',
     alignItems: 'center',
     background: '#f1f5f9',
-    padding: '5px',
+    padding: '4px',
     borderRadius: '12px',
     border: '1px solid #cbd5e1',
+    flexShrink: 0,
   },
   subTabButton: (active, type) => {
     let activeBg = 'linear-gradient(135deg, #1e293b, #0f172a)';
@@ -4474,17 +4915,18 @@ const styles = {
     return {
       display: 'flex',
       alignItems: 'center',
-      gap: '0.6rem',
-      padding: '0.65rem 1.25rem',
-      borderRadius: '9px',
+      gap: '0.45rem',
+      padding: '0.5rem 0.85rem',
+      borderRadius: '8px',
       border: 'none',
       background: active ? activeBg : 'transparent',
       color: active ? activeColor : '#475569',
-      fontSize: '0.85rem',
+      fontSize: '0.8rem',
       fontWeight: active ? 800 : 600,
       cursor: 'pointer',
       boxShadow: active ? activeShadow : 'none',
       transition: 'all 0.2s ease',
+      whiteSpace: 'nowrap',
     };
   },
   tabBadge: (active, color) => ({
@@ -5072,25 +5514,28 @@ if (typeof document !== 'undefined') {
           overflow: visible !important;
         }
         .inv-sub-tab-bar {
-          display: grid !important;
-          grid-template-columns: repeat(3, 1fr) !important;
+          display: flex !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch !important;
           width: 100% !important;
-          gap: 4px !important;
-          padding: 4px !important;
+          gap: 6px !important;
+          padding: 5px !important;
           box-sizing: border-box !important;
-          border-radius: 12px !important;
+          border-radius: 14px !important;
           background: #f1f5f9 !important;
           border: 1px solid #cbd5e1 !important;
         }
         .inv-sub-tab-bar button {
-          width: 100% !important;
+          flex: 1 0 auto !important;
+          min-width: 82px !important;
           justify-content: center !important;
           text-align: center !important;
-          padding: 0.55rem 0.2rem !important;
-          font-size: 0.72rem !important;
+          padding: 0.55rem 0.4rem !important;
+          font-size: 0.74rem !important;
           gap: 0.25rem !important;
           flex-direction: column !important;
           box-sizing: border-box !important;
+          border-radius: 10px !important;
         }
         .inv-row-two-actions {
           display: grid !important;

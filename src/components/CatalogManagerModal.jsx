@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { X, Edit2, Trash2, Plus, RefreshCw, UserCheck, Users, ShoppingBag, History, Save, RotateCw, Building2, Tag, Search, Check } from 'lucide-react';
+import { X, Edit2, Trash2, Plus, RefreshCw, UserCheck, Users, ShoppingBag, History, Save, RotateCw, Building2, Tag, Search, Check, Warehouse, SlidersHorizontal, MapPin, Phone, User, Sparkles, CheckCircle2, Layers } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function CatalogManagerModal({ initialTab = 'vendors', context = 'elite_online', onClose }) {
@@ -45,6 +45,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
   const [parties, setParties] = useState([]);
   const [products, setProducts] = useState([]);
   const [history, setHistory] = useState([]);
+  const [facilities, setFacilities] = useState([]);
   const [customBrands, setCustomBrands] = useState(() => {
     try {
       const saved = localStorage.getItem('elite_managed_brands');
@@ -58,6 +59,20 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
   const [editingBrandTag, setEditingBrandTag] = useState(null);
   const [editingBrandInputValue, setEditingBrandInputValue] = useState('');
 
+  // Categories State synced with localStorage
+  const [customCategories, setCustomCategories] = useState(() => {
+    try {
+      const saved = localStorage.getItem('elite_managed_categories');
+      return saved ? JSON.parse(saved) : ['KURTA SET', 'CO-ORD SET', 'DRESS', 'SUIT', 'SAREE', 'LEHENGA', 'TOP', 'BOTTOM', 'ETHNIC', 'STITCHING SET'];
+    } catch (e) {
+      return ['KURTA SET', 'CO-ORD SET', 'DRESS', 'SUIT', 'SAREE', 'LEHENGA', 'TOP', 'BOTTOM', 'ETHNIC', 'STITCHING SET'];
+    }
+  });
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
+  const [editingCategoryTag, setEditingCategoryTag] = useState(null);
+  const [editingCategoryInputValue, setEditingCategoryInputValue] = useState('');
+
   // Loading states
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -69,6 +84,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
   const [vendorForm, setVendorForm] = useState({ name: '', businessName: '', phone: '', gstin: '', address: '' });
   const [partyForm, setPartyForm] = useState({ name: '', phone: '', address: '' });
   const [productForm, setProductForm] = useState({ skuCode: '', description: '', imageUrl: '', size: '' });
+  const [facilityForm, setFacilityForm] = useState({ name: '', code: '', address: '', contactPerson: '', phone: '', isDefault: false });
 
   // Load data depending on active tab
   useEffect(() => {
@@ -87,6 +103,9 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
       } else if (activeTab === 'parties') {
         const res = await api.getParties();
         setParties(res || []);
+      } else if (activeTab === 'facilities') {
+        const res = await api.getFacilities();
+        setFacilities(res || []);
       } else if (activeTab === 'products') {
         const res = await api.getProductsCatalog();
 
@@ -174,6 +193,65 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     } catch (e) {}
     setEditingBrandTag(null);
     setSuccess(`Updated brand "${oldBrandName}" to "${trimmed}".`);
+  };
+
+  // --- CATEGORY ACTION HANDLERS ---
+  const handleAddCategoryTag = (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    const trimmed = newCategoryInput.trim().toUpperCase();
+    if (!trimmed) return;
+    if (customCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      setError('This category already exists.');
+      return;
+    }
+    const updated = [...customCategories, trimmed];
+    setCustomCategories(updated);
+    try {
+      localStorage.setItem('elite_managed_categories', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new CustomEvent('elite_categories_updated', { detail: updated }));
+    } catch (e) {}
+    setNewCategoryInput('');
+    setSuccess(`Category "${trimmed}" added successfully.`);
+  };
+
+  const handleDeleteCategoryTag = (catName) => {
+    if (!window.confirm(`Are you sure you want to delete category "${catName}"?`)) return;
+    setError('');
+    setSuccess('');
+    const updated = customCategories.filter(c => c.toLowerCase() !== catName.toLowerCase());
+    setCustomCategories(updated);
+    try {
+      localStorage.setItem('elite_managed_categories', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new CustomEvent('elite_categories_updated', { detail: updated }));
+    } catch (e) {}
+    setSuccess(`Category "${catName}" removed.`);
+  };
+
+  const handleSaveRenameCategory = (oldCatName) => {
+    setError('');
+    setSuccess('');
+    const trimmed = editingCategoryInputValue.trim().toUpperCase();
+    if (!trimmed) {
+      setError('Category name cannot be empty.');
+      return;
+    }
+    if (trimmed !== oldCatName.toUpperCase() && customCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      setError(`Category "${trimmed}" already exists.`);
+      return;
+    }
+    const updated = customCategories.map(c => (c.toLowerCase() === oldCatName.toLowerCase() ? trimmed : c));
+    setCustomCategories(updated);
+    try {
+      localStorage.setItem('elite_managed_categories', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new CustomEvent('elite_categories_updated', { detail: updated }));
+    } catch (e) {}
+    setEditingCategoryTag(null);
+    setSuccess(`Category renamed to "${trimmed}".`);
   };
 
   // 1. Vendors
@@ -317,6 +395,57 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     }
   };
 
+  // 4. Storage Facilities
+  const handleFacilitySubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    try {
+      if (editingId) {
+        await api.updateFacility(editingId, facilityForm);
+        setSuccess('Storage facility updated successfully.');
+      } else {
+        await api.createFacility(facilityForm);
+        setSuccess('Storage facility created successfully.');
+      }
+      setFacilityForm({ name: '', code: '', address: '', contactPerson: '', phone: '', isDefault: false });
+      setEditingId(null);
+      loadTabData();
+      try {
+        window.dispatchEvent(new CustomEvent('elite_facilities_updated'));
+      } catch (ev) {}
+    } catch (err) {
+      setError(err.message || 'Failed to save storage facility.');
+    }
+  };
+
+  const handleEditFacility = (fac) => {
+    setEditingId(fac._id || fac.id);
+    setFacilityForm({
+      name: fac.name || '',
+      code: fac.code || '',
+      address: fac.address || '',
+      contactPerson: fac.contactPerson || '',
+      phone: fac.phone || '',
+      isDefault: Boolean(fac.isDefault),
+    });
+  };
+
+  const handleDeleteFacility = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete storage facility "${name}"?`)) return;
+    setError('');
+    try {
+      await api.deleteFacility(id);
+      setSuccess('Storage facility deleted successfully.');
+      loadTabData();
+      try {
+        window.dispatchEvent(new CustomEvent('elite_facilities_updated'));
+      } catch (ev) {}
+    } catch (err) {
+      setError(err.message || 'Failed to delete storage facility.');
+    }
+  };
+
   const handleSyncProducts = async () => {
     setSyncing(true);
     setError('');
@@ -353,14 +482,28 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
   const handleAddBrand = handleAddBrandTag;
   const handleSaveRenameBrand = handleSaveEditedBrandTag;
   const filteredCustomBrands = customBrands.filter(b => b.toLowerCase().includes((brandSearchTerm || '').toLowerCase()));
+  const filteredCustomCategories = customCategories.filter(c => c.toLowerCase().includes((categorySearchTerm || '').toLowerCase()));
 
   const modalMarkup = (
     <div className="modal-overlay" style={styles.overlay} onClick={handleModalClose}>
       <div className="modal-content catalog-manager-container" style={styles.content} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={styles.header}>
-          <h2 style={styles.title}>Manager Control Panel</h2>
-          <button type="button" onClick={handleModalClose} style={styles.closeBtn}>
+        <div className="catalog-manager-header" style={styles.header}>
+          <div style={styles.headerLeft}>
+            <div style={styles.headerIconBadge}>
+              <Warehouse size={22} color="#ffffff" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                <h2 style={styles.title}>Manager Control Panel</h2>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: '12px', border: '1px solid #bfdbfe', letterSpacing: '0.03em' }}>
+                  Master Directory
+                </span>
+              </div>
+              <p style={styles.subtitle}>Storage Facilities, Catalog Brands, Categories & Master Settings</p>
+            </div>
+          </div>
+          <button type="button" onClick={handleModalClose} style={styles.closeBtn} title="Close Modal">
             <X size={18} />
           </button>
         </div>
@@ -373,12 +516,31 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
         <div className="catalog-manager-layout" style={styles.layout}>
           {/* Left Navigation Tabs */}
           <nav className="catalog-manager-sidebar" style={styles.sidebar}>
+            <div style={{ padding: '0.2rem 0.5rem 0.6rem', fontSize: '0.68rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Master Management
+            </div>
+            {context === 'elite_online' && (
+              <button
+                onClick={() => setActiveTab('facilities')}
+                style={{ ...styles.tabBtn, ...(activeTab === 'facilities' ? styles.tabBtnActive : {}) }}
+              >
+                <Warehouse size={16} />
+                <span>Storage Facilities</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('brands')}
               style={{ ...styles.tabBtn, ...(activeTab === 'brands' ? styles.tabBtnActive : {}) }}
             >
               <Tag size={16} />
               <span>Catalog Brands</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('categories')}
+              style={{ ...styles.tabBtn, ...(activeTab === 'categories' ? styles.tabBtnActive : {}) }}
+            >
+              <SlidersHorizontal size={16} />
+              <span>Categories</span>
             </button>
             <button
               onClick={() => setActiveTab('vendors')}
@@ -417,11 +579,11 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
           </nav>
 
           {/* Right Tab Body Content Area */}
-          <div style={styles.mainArea}>
+          <div className="catalog-manager-main-area" style={styles.mainArea}>
             {loading ? (
               <div style={styles.loaderBox}>
-                <RefreshCw className="animate-spin" size={24} color="var(--primary)" />
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading manager records...</span>
+                <RefreshCw className="animate-spin" size={24} color="#2563eb" />
+                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Loading manager records...</span>
               </div>
             ) : (
               <>
@@ -429,7 +591,10 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                 {activeTab === 'brands' && (
                   <div style={styles.tabContent}>
                     <form onSubmit={handleAddBrand} style={styles.inlineForm}>
-                      <span style={styles.formTitle}>Add New Catalog Brand</span>
+                      <span style={styles.formTitle}>
+                        <Tag size={16} color="#2563eb" />
+                        Add New Catalog Brand
+                      </span>
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <input
                           type="text"
@@ -445,37 +610,37 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                     </form>
 
                     {/* Search & Filter Bar */}
-                    <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '0.4rem 0.75rem', gap: '0.5rem' }}>
-                      <Search size={15} color="var(--text-muted)" />
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem 0.75rem', gap: '0.5rem' }}>
+                      <Search size={15} color="#64748b" />
                       <input
                         type="text"
                         value={brandSearchTerm}
                         onChange={(e) => setBrandSearchTerm(e.target.value)}
                         placeholder="Filter catalog brands..."
-                        style={{ background: 'none', border: 'none', color: '#fff', fontSize: '0.8rem', outline: 'none', flex: 1 }}
+                        style={{ background: 'none', border: 'none', color: '#0f172a', fontSize: '0.85rem', outline: 'none', flex: 1, fontWeight: '500' }}
                       />
                       {brandSearchTerm && (
-                        <button onClick={() => setBrandSearchTerm('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }} title="Clear Search">
+                        <button onClick={() => setBrandSearchTerm('')} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }} title="Clear Search">
                           <X size={14} />
                         </button>
                       )}
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#475569', letterSpacing: '0.04em' }}>
                         MANAGED BRANDS DIRECTORY ({filteredCustomBrands.length})
                       </span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto', padding: '0.2rem' }}>
                         {filteredCustomBrands.map((b, idx) => (
-                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'rgba(37, 99, 235, 0.15)', border: '1px solid rgba(37, 99, 235, 0.3)', padding: '0.35rem 0.65rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '700', color: '#60a5fa' }}>
-                            <Tag size={13} color="#60a5fa" />
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', backgroundColor: '#eff6ff', border: '1.5px solid #bfdbfe', padding: '0.35rem 0.75rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: '700', color: '#1d4ed8' }}>
+                            <Tag size={13} color="#2563eb" />
                             {editingBrandTag === b ? (
                               <input
                                 type="text"
                                 value={editingBrandInputValue}
                                 onChange={(e) => setEditingBrandInputValue(e.target.value)}
                                 autoFocus
-                                style={{ background: '#1e293b', border: '1px solid #3b82f6', color: '#fff', fontSize: '0.75rem', padding: '2px 4px', borderRadius: '4px', width: '90px' }}
+                                style={{ background: '#ffffff', border: '1.5px solid #2563eb', color: '#0f172a', fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', width: '95px', outline: 'none' }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') handleSaveRenameBrand(b);
                                   if (e.key === 'Escape') setEditingBrandTag(null);
@@ -485,15 +650,96 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                               <span>{b}</span>
                             )}
                             {editingBrandTag === b ? (
-                              <button onClick={() => handleSaveRenameBrand(b)} style={{ background: 'none', border: 'none', color: '#10b981', cursor: 'pointer', padding: 0, display: 'flex' }} title="Save">
+                              <button onClick={() => handleSaveRenameBrand(b)} style={{ background: 'none', border: 'none', color: '#16a34a', cursor: 'pointer', padding: 0, display: 'flex' }} title="Save">
                                 <Check size={13} />
                               </button>
                             ) : (
-                              <button onClick={() => { setEditingBrandTag(b); setEditingBrandInputValue(b); }} style={{ background: 'none', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0, display: 'flex' }} title="Rename Brand">
+                              <button onClick={() => { setEditingBrandTag(b); setEditingBrandInputValue(b); }} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, display: 'flex' }} title="Rename Brand">
                                 <Edit2 size={12} />
                               </button>
                             )}
-                            <button onClick={() => handleDeleteBrandTag(b)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }} title="Delete Custom Brand">
+                            <button onClick={() => handleDeleteBrandTag(b)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, display: 'flex' }} title="Delete Custom Brand">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 0.1 CATEGORIES TAB */}
+                {activeTab === 'categories' && (
+                  <div style={styles.tabContent}>
+                    <form onSubmit={handleAddCategoryTag} style={styles.inlineForm}>
+                      <span style={styles.formTitle}>
+                        <SlidersHorizontal size={16} color="#059669" />
+                        Add New Product Category
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={newCategoryInput}
+                          onChange={(e) => setNewCategoryInput(e.target.value)}
+                          placeholder="Type category name (e.g. KURTA SET, DRESS, SAREE)..."
+                          style={{ ...styles.formInput, flex: 1 }}
+                        />
+                        <button type="submit" style={{ ...styles.submitBtn, background: '#059669' }}>
+                          <Plus size={15} /> Add Category
+                        </button>
+                      </div>
+                    </form>
+
+                    {/* Search & Filter Bar */}
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem 0.75rem', gap: '0.5rem' }}>
+                      <Search size={15} color="#64748b" />
+                      <input
+                        type="text"
+                        value={categorySearchTerm}
+                        onChange={(e) => setCategorySearchTerm(e.target.value)}
+                        placeholder="Filter categories..."
+                        style={{ background: 'none', border: 'none', color: '#0f172a', fontSize: '0.85rem', outline: 'none', flex: 1, fontWeight: '500' }}
+                      />
+                      {categorySearchTerm && (
+                        <button onClick={() => setCategorySearchTerm('')} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }} title="Clear Search">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#475569', letterSpacing: '0.04em' }}>
+                        MANAGED PRODUCT CATEGORIES ({filteredCustomCategories.length})
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto', padding: '0.2rem' }}>
+                        {filteredCustomCategories.map((c, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', backgroundColor: '#ecfdf5', border: '1.5px solid #a7f3d0', padding: '0.35rem 0.75rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: '700', color: '#047857' }}>
+                            <SlidersHorizontal size={13} color="#059669" />
+                            {editingCategoryTag === c ? (
+                              <input
+                                type="text"
+                                value={editingCategoryInputValue}
+                                onChange={(e) => setEditingCategoryInputValue(e.target.value)}
+                                autoFocus
+                                style={{ background: '#ffffff', border: '1.5px solid #059669', color: '#0f172a', fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', width: '110px', outline: 'none' }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveRenameCategory(c);
+                                  if (e.key === 'Escape') setEditingCategoryTag(null);
+                                }}
+                              />
+                            ) : (
+                              <span>{c}</span>
+                            )}
+                            {editingCategoryTag === c ? (
+                              <button onClick={() => handleSaveRenameCategory(c)} style={{ background: 'none', border: 'none', color: '#16a34a', cursor: 'pointer', padding: 0, display: 'flex' }} title="Save">
+                                <Check size={13} />
+                              </button>
+                            ) : (
+                              <button onClick={() => { setEditingCategoryTag(c); setEditingCategoryInputValue(c); }} style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', padding: 0, display: 'flex' }} title="Rename Category">
+                                <Edit2 size={12} />
+                              </button>
+                            )}
+                            <button onClick={() => handleDeleteCategoryTag(c)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, display: 'flex' }} title="Delete Custom Category">
                               <Trash2 size={12} />
                             </button>
                           </div>
@@ -506,11 +752,12 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                 {/* 1. VENDORS TAB */}
                 {activeTab === 'vendors' && (
                   <div style={styles.tabContent}>
-                    <form onSubmit={handleVendorSubmit} style={styles.inlineForm}>
+                    <form onSubmit={handleVendorSubmit} className="catalog-manager-form" style={styles.inlineForm}>
                       <span style={styles.formTitle}>
+                        <Building2 size={16} color="#2563eb" />
                         {editingId ? 'Edit Vendor / Supplier' : 'Add New Vendor / Supplier'}
                       </span>
-                      <div style={styles.formGrid}>
+                      <div className="catalog-manager-form-grid" style={styles.formGrid}>
                         <input
                           type="text"
                           placeholder="Vendor Contact Person *"
@@ -557,19 +804,18 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                               setEditingId(null);
                               setVendorForm({ name: '', businessName: '', phone: '', gstin: '', address: '' });
                             }}
-                            className="btn-secondary"
                             style={styles.cancelBtn}
                           >
                             Cancel
                           </button>
                         )}
-                        <button type="submit" className="btn-primary" style={styles.submitBtn}>
+                        <button type="submit" style={styles.submitBtn}>
                           <Save size={14} /> {editingId ? 'Update Vendor' : 'Save Vendor'}
                         </button>
                       </div>
                     </form>
 
-                    <div className="table-container" style={styles.tableWrap}>
+                    <div className="table-container catalog-manager-table-wrap" style={styles.tableWrap}>
                       <table>
                         <thead>
                           <tr>
@@ -583,21 +829,27 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                         <tbody>
                           {vendors.length === 0 ? (
                             <tr>
-                              <td colSpan="5" className="text-center" style={{ color: 'var(--text-muted)' }}>No vendors found.</td>
+                              <td colSpan="5" className="text-center" style={{ color: '#64748b', padding: '1.5rem' }}>No vendors found.</td>
                             </tr>
                           ) : (
                             vendors.map((v) => (
                               <tr key={v._id}>
-                                <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{v.businessName || 'N/A'}</td>
-                                <td>{v.name}</td>
-                                <td>{v.phone || 'N/A'}</td>
-                                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{v.gstin || 'N/A'}</td>
+                                <td style={{ fontWeight: '700', color: '#0f172a' }}>{v.businessName || 'N/A'}</td>
+                                <td style={{ color: '#334155' }}>{v.name}</td>
+                                <td style={{ color: '#64748b' }}>{v.phone || 'N/A'}</td>
+                                <td>
+                                  {v.gstin ? (
+                                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
+                                      {v.gstin}
+                                    </span>
+                                  ) : 'N/A'}
+                                </td>
                                 <td>
                                   <div style={styles.actionsCell}>
-                                    <button onClick={() => handleEditVendor(v)} className="btn-icon" title="Edit">
+                                    <button onClick={() => handleEditVendor(v)} style={styles.editBtn} title="Edit Vendor">
                                       <Edit2 size={13} />
                                     </button>
-                                    <button onClick={() => handleDeleteVendor(v._id)} className="btn-icon" style={styles.trashBtn} title="Delete">
+                                    <button onClick={() => handleDeleteVendor(v._id)} style={styles.trashBtn} title="Delete Vendor">
                                       <Trash2 size={13} />
                                     </button>
                                   </div>
@@ -614,11 +866,12 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                 {/* 2. PARTIES TAB */}
                 {activeTab === 'parties' && (
                   <div style={styles.tabContent}>
-                    <form onSubmit={handlePartySubmit} style={styles.inlineForm}>
+                    <form onSubmit={handlePartySubmit} className="catalog-manager-form" style={styles.inlineForm}>
                       <span style={styles.formTitle}>
+                        <Users size={16} color="#2563eb" />
                         {editingId ? 'Edit Receiver Party' : 'Add New Receiver Party'}
                       </span>
-                      <div style={styles.formGrid}>
+                      <div className="catalog-manager-form-grid" style={styles.formGrid}>
                         <input
                           type="text"
                           placeholder="Party / Receiver Name *"
@@ -650,19 +903,18 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                               setEditingId(null);
                               setPartyForm({ name: '', phone: '', address: '' });
                             }}
-                            className="btn-secondary"
                             style={styles.cancelBtn}
                           >
                             Cancel
                           </button>
                         )}
-                        <button type="submit" className="btn-primary" style={styles.submitBtn}>
+                        <button type="submit" style={styles.submitBtn}>
                           <Save size={14} /> {editingId ? 'Update Party' : 'Save Party'}
                         </button>
                       </div>
                     </form>
 
-                    <div className="table-container" style={styles.tableWrap}>
+                    <div className="table-container catalog-manager-table-wrap" style={styles.tableWrap}>
                       <table>
                         <thead>
                           <tr>
@@ -675,20 +927,20 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                         <tbody>
                           {parties.length === 0 ? (
                             <tr>
-                              <td colSpan="4" className="text-center" style={{ color: 'var(--text-muted)' }}>No parties found.</td>
+                              <td colSpan="4" className="text-center" style={{ color: '#64748b', padding: '1.5rem' }}>No parties found.</td>
                             </tr>
                           ) : (
                             parties.map((p) => (
                               <tr key={p._id}>
-                                <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{p.name}</td>
-                                <td>{p.phone || 'N/A'}</td>
-                                <td>{p.address || 'N/A'}</td>
+                                <td style={{ fontWeight: '700', color: '#0f172a' }}>{p.name}</td>
+                                <td style={{ color: '#64748b' }}>{p.phone || 'N/A'}</td>
+                                <td style={{ color: '#334155' }}>{p.address || 'N/A'}</td>
                                 <td>
                                   <div style={styles.actionsCell}>
-                                    <button onClick={() => handleEditParty(p)} className="btn-icon" title="Edit">
+                                    <button onClick={() => handleEditParty(p)} style={styles.editBtn} title="Edit Party">
                                       <Edit2 size={13} />
                                     </button>
-                                    <button onClick={() => handleDeleteParty(p._id)} className="btn-icon" style={styles.trashBtn} title="Delete">
+                                    <button onClick={() => handleDeleteParty(p._id)} style={styles.trashBtn} title="Delete Party">
                                       <Trash2 size={13} />
                                     </button>
                                   </div>
@@ -706,15 +958,18 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                 {activeTab === 'products' && (
                   <div style={styles.tabContent}>
                     <div style={styles.catalogCtrl}>
-                      <button onClick={handleSyncProducts} disabled={syncing} className="btn-secondary" style={styles.syncBtn}>
+                      <button onClick={handleSyncProducts} disabled={syncing} style={styles.syncBtn}>
                         <RotateCw size={14} className={syncing ? 'animate-spin' : ''} />
                         {syncing ? 'Syncing...' : 'Sync Catalog from Store Inventory'}
                       </button>
                     </div>
 
-                    <form onSubmit={handleProductSubmit} style={styles.inlineForm}>
-                      <h4 style={styles.formTitle}>{editingId ? 'Edit Product' : 'Create New Product'}</h4>
-                      <div style={styles.formGrid}>
+                    <form onSubmit={handleProductSubmit} className="catalog-manager-form" style={styles.inlineForm}>
+                      <span style={styles.formTitle}>
+                        <ShoppingBag size={16} color="#2563eb" />
+                        {editingId ? 'Edit Product' : 'Create New Product'}
+                      </span>
+                      <div className="catalog-manager-form-grid" style={styles.formGrid}>
                         <input
                           type="text"
                           value={productForm.skuCode}
@@ -755,20 +1010,19 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                               setEditingId(null);
                               setProductForm({ skuCode: '', description: '', imageUrl: '', size: '' });
                             }}
-                            className="btn-secondary"
-                            style={styles.formBtn}
+                            style={styles.cancelBtn}
                           >
                             Cancel
                           </button>
                         )}
-                        <button type="submit" className="btn-success" style={styles.formBtn}>
+                        <button type="submit" style={styles.submitBtn}>
                           <Save size={14} />
-                          <span>{editingId ? 'Save' : 'Create'}</span>
+                          <span>{editingId ? 'Save Product' : 'Create Product'}</span>
                         </button>
                       </div>
                     </form>
 
-                    <div className="table-container" style={styles.tableWrap}>
+                    <div className="table-container catalog-manager-table-wrap" style={styles.tableWrap}>
                       <table>
                         <thead>
                           <tr>
@@ -781,7 +1035,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                         <tbody>
                           {products.length === 0 ? (
                             <tr>
-                              <td colSpan="4" className="text-center" style={{ color: 'var(--text-muted)' }}>No products in catalog.</td>
+                              <td colSpan="4" className="text-center" style={{ color: '#64748b', padding: '1.5rem' }}>No products in catalog.</td>
                             </tr>
                           ) : (
                             products.map((pr) => (
@@ -789,7 +1043,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                                 <td>
                                   <span style={styles.skuText}>{pr.skuCode}</span>
                                 </td>
-                                <td style={{ fontSize: '0.85rem', color: 'var(--text-primary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <td style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: '600', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {pr.description}
                                 </td>
                                 <td>
@@ -801,10 +1055,10 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                                 </td>
                                 <td>
                                   <div style={styles.actionsCell}>
-                                    <button onClick={() => handleEditProduct(pr)} className="btn-icon" title="Edit">
+                                    <button onClick={() => handleEditProduct(pr)} style={styles.editBtn} title="Edit Product">
                                       <Edit2 size={13} />
                                     </button>
-                                    <button onClick={() => handleDeleteProduct(pr._id)} className="btn-icon" style={styles.trashBtn} title="Delete">
+                                    <button onClick={() => handleDeleteProduct(pr._id)} style={styles.trashBtn} title="Delete Product">
                                       <Trash2 size={13} />
                                     </button>
                                   </div>
@@ -821,7 +1075,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                 {/* 4. STOCK OUT LOG TAB */}
                 {activeTab === 'history' && (
                   <div style={styles.tabContent}>
-                    <div className="table-container" style={styles.tableWrap}>
+                    <div className="table-container catalog-manager-table-wrap" style={styles.tableWrap}>
                       <table>
                         <thead>
                           <tr>
@@ -834,7 +1088,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                         <tbody>
                           {history.length === 0 ? (
                             <tr>
-                              <td colSpan="4" className="text-center" style={{ color: 'var(--text-muted)' }}>No outward logs recorded.</td>
+                              <td colSpan="4" className="text-center" style={{ color: '#64748b', padding: '1.5rem' }}>No outward logs recorded.</td>
                             </tr>
                           ) : (
                             history.map((log) => (
@@ -842,12 +1096,241 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                                 <td>
                                   <span style={styles.skuText}>{log.skuCode}</span>
                                 </td>
-                                <td style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{log.party}</td>
-                                <td className="text-center" style={{ fontWeight: 'bold', color: '#fca5a5' }}>
-                                  {log.qtyOut
-                                  }</td>
-                                <td style={{ fontSize: '0.8rem' }}>
+                                <td style={{ fontWeight: '600', color: '#0f172a' }}>{log.party}</td>
+                                <td className="text-center" style={{ fontWeight: 'bold', color: '#dc2626' }}>
+                                  {log.qtyOut}
+                                </td>
+                                <td style={{ fontSize: '0.8rem', color: '#64748b' }}>
                                   {log.created_date_time ? new Date(log.created_date_time).toLocaleString('en-IN') : 'N/A'}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. STORAGE FACILITIES TAB */}
+                {activeTab === 'facilities' && (
+                  <div style={styles.tabContent}>
+                    <form onSubmit={handleFacilitySubmit} className="catalog-manager-form" style={styles.inlineForm}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem', marginBottom: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                          <div style={{ width: 34, height: 34, borderRadius: '9px', background: '#eff6ff', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                            <Warehouse size={18} />
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em', display: 'block' }}>
+                              {editingId ? 'Edit Storage Facility' : 'Add New Storage Facility'}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                              Configure warehouse locations, identification codes and default inward storage
+                            </span>
+                          </div>
+                        </div>
+                        {editingId && (
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, background: '#fef3c7', color: '#b45309', padding: '3px 9px', borderRadius: '12px', border: '1px solid #fde68a' }}>
+                            Editing Active Record
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="catalog-manager-form-grid" style={styles.formGrid}>
+                        <div>
+                          <label style={styles.fieldLabel}>
+                            Facility / Godown Name *
+                          </label>
+                          <div style={styles.inputWrapper}>
+                            <Warehouse size={15} color="#94a3b8" style={styles.inputIcon} />
+                            <input
+                              type="text"
+                              placeholder="e.g. Pramukh Park Warehouse, Godown 1"
+                              value={facilityForm.name}
+                              onChange={(e) => setFacilityForm({ ...facilityForm, name: e.target.value })}
+                              required
+                              style={styles.iconFormInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={styles.fieldLabel}>
+                            Short Code
+                          </label>
+                          <div style={styles.inputWrapper}>
+                            <Tag size={15} color="#94a3b8" style={styles.inputIcon} />
+                            <input
+                              type="text"
+                              placeholder="e.g. PP, W1, MAIN"
+                              value={facilityForm.code}
+                              onChange={(e) => setFacilityForm({ ...facilityForm, code: e.target.value.toUpperCase() })}
+                              style={styles.iconFormInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={styles.fieldLabel}>
+                            Contact Person (Optional)
+                          </label>
+                          <div style={styles.inputWrapper}>
+                            <User size={15} color="#94a3b8" style={styles.inputIcon} />
+                            <input
+                              type="text"
+                              placeholder="e.g. Ramesh Patel"
+                              value={facilityForm.contactPerson}
+                              onChange={(e) => setFacilityForm({ ...facilityForm, contactPerson: e.target.value })}
+                              style={styles.iconFormInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={styles.fieldLabel}>
+                            Phone / Mobile (Optional)
+                          </label>
+                          <div style={styles.inputWrapper}>
+                            <Phone size={15} color="#94a3b8" style={styles.inputIcon} />
+                            <input
+                              type="text"
+                              placeholder="e.g. +91 98765 43210"
+                              value={facilityForm.phone}
+                              onChange={(e) => setFacilityForm({ ...facilityForm, phone: e.target.value })}
+                              style={styles.iconFormInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={styles.fieldLabel}>
+                            Full Address / Location (Optional)
+                          </label>
+                          <div style={styles.inputWrapper}>
+                            <MapPin size={15} color="#94a3b8" style={styles.inputIcon} />
+                            <input
+                              type="text"
+                              placeholder="e.g. Plot No. 42, GIDC Industrial Estate, Ring Road, Surat"
+                              value={facilityForm.address}
+                              onChange={(e) => setFacilityForm({ ...facilityForm, address: e.target.value })}
+                              style={styles.iconFormInput}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ gridColumn: 'span 2', marginTop: '0.2rem' }}>
+                          <label className="catalog-manager-checkbox-banner" style={styles.checkboxBanner}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={facilityForm.isDefault}
+                                onChange={(e) => setFacilityForm({ ...facilityForm, isDefault: e.target.checked })}
+                                style={styles.customCheckbox}
+                              />
+                              <div>
+                                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
+                                  Set as Default Storage Facility
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  Automatically select this warehouse for all new incoming purchase challans and stock inwards
+                                </div>
+                              </div>
+                            </div>
+                            {facilityForm.isDefault && (
+                              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '10px', border: '1px solid #a7f3d0' }}>
+                                Selected as Default
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      </div>
+
+                      <div style={styles.formActions}>
+                        {editingId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null);
+                              setFacilityForm({ name: '', code: '', address: '', contactPerson: '', phone: '', isDefault: false });
+                            }}
+                            style={styles.cancelBtn}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button type="submit" style={styles.submitBtn}>
+                          <Save size={15} />
+                          <span>{editingId ? 'Update Storage Facility' : 'Save Storage Facility'}</span>
+                        </button>
+                      </div>
+                    </form>
+
+                    <div className="table-container catalog-manager-table-wrap" style={styles.tableWrap}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '25%' }}>FACILITY NAME</th>
+                            <th style={{ width: '12%' }}>CODE</th>
+                            <th style={{ width: '28%' }}>ADDRESS</th>
+                            <th style={{ width: '18%' }}>CONTACT</th>
+                            <th className="text-center" style={{ width: '10%' }}>DEFAULT</th>
+                            <th className="text-center" style={{ width: '7%' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {facilities.length === 0 ? (
+                            <tr>
+                              <td colSpan="6" className="text-center" style={{ color: '#64748b', padding: '2.5rem 1rem' }}>
+                                <Warehouse size={32} color="#cbd5e1" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
+                                <div style={{ fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>No storage facilities configured</div>
+                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Add your first warehouse or godown location above</div>
+                              </td>
+                            </tr>
+                          ) : (
+                            facilities.map((fac) => (
+                              <tr key={fac._id || fac.id}>
+                                <td style={{ fontWeight: '700', color: '#0f172a' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                                    <div style={{ width: 28, height: 28, borderRadius: '7px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', flexShrink: 0 }}>
+                                      <Warehouse size={14} />
+                                    </div>
+                                    <span style={{ fontSize: '0.86rem', color: '#0f172a', fontWeight: 700 }}>{fac.name}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  {fac.code ? (
+                                    <span style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1', padding: '3px 8px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                                      {fac.code}
+                                    </span>
+                                  ) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </td>
+                                <td style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.4 }}>{fac.address || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                                <td style={{ fontSize: '0.82rem', color: '#334155' }}>
+                                  {fac.contactPerson || fac.phone ? (
+                                    <div>
+                                      {fac.contactPerson && <div style={{ fontWeight: 600, color: '#1e293b' }}>{fac.contactPerson}</div>}
+                                      {fac.phone && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{fac.phone}</div>}
+                                    </div>
+                                  ) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </td>
+                                <td className="text-center">
+                                  {fac.isDefault ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 10px', borderRadius: '16px', fontSize: '0.72rem', fontWeight: 800 }}>
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                                      Default
+                                    </span>
+                                  ) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </td>
+                                <td>
+                                  <div style={styles.actionsCell}>
+                                    <button onClick={() => handleEditFacility(fac)} style={styles.editBtn} title="Edit Facility">
+                                      <Edit2 size={13} />
+                                    </button>
+                                    <button onClick={() => handleDeleteFacility(fac._id || fac.id, fac.name)} style={styles.trashBtn} title="Delete Facility">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))
@@ -871,25 +1354,77 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
   return modalMarkup;
 }
 
-// Inject Responsive Mobile CSS Styles for Catalog Manager Modal
+// Inject Responsive CSS & White/Blue Theme Styles for Catalog Manager Modal
 if (typeof document !== 'undefined') {
   const styleElId = 'catalog-manager-modal-responsive-style';
   if (!document.getElementById(styleElId)) {
     const styleEl = document.createElement('style');
     styleEl.id = styleElId;
     styleEl.innerHTML = `
+      .catalog-manager-container {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-family: inherit !important;
+      }
+      .catalog-manager-container table {
+        width: 100% !important;
+        min-width: 580px !important;
+        border-collapse: collapse !important;
+        background: #ffffff !important;
+      }
+      .catalog-manager-container table thead tr {
+        background: #f8fafc !important;
+      }
+      .catalog-manager-container table th {
+        background: #f8fafc !important;
+        color: #475569 !important;
+        font-weight: 800 !important;
+        font-size: 0.72rem !important;
+        letter-spacing: 0.05em !important;
+        padding: 0.8rem 1rem !important;
+        border-bottom: 1.5px solid #e2e8f0 !important;
+        text-align: left !important;
+      }
+      .catalog-manager-container table th.text-center {
+        text-align: center !important;
+      }
+      .catalog-manager-container table td {
+        padding: 0.85rem 1rem !important;
+        font-size: 0.85rem !important;
+        color: #1e293b !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        background: #ffffff !important;
+      }
+      .catalog-manager-container table tr:last-child td {
+        border-bottom: none !important;
+      }
+      .catalog-manager-container table tr:hover td {
+        background: #f8fbff !important;
+      }
+      .catalog-manager-container input:focus {
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+      }
       @media (max-width: 768px) {
         .catalog-manager-container {
           width: 96vw !important;
           max-width: 96vw !important;
-          padding: 0.85rem !important;
           max-height: 94vh !important;
-          border-radius: 12px !important;
+          border-radius: 16px !important;
           box-sizing: border-box !important;
+          overflow: hidden !important;
+        }
+        .catalog-manager-header {
+          padding: 0.85rem 1rem !important;
+        }
+        .catalog-manager-header h2 {
+          font-size: 1.05rem !important;
         }
         .catalog-manager-layout {
           flex-direction: column !important;
-          gap: 0.75rem !important;
+          gap: 0 !important;
+          overflow-y: auto !important;
+          -webkit-overflow-scrolling: touch !important;
         }
         .catalog-manager-sidebar {
           width: 100% !important;
@@ -897,13 +1432,54 @@ if (typeof document !== 'undefined') {
           overflow-x: auto !important;
           -webkit-overflow-scrolling: touch !important;
           border-right: none !important;
-          border-bottom: 1px solid rgba(255,255,255,0.1) !important;
-          padding-right: 0 !important;
-          padding-bottom: 0.5rem !important;
+          border-bottom: 1px solid #e2e8f0 !important;
+          padding: 0.5rem 0.65rem !important;
+          gap: 0.4rem !important;
+          flex-shrink: 0 !important;
+          background: #f8fafc !important;
+        }
+        .catalog-manager-sidebar > div:first-child {
+          display: none !important;
         }
         .catalog-manager-sidebar button {
           flex: 0 0 auto !important;
+          width: auto !important;
+          padding: 0.45rem 0.8rem !important;
+          font-size: 0.78rem !important;
+          border-radius: 999px !important;
           white-space: nowrap !important;
+        }
+        .catalog-manager-main-area {
+          padding: 0.85rem 0.65rem !important;
+          max-height: none !important;
+          overflow-y: visible !important;
+          gap: 0.85rem !important;
+        }
+        .catalog-manager-form {
+          padding: 1rem 0.85rem !important;
+          border-radius: 12px !important;
+        }
+        .catalog-manager-form-grid {
+          grid-template-columns: 1fr !important;
+          gap: 0.75rem !important;
+        }
+        .catalog-manager-form-grid > div {
+          grid-column: span 1 !important;
+        }
+        .catalog-manager-table-wrap {
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+          border-radius: 12px !important;
+        }
+        .catalog-manager-checkbox-banner {
+          flex-direction: column !important;
+          align-items: flex-start !important;
+          gap: 0.5rem !important;
+        }
+        .catalog-manager-container input:not([type="checkbox"]):not([type="radio"]),
+        .catalog-manager-container select,
+        .catalog-manager-container textarea {
+          font-size: 16px !important;
         }
       }
     `;
@@ -911,161 +1487,303 @@ if (typeof document !== 'undefined') {
   }
 }
 
-// Styles configuration object remains exactly the same
+// Clean White & Blue Theme Styles configuration
 const styles = {
-  content: {
-    width: '940px',
-    maxWidth: '95vw',
-    padding: '1.5rem',
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    zIndex: 99999,
     display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0.75rem',
+    boxSizing: 'border-box',
+  },
+  content: {
+    width: '1000px',
+    maxWidth: '96vw',
     maxHeight: '92vh',
     height: 'auto',
-    backgroundColor: '#0f172a',
-    color: '#f8fafc',
-    borderRadius: '16px',
-    border: '1px solid rgba(255, 255, 255, 0.12)',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    borderRadius: '20px',
+    border: '1px solid #e2e8f0',
+    boxShadow: '0 25px 60px -15px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.05)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottom: '1px solid var(--border-light)',
-    paddingBottom: '0.75rem',
+    padding: '1.2rem 1.6rem',
+    background: '#ffffff',
+    borderBottom: '1px solid #f1f5f9',
+  },
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.85rem',
+  },
+  headerIconBadge: {
+    width: '42px',
+    height: '42px',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#ffffff',
+    flexShrink: 0,
   },
   title: {
     fontSize: '1.25rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: '-0.02em',
+    margin: 0,
+  },
+  subtitle: {
+    fontSize: '0.78rem',
+    color: '#64748b',
+    margin: 0,
+    fontWeight: '500',
   },
   closeBtn: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-muted)',
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+    color: '#64748b',
     cursor: 'pointer',
-    padding: '0.25rem',
+    width: '34px',
+    height: '34px',
     display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s ease',
   },
   layout: {
     display: 'flex',
     flex: 1,
-    gap: '1.5rem',
     overflow: 'hidden',
     minHeight: 0,
   },
   sidebar: {
-    width: '190px',
+    width: '225px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.4rem',
-    borderRight: '1px solid var(--border-light)',
-    paddingRight: '1rem',
+    gap: '0.35rem',
+    background: '#f8fafc',
+    borderRight: '1px solid #e2e8f0',
+    padding: '1.2rem 0.85rem',
     flexShrink: 0,
   },
   tabBtn: {
-    background: 'none',
+    background: 'transparent',
     border: 'none',
     display: 'flex',
     alignItems: 'center',
-    gap: '0.6rem',
-    padding: '0.75rem 1rem',
+    gap: '0.7rem',
+    padding: '0.68rem 0.9rem',
     width: '100%',
     textAlign: 'left',
-    color: 'var(--text-muted)',
+    color: '#475569',
     fontSize: '0.85rem',
-    fontWeight: '500',
-    borderRadius: 'var(--radius-sm)',
+    fontWeight: '600',
+    borderRadius: '10px',
     cursor: 'pointer',
-    transition: 'all var(--transition-fast)',
+    transition: 'all 0.15s ease',
   },
   tabBtnActive: {
-    background: 'rgba(6, 182, 212, 0.1)',
-    color: 'var(--text-primary)',
-    fontWeight: '600',
-    borderLeft: '3px solid var(--primary)',
-    paddingLeft: 'calc(1rem - 3px)',
-    borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    color: '#ffffff',
+    fontWeight: '700',
+    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
   },
   mainArea: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
     overflowY: 'auto',
-    maxHeight: 'calc(92vh - 80px)',
-    paddingRight: '4px',
+    maxHeight: 'calc(92vh - 75px)',
+    padding: '1.4rem 1.6rem',
+    background: '#ffffff',
+    gap: '1.1rem',
   },
   tabContent: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.25rem',
+    gap: '1.1rem',
     height: 'auto',
   },
   inlineForm: {
-    background: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid var(--border-light)',
-    borderRadius: '12px',
-    padding: '1.25rem',
+    background: '#ffffff',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: '16px',
+    padding: '1.25rem 1.4rem',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.85rem',
+    gap: '0.95rem',
     flexShrink: 0,
+    boxShadow: '0 4px 16px -2px rgba(15, 23, 42, 0.04)',
   },
   formTitle: {
     fontSize: '0.85rem',
     fontWeight: '800',
-    color: '#4f46e5',
+    color: '#1d4ed8',
     margin: 0,
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.45rem',
+  },
+  fieldLabel: {
+    display: 'block',
+    fontSize: '0.74rem',
+    fontWeight: 700,
+    color: '#334155',
+    marginBottom: '5px',
+    letterSpacing: '-0.01em',
+  },
+  inputWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  inputIcon: {
+    position: 'absolute',
+    left: '11px',
+    pointerEvents: 'none',
+  },
+  iconFormInput: {
+    width: '100%',
+    padding: '0.62rem 0.85rem 0.62rem 2.2rem',
+    fontSize: '0.84rem',
+    fontFamily: 'inherit',
+    borderRadius: '10px',
+    border: '1.5px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#0f172a',
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'all 0.15s ease',
+  },
+  checkboxBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: '#f8fafc',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '0.85rem 1.1rem',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s ease',
+  },
+  customCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#2563eb',
+    flexShrink: 0,
   },
   formGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '0.75rem',
+    gap: '0.85rem',
   },
   formInput: {
     width: '100%',
-    padding: '0.55rem 0.8rem',
-    fontSize: '0.85rem',
+    padding: '0.62rem 0.85rem',
+    fontSize: '0.84rem',
     fontFamily: 'inherit',
-    borderRadius: '6px',
-    border: '1px solid var(--border-light)',
-    background: 'rgba(255, 255, 255, 0.05)',
-    color: 'var(--text-primary)',
+    borderRadius: '10px',
+    border: '1.5px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#0f172a',
     outline: 'none',
     boxSizing: 'border-box',
+    transition: 'border-color 0.15s ease',
   },
   formActions: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '0.6rem',
-    marginTop: '0.25rem',
+    gap: '0.65rem',
+    marginTop: '0.35rem',
   },
-  formBtn: {
-    padding: '0.55rem 1.25rem',
-    fontSize: '0.82rem',
+  submitBtn: {
+    padding: '0.65rem 1.4rem',
+    fontSize: '0.85rem',
     fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    gap: '0.4rem',
-    borderRadius: '6px',
+    gap: '0.45rem',
+    borderRadius: '10px',
     cursor: 'pointer',
+    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    color: '#ffffff',
+    border: 'none',
+    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
+    transition: 'all 0.15s ease',
+  },
+  cancelBtn: {
+    padding: '0.65rem 1.15rem',
+    fontSize: '0.84rem',
+    fontWeight: 600,
+    borderRadius: '10px',
+    cursor: 'pointer',
+    background: '#ffffff',
+    border: '1.5px solid #cbd5e1',
+    color: '#475569',
+    transition: 'all 0.15s ease',
   },
   tableWrap: {
+    overflowX: 'auto',
     overflowY: 'auto',
-    borderRadius: '10px',
-    border: '1px solid var(--border-light)',
+    WebkitOverflowScrolling: 'touch',
+    borderRadius: '14px',
+    border: '1px solid #e2e8f0',
+    background: '#ffffff',
+    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
   },
   actionsCell: {
     display: 'flex',
-    gap: '0.4rem',
+    gap: '0.45rem',
     justifyContent: 'center',
   },
+  editBtn: {
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    color: '#2563eb',
+    width: '32px',
+    height: '32px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s ease',
+  },
   trashBtn: {
-    color: '#ef4444',
-    borderColor: 'rgba(239, 68, 68, 0.2)',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    color: '#dc2626',
+    width: '32px',
+    height: '32px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s ease',
   },
   catalogCtrl: {
     display: 'flex',
@@ -1073,46 +1791,59 @@ const styles = {
     flexShrink: 0,
   },
   syncBtn: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.8rem',
+    padding: '0.6rem 1.2rem',
+    fontSize: '0.84rem',
+    fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    gap: '0.4rem',
+    gap: '0.45rem',
+    background: '#eff6ff',
+    color: '#2563eb',
+    border: '1.5px solid #bfdbfe',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   skuText: {
     fontFamily: 'monospace',
-    fontSize: '0.75rem',
-    color: 'var(--primary)',
-    background: 'rgba(6, 182, 212, 0.05)',
-    padding: '0.1rem 0.3rem',
-    borderRadius: '3px',
-    border: '1px solid rgba(6, 182, 212, 0.1)',
+    fontSize: '0.78rem',
+    color: '#1d4ed8',
+    background: '#eff6ff',
+    padding: '0.2rem 0.45rem',
+    borderRadius: '6px',
+    border: '1px solid #bfdbfe',
+    fontWeight: '700',
   },
   miniBadge: {
-    fontSize: '0.7rem',
-    color: '#e5e7eb',
-    background: 'rgba(255,255,255,0.05)',
-    padding: '0.05rem 0.25rem',
-    borderRadius: '3px',
-    border: '1px solid var(--border-light)',
+    fontSize: '0.72rem',
+    color: '#1e40af',
+    background: '#eff6ff',
+    padding: '0.15rem 0.4rem',
+    borderRadius: '6px',
+    border: '1px solid #dbeafe',
+    fontWeight: '600',
   },
   error: {
-    background: 'rgba(239, 68, 68, 0.1)',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '0.5rem 0.75rem',
-    color: '#fca5a5',
-    fontSize: '0.8rem',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '10px',
+    padding: '0.65rem 0.95rem',
+    color: '#dc2626',
+    fontSize: '0.82rem',
+    fontWeight: '600',
     flexShrink: 0,
+    margin: '0.5rem 1.6rem 0',
   },
   success: {
-    background: 'rgba(16, 185, 129, 0.1)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '0.5rem 0.75rem',
-    color: '#a7f3d0',
-    fontSize: '0.8rem',
+    background: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    borderRadius: '10px',
+    padding: '0.65rem 0.95rem',
+    color: '#16a34a',
+    fontSize: '0.82rem',
+    fontWeight: '600',
     flexShrink: 0,
+    margin: '0.5rem 1.6rem 0',
   },
   loaderBox: {
     display: 'flex',
@@ -1121,5 +1852,6 @@ const styles = {
     justifyContent: 'center',
     flex: 1,
     gap: '0.75rem',
+    padding: '3rem 0',
   },
 };

@@ -40,12 +40,17 @@ const request = async (path, options = {}) => {
     const uName = currUser?.name || currUser?.fullName || currUser?.username || '';
     const uRole = currUser?.role || (currUser?.isAdmin || currUser?.isMainAdmin ? 'admin' : '');
 
+    const activeCompanyId = localStorage.getItem('elite_active_department') || '';
+
     const headers = {
       ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(uId ? { 'X-User-Id': uId } : {}),
       ...(uName ? { 'X-User-Name': uName } : {}),
       ...(uRole ? { 'X-User-Role': uRole } : {}),
+      ...(activeCompanyId ? { 'X-Company-Id': activeCompanyId } : {}),
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
       ...options.headers,
     };
     
@@ -57,6 +62,7 @@ const request = async (path, options = {}) => {
     try {
       response = await fetch(`${baseUrl}${path}`, {
         ...options,
+        cache: 'no-store',
         headers,
         signal: options.signal || controller.signal,
       });
@@ -250,9 +256,10 @@ export const api = {
     });
   },
 
-  async getInventory(search = '') {
+  async getInventory(search = '', facility = '') {
     const params = [];
     if (search) params.push(`search=${encodeURIComponent(search)}`);
+    if (facility && facility !== 'All') params.push(`facility=${encodeURIComponent(facility)}`);
     params.push('excludeUniware=true');
     const query = '?' + params.join('&');
     return request(`/inventory${query}`);
@@ -359,6 +366,31 @@ export const api = {
     });
   },
 
+  // Storage Facilities
+  async getFacilities() {
+    return request('/facilities');
+  },
+
+  async createFacility(data) {
+    return request('/facilities', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateFacility(id, data) {
+    return request(`/facilities/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteFacility(id) {
+    return request(`/facilities/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
   // Fabric Vendors
   async getFabricVendors() {
     return request('/fabric-vendors');
@@ -420,8 +452,11 @@ export const api = {
   },
 
   // Stock Out Logs
-  async getStockOuts() {
-    return request('/stockOut');
+  async getStockOuts(facility = '') {
+    const params = new URLSearchParams();
+    if (facility && facility !== 'All') params.append('facility', facility);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/stockOut${query}`);
   },
 
   // Reports
@@ -624,12 +659,20 @@ export const api = {
     return request('/inventory/report/stock-value-data');
   },
 
-  async getStockInwardReportData(dateStart, dateEnd) {
-    return request(`/inventory/report/stock-inward-data?dateStart=${dateStart}&dateEnd=${dateEnd}`);
+  async getStockInwardReportData(dateStart, dateEnd, facility = '') {
+    const params = new URLSearchParams();
+    if (dateStart) params.append('dateStart', dateStart);
+    if (dateEnd) params.append('dateEnd', dateEnd);
+    if (facility && facility !== 'All') params.append('facility', facility);
+    return request(`/inventory/report/stock-inward-data?${params.toString()}`);
   },
 
-  async getStockOutwardReportData(dateStart, dateEnd) {
-    return request(`/inventory/report/stock-outward-data?dateStart=${dateStart}&dateEnd=${dateEnd}`);
+  async getStockOutwardReportData(dateStart, dateEnd, facility = '') {
+    const params = new URLSearchParams();
+    if (dateStart) params.append('dateStart', dateStart);
+    if (dateEnd) params.append('dateEnd', dateEnd);
+    if (facility && facility !== 'All') params.append('facility', facility);
+    return request(`/inventory/report/stock-outward-data?${params.toString()}`);
   },
 
   async getSalesReportData(dateStart, dateEnd, searchCode = '') {
@@ -2081,6 +2124,45 @@ export const api = {
     return request(`/leads/${id}`, { method: 'DELETE' });
   },
 
+  // Customer Profiles Management (CRM Person & Business Directory)
+  async getCustomerProfiles(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return request(`/customer-profiles${query ? `?${query}` : ''}`);
+  },
+
+  async getCustomerProfileById(id) {
+    return request(`/customer-profiles/${id}`);
+  },
+
+  async createCustomerProfile(payload) {
+    return request('/customer-profiles', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateCustomerProfile(id, payload) {
+    return request(`/customer-profiles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async addCustomerProfileInteraction(id, payload) {
+    return request(`/customer-profiles/${id}/interactions`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteCustomerProfile(id) {
+    return request(`/customer-profiles/${id}`, { method: 'DELETE' });
+  },
+
+  async syncAllCustomerProfiles() {
+    return request('/customer-profiles/sync-all', { method: 'POST' });
+  },
+
   // Business Connections (Master AI Agent & Directory)
   async parseBusinessConnectionAI(rawText) {
     return request('/business-connections/parse-ai', {
@@ -2405,6 +2487,13 @@ export const api = {
     });
   },
 
+  async addDesignerTaskComment(id, commentData) {
+    return request(`/designer-tasks/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(commentData)
+    });
+  },
+
   async updateDesignerTaskStage(id, stageData) {
     return request(`/designer-tasks/${id}/stage`, {
       method: 'PUT',
@@ -2427,6 +2516,13 @@ export const api = {
     });
     const qs = query.toString();
     return request(`/designer-tasks/stats${qs ? `?${qs}` : ''}`);
+  },
+
+  async globalSearch(q, companyId) {
+    const qs = new URLSearchParams();
+    if (q) qs.set('q', q);
+    if (companyId) qs.set('companyId', companyId);
+    return request(`/search/global?${qs.toString()}`);
   }
 };
 
