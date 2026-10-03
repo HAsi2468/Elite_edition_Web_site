@@ -303,6 +303,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
   const [inwardItems, setInwardItems] = useState([]);
   const [outwardItems, setOutwardItems] = useState([]);
 
+
   const handleInwardTabChange = (tabName) => {
     setInwardTab(tabName);
     const defaults = getMaterialDefaults(tabName, printConfig);
@@ -326,6 +327,142 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       ...defaults
     }));
   };
+
+  const resolveInkMaterialName = (tabName, colorVal) => {
+    const isGrando = (tabName || '').toLowerCase().includes('grando');
+    const isPrintdot = (tabName || '').toLowerCase().includes('printdot');
+    if (!isGrando && !isPrintdot) return tabName;
+
+    const brand = isGrando ? 'Grando Ink' : 'Printdot Ink';
+    const cLower = String(colorVal || '').toLowerCase();
+
+    if (cLower.includes('magenta') || colorVal === 'M') {
+      return `${brand} - Magenta (M)`;
+    }
+    if (cLower.includes('yellow') || colorVal === 'Y') {
+      return `${brand} - Yellow (Y)`;
+    }
+    if (cLower.includes('black') || colorVal === 'K') {
+      return `${brand} - Black (K)`;
+    }
+    if (cLower.includes('clean') || colorVal === 'C.S.' || colorVal === 'CS') {
+      return `${brand} - Cleaning Solution (C.S.)`;
+    }
+    return `${brand} - Cyan (C)`;
+  };
+
+  const resolveInkColorName = (colorVal) => {
+    const cLower = String(colorVal || '').toLowerCase();
+    if (cLower.includes('magenta') || colorVal === 'M') return 'Magenta';
+    if (cLower.includes('yellow') || colorVal === 'Y') return 'Yellow';
+    if (cLower.includes('black') || colorVal === 'K') return 'Black';
+    if (cLower.includes('clean') || colorVal === 'C.S.' || colorVal === 'CS') return 'Cleaning Solution';
+    return 'Cyan';
+  };
+
+  const resolveInkColorCode = (colorVal) => {
+    const cLower = String(colorVal || '').toLowerCase();
+    if (cLower.includes('magenta') || colorVal === 'M') return 'M';
+    if (cLower.includes('yellow') || colorVal === 'Y') return 'Y';
+    if (cLower.includes('black') || colorVal === 'K') return 'K';
+    if (cLower.includes('clean') || colorVal === 'C.S.' || colorVal === 'CS') return 'C.S.';
+    return 'C';
+  };
+
+  // ── Quick Inward: called from dashboard table action buttons ──
+  const handleQuickInward = (materialName, pannaOrColor = '', colorKey = '', canSize = null, extraOpts = {}) => {
+    setEditingTransaction(null);
+    const mat = materialName || 'Sublimation Paper';
+    const isGrando = mat.toLowerCase().includes('grando');
+    const isPrintdot = mat.toLowerCase().includes('printdot');
+    const isInk = isGrando || isPrintdot || mat.toLowerCase().includes('ink');
+
+    let tab = mat;
+    if (isGrando) tab = 'Grando Ink';
+    else if (isPrintdot) tab = 'Printdot Ink';
+    else if (isSublimationTab(mat)) tab = 'Sublimation Paper';
+    else if (mat.toLowerCase().includes('butter')) tab = 'Butter Paper';
+
+    setInwardTab(tab);
+    const defaults = getMaterialDefaults(tab, printConfig);
+
+    let rawColor = colorKey || (isInk ? pannaOrColor : '') || defaults.color || '';
+    const resolvedColorName = isInk ? resolveInkColorName(rawColor) : rawColor;
+
+    let resolvedCanSize = canSize || defaults.canSize || (isGrando ? 5 : isPrintdot ? 10 : '');
+    let resolvedUnit = defaults.unit || (isInk ? 'Liters' : 'Rolls');
+    if (isGrando && resolvedColorName === 'Cleaning Solution') {
+      resolvedCanSize = 1;
+      resolvedUnit = 'Bottles';
+    }
+
+    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/"/g, '').replace(/panna/i, '').trim() : '';
+
+    setInwardForm(prev => ({
+      ...prev,
+      ...defaults,
+      materialName: tab,
+      panna: cleanPanna || prev.panna || defaults.panna || '',
+      paperQuality: extraOpts.paperQuality || prev.paperQuality || defaults.paperQuality || '',
+      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || '',
+      color: resolvedColorName,
+      canSize: resolvedCanSize,
+      unit: resolvedUnit,
+      qty: '',
+      notes: '',
+      date: new Date().toISOString().split('T')[0]
+    }));
+    setInwardItems([]);
+    setIsInwardOpen(true);
+  };
+
+  // ── Quick Outward: called from dashboard table action buttons ──
+  const handleQuickOutward = (materialName, pannaOrColor = '', colorKey = '', canSize = null, extraOpts = {}) => {
+    const mat = materialName || 'Sublimation Paper';
+    const isGrando = mat.toLowerCase().includes('grando');
+    const isPrintdot = mat.toLowerCase().includes('printdot');
+    const isInk = isGrando || isPrintdot || mat.toLowerCase().includes('ink');
+
+    let tab = mat;
+    if (isGrando) tab = 'Grando Ink';
+    else if (isPrintdot) tab = 'Printdot Ink';
+    else if (isSublimationTab(mat)) tab = 'Sublimation Paper';
+    else if (mat.toLowerCase().includes('butter')) tab = 'Butter Paper';
+
+    setOutwardTab(tab);
+    const defaults = getMaterialDefaults(tab, printConfig);
+
+    let rawColor = colorKey || (isInk ? pannaOrColor : '') || defaults.color || '';
+    const resolvedColorName = isInk ? resolveInkColorName(rawColor) : rawColor;
+
+    let resolvedCanSize = canSize || defaults.canSize || (isGrando ? 5 : isPrintdot ? 10 : '');
+    let resolvedUnit = defaults.unit || (isInk ? 'Liters' : 'Rolls');
+    if (isGrando && resolvedColorName === 'Cleaning Solution') {
+      resolvedCanSize = 1;
+      resolvedUnit = 'Bottles';
+    }
+
+    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/"/g, '').replace(/panna/i, '').trim() : '';
+
+    setOutwardForm(prev => ({
+      ...prev,
+      ...defaults,
+      materialName: tab,
+      panna: cleanPanna || prev.panna || defaults.panna || '',
+      paperQuality: extraOpts.paperQuality || prev.paperQuality || defaults.paperQuality || '',
+      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || '',
+      color: resolvedColorName,
+      canSize: resolvedCanSize,
+      unit: resolvedUnit,
+      qty: '',
+      notes: '',
+      date: new Date().toISOString().split('T')[0]
+    }));
+    setOutwardItems([]);
+    setIsOutwardOpen(true);
+  };
+
+
 
   const fetchData = async () => {
     setLoading(true);
@@ -480,27 +617,28 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
   const handleColorChange = (type, materialName, colorValue) => {
     const isGrando = materialName.toLowerCase().includes('grando');
     const isPrintdot = materialName.toLowerCase().includes('printdot');
-    
+    const colorName = resolveInkColorName(colorValue);
+
     let canSize = 5;
-    let unit = 'Cans';
-    
+    let unit = 'Liters';
+
     if (isGrando) {
-      if (colorValue === 'C.S.') {
+      if (colorName === 'Cleaning Solution' || colorValue === 'C.S.' || colorValue === 'CS') {
         canSize = 1;
         unit = 'Bottles';
       } else {
         canSize = 5;
-        unit = 'Cans';
+        unit = 'Liters';
       }
     } else if (isPrintdot) {
       canSize = 10;
-      unit = 'Cans';
+      unit = 'Liters';
     }
-    
+
     if (type === 'inward') {
-      setInwardForm(prev => ({ ...prev, color: colorValue, canSize, unit }));
+      setInwardForm(prev => ({ ...prev, color: colorName, canSize, unit }));
     } else {
-      setOutwardForm(prev => ({ ...prev, color: colorValue, canSize, unit }));
+      setOutwardForm(prev => ({ ...prev, color: colorName, canSize, unit }));
     }
   };
 
@@ -534,14 +672,18 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       return;
     }
 
+    const isInkTab = inwardTab.toLowerCase().includes('grando') || inwardTab.toLowerCase().includes('printdot');
+    const matName = isInkTab ? resolveInkMaterialName(inwardTab, inwardForm.color) : inwardTab;
+    const colorVal = isInkTab ? resolveInkColorName(inwardForm.color) : (inwardForm.color || '');
+
     const itemToAdd = {
-      materialName: inwardTab,
+      materialName: matName,
       qty: Number(inwardForm.qty),
-      unit: inwardForm.unit || 'Rolls',
+      unit: inwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
       panna: inwardForm.panna || '',
       paperQuality: inwardForm.paperQuality || '',
-      color: inwardForm.color || '',
-      canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : '',
+      color: colorVal,
+      canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
       metersPerRoll: inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : '',
       challanNo: inwardForm.challanNo,
       vendorName: inwardForm.vendorName,
@@ -560,14 +702,18 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       return;
     }
 
+    const isInkTab = outwardTab.toLowerCase().includes('grando') || outwardTab.toLowerCase().includes('printdot');
+    const matName = isInkTab ? resolveInkMaterialName(outwardTab, outwardForm.color) : outwardTab;
+    const colorVal = isInkTab ? resolveInkColorName(outwardForm.color) : (outwardForm.color || '');
+
     const itemToAdd = {
-      materialName: outwardTab,
+      materialName: matName,
       qty: Number(outwardForm.qty),
-      unit: outwardForm.unit || 'Rolls',
+      unit: outwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
       panna: outwardForm.panna || '',
       paperQuality: outwardForm.paperQuality || '',
-      color: outwardForm.color || '',
-      canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : '',
+      color: colorVal,
+      canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
       metersPerRoll: outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : '',
       jobNo: outwardForm.jobNo,
       partyName: outwardForm.partyName,
@@ -596,14 +742,19 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
           setLoading(false);
           return;
         }
+
+        const isInkTab = inwardTab.toLowerCase().includes('grando') || inwardTab.toLowerCase().includes('printdot');
+        const matName = isInkTab ? resolveInkMaterialName(inwardTab, inwardForm.color) : inwardTab;
+        const colorVal = isInkTab ? resolveInkColorName(inwardForm.color) : (inwardForm.color || '');
+
         payload = [{
-          materialName: inwardTab,
+          materialName: matName,
           qty: Number(inwardForm.qty),
-          unit: inwardForm.unit || 'Rolls',
+          unit: inwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
           panna: inwardForm.panna || '',
           paperQuality: inwardForm.paperQuality || '',
-          color: inwardForm.color || '',
-          canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : '',
+          color: colorVal,
+          canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
           metersPerRoll: inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : '',
           challanNo: inwardForm.challanNo,
           vendorName: inwardForm.vendorName,
@@ -643,14 +794,19 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
           setLoading(false);
           return;
         }
+
+        const isInkTab = outwardTab.toLowerCase().includes('grando') || outwardTab.toLowerCase().includes('printdot');
+        const matName = isInkTab ? resolveInkMaterialName(outwardTab, outwardForm.color) : outwardTab;
+        const colorVal = isInkTab ? resolveInkColorName(outwardForm.color) : (outwardForm.color || '');
+
         payload = [{
-          materialName: outwardTab,
+          materialName: matName,
           qty: Number(outwardForm.qty),
-          unit: outwardForm.unit || 'Rolls',
+          unit: outwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
           panna: outwardForm.panna || '',
           paperQuality: outwardForm.paperQuality || '',
-          color: outwardForm.color || '',
-          canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : '',
+          color: colorVal,
+          canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
           metersPerRoll: outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : '',
           jobNo: outwardForm.jobNo,
           partyName: outwardForm.partyName,
@@ -1161,33 +1317,6 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                 { key: 'Cleaning', code: 'C.S.', name: 'Cleaning Solution (C.S.)', colorVal: '#a855f7', bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.35)' }
               ];
 
-              const handleQuickInward = (matName, panna = '', color = '', canSize = null) => {
-                setEditingTransaction(null);
-                setIsInwardOpen(true);
-                handleInwardTabChange(matName || 'Sublimation Paper');
-                setInwardForm(prev => ({
-                  ...prev,
-                  materialName: matName,
-                  panna: panna ? panna.replace(/"/g, '').replace(/panna/i, '').trim() : prev.panna,
-                  color: color || prev.color,
-                  canSize: canSize || prev.canSize
-                }));
-                setInwardItems([]);
-              };
-
-              const handleQuickOutward = (matName, panna = '', color = '', canSize = null) => {
-                setIsOutwardOpen(true);
-                handleOutwardTabChange(matName || 'Sublimation Paper');
-                setOutwardForm(prev => ({
-                  ...prev,
-                  materialName: matName,
-                  panna: panna ? panna.replace(/"/g, '').replace(/panna/i, '').trim() : prev.panna,
-                  color: color || prev.color,
-                  canSize: canSize || prev.canSize
-                }));
-                setOutwardItems([]);
-              };
-
               const renderStockStatusBadge = (stockQty) => {
                 if (stockQty <= 0) {
                   return (
@@ -1375,20 +1504,20 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                     <td style={{ ...tdStyle, textAlign: 'center' }}>
                                       <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
                                         <button 
-                                          onClick={() => handleQuickInward(item.materialName, item.panna)}
+                                          onClick={() => handleQuickInward(item.materialName, item.panna, '', null, { paperQuality: item.paperQuality, metersPerRoll: item.metersPerRoll })}
                                           className="btn-primary" 
-                                          title="Quick Inward for this paper & panna"
-                                          style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                          title={`Quick Inward for ${displayName} ${item.panna || ''}`}
+                                          style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                         >
-                                          <Plus size={11} /> In
+                                          <Plus size={14} />
                                         </button>
                                         <button 
-                                          onClick={() => handleQuickOutward(item.materialName, item.panna)}
+                                          onClick={() => handleQuickOutward(item.materialName, item.panna, '', null, { paperQuality: item.paperQuality, metersPerRoll: item.metersPerRoll })}
                                           className="btn-secondary" 
-                                          title="Quick Outward for this paper & panna"
-                                          style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                          title={`Quick Outward for ${displayName} ${item.panna || ''}`}
+                                          style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                         >
-                                          <ArrowUpFromLine size={11} /> Out
+                                          <ArrowUpFromLine size={14} />
                                         </button>
                                       </div>
                                     </td>
@@ -1460,22 +1589,24 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                           </thead>
                           <tbody>
                             {GRANDO_CMYK_SPECS.map(spec => {
-                              const matched = grandoItems.find(it => {
+                              const matching = grandoItems.filter(it => {
                                 const cLower = (it.color || '').toLowerCase();
                                 const mLower = (it.materialName || '').toLowerCase();
                                 if (spec.key === 'Cyan') return cLower === 'cyan' || mLower.includes('cyan') || it.color === 'C';
                                 if (spec.key === 'Magenta') return cLower === 'magenta' || mLower.includes('magenta') || it.color === 'M';
                                 if (spec.key === 'Yellow') return cLower === 'yellow' || mLower.includes('yellow') || it.color === 'Y';
                                 if (spec.key === 'Black') return cLower === 'black' || mLower.includes('black') || it.color === 'K';
-                                if (spec.key === 'Cleaning') return cLower.includes('clean') || mLower.includes('clean') || it.color === 'C.S.';
+                                if (spec.key === 'Cleaning') return cLower.includes('clean') || mLower.includes('clean') || it.color === 'C.S.' || it.color === 'CS';
                                 return false;
                               });
 
-                              const inward = matched ? (matched.totalInward || 0) : 0;
-                              const outward = matched ? (matched.totalOutward || 0) : 0;
-                              const currentStock = matched ? (matched.currentStock || 0) : 0;
-                              const canSize = matched?.canSize || 1;
-                              const matName = matched?.materialName || `Grando Ink - ${spec.name}`;
+                              const matched = matching[0];
+                              const inward = matching.reduce((sum, it) => sum + (it.totalInward || 0), 0);
+                              const outward = matching.reduce((sum, it) => sum + (it.totalOutward || 0), 0);
+                              const currentStock = matching.reduce((sum, it) => sum + (it.currentStock || 0), 0);
+                              const isCleaning = spec.key === 'Cleaning';
+                              const canSize = matched?.canSize || (isCleaning ? 1 : 5);
+                              const containerLabel = isCleaning ? `${canSize} Liter Bottle` : `${canSize} Liter Can`;
 
                               return (
                                 <tr key={spec.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -1500,7 +1631,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                   </td>
                                   <td style={tdStyle}>
                                     <span style={{ fontSize: '0.76rem', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', padding: '2px 6px' }}>
-                                      {canSize} Liter Bottle
+                                      {containerLabel}
                                     </span>
                                   </td>
                                   <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -1528,17 +1659,17 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                         onClick={() => handleQuickInward('Grando Ink', '', spec.key, canSize)}
                                         className="btn-primary" 
                                         title={`Quick Inward for Grando ${spec.name}`}
-                                        style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                        style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                       >
-                                        <Plus size={11} /> In
+                                        <Plus size={14} />
                                       </button>
                                       <button 
                                         onClick={() => handleQuickOutward('Grando Ink', '', spec.key, canSize)}
                                         className="btn-secondary" 
                                         title={`Quick Outward for Grando ${spec.name}`}
-                                        style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                        style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                       >
-                                        <ArrowUpFromLine size={11} /> Out
+                                        <ArrowUpFromLine size={14} />
                                       </button>
                                     </div>
                                   </td>
@@ -1589,7 +1720,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                           </thead>
                           <tbody>
                             {CMYK_SPECS.map(spec => {
-                              const matched = printdotItems.find(it => {
+                              const matching = printdotItems.filter(it => {
                                 const cLower = (it.color || '').toLowerCase();
                                 const mLower = (it.materialName || '').toLowerCase();
                                 if (spec.key === 'Cyan') return cLower === 'cyan' || mLower.includes('cyan') || it.color === 'C';
@@ -1599,10 +1730,11 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                 return false;
                               });
 
-                              const inward = matched ? (matched.totalInward || 0) : 0;
-                              const outward = matched ? (matched.totalOutward || 0) : 0;
-                              const currentStock = matched ? (matched.currentStock || 0) : 0;
-                              const canSize = matched?.canSize || 1;
+                              const matched = matching[0];
+                              const inward = matching.reduce((sum, it) => sum + (it.totalInward || 0), 0);
+                              const outward = matching.reduce((sum, it) => sum + (it.totalOutward || 0), 0);
+                              const currentStock = matching.reduce((sum, it) => sum + (it.currentStock || 0), 0);
+                              const canSize = matched?.canSize || 10;
 
                               return (
                                 <tr key={spec.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -1655,17 +1787,17 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                         onClick={() => handleQuickInward('Printdot Ink', '', spec.key, canSize)}
                                         className="btn-primary" 
                                         title={`Quick Inward for Printdot ${spec.name}`}
-                                        style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                        style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                       >
-                                        <Plus size={11} /> In
+                                        <Plus size={14} />
                                       </button>
                                       <button 
                                         onClick={() => handleQuickOutward('Printdot Ink', '', spec.key, canSize)}
                                         className="btn-secondary" 
                                         title={`Quick Outward for Printdot ${spec.name}`}
-                                        style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                        style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                       >
-                                        <ArrowUpFromLine size={11} /> Out
+                                        <ArrowUpFromLine size={14} />
                                       </button>
                                     </div>
                                   </td>
@@ -1731,16 +1863,18 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                     <button 
                                       onClick={() => handleQuickInward(item.materialName)}
                                       className="btn-primary" 
-                                      style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                      title={`Quick Inward for ${item.materialName}`}
+                                      style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                     >
-                                      <Plus size={11} /> In
+                                      <Plus size={14} />
                                     </button>
                                     <button 
                                       onClick={() => handleQuickOutward(item.materialName)}
                                       className="btn-secondary" 
-                                      style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '3px' }}
+                                      title={`Quick Outward for ${item.materialName}`}
+                                      style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                     >
-                                      <ArrowUpFromLine size={11} /> Out
+                                      <ArrowUpFromLine size={14} />
                                     </button>
                                   </div>
                                 </td>
@@ -2228,13 +2362,21 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Color</label>
-                      <select style={inputStyle} value={inwardForm.color} onChange={e => handleColorChange('inward', inwardTab, e.target.value)}>
-                        {(printConfig?.inkColors || ['C', 'M', 'Y', 'K', 'C.S.']).map(c => <option key={c} value={c}>{c}</option>)}
+                      <select 
+                        style={inputStyle} 
+                        value={resolveInkColorCode(inwardForm.color)} 
+                        onChange={e => handleColorChange('inward', inwardTab, e.target.value)}
+                      >
+                        <option value="C">Cyan (C)</option>
+                        <option value="M">Magenta (M)</option>
+                        <option value="Y">Yellow (Y)</option>
+                        <option value="K">Black (K)</option>
+                        <option value="C.S.">Cleaning Solution (C.S.)</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Qty ({inwardForm.unit || 'Cans'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 2" required={inwardItems.length === 0} />
+                      <label style={labelStyle}>Qty ({inwardForm.unit || 'Liters'})</label>
+                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -2262,13 +2404,20 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Color</label>
-                      <select style={inputStyle} value={inwardForm.color} onChange={e => handleColorChange('inward', inwardTab, e.target.value)}>
-                        {['C', 'M', 'Y', 'K'].map(c => <option key={c} value={c}>{c}</option>)}
+                      <select 
+                        style={inputStyle} 
+                        value={resolveInkColorCode(inwardForm.color)} 
+                        onChange={e => handleColorChange('inward', inwardTab, e.target.value)}
+                      >
+                        <option value="C">Cyan (C)</option>
+                        <option value="M">Magenta (M)</option>
+                        <option value="Y">Yellow (Y)</option>
+                        <option value="K">Black (K)</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Qty (Cans)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 2" required={inwardItems.length === 0} />
+                      <label style={labelStyle}>Qty ({inwardForm.unit || 'Liters'})</label>
+                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -2570,13 +2719,21 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Color</label>
-                      <select style={inputStyle} value={outwardForm.color} onChange={e => handleColorChange('outward', outwardTab, e.target.value)}>
-                        {(printConfig?.inkColors || ['C', 'M', 'Y', 'K', 'C.S.']).map(c => <option key={c} value={c}>{c}</option>)}
+                      <select 
+                        style={inputStyle} 
+                        value={resolveInkColorCode(outwardForm.color)} 
+                        onChange={e => handleColorChange('outward', outwardTab, e.target.value)}
+                      >
+                        <option value="C">Cyan (C)</option>
+                        <option value="M">Magenta (M)</option>
+                        <option value="Y">Yellow (Y)</option>
+                        <option value="K">Black (K)</option>
+                        <option value="C.S.">Cleaning Solution (C.S.)</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Qty ({outwardForm.unit || 'Cans'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 2" required={outwardItems.length === 0} />
+                      <label style={labelStyle}>Qty ({outwardForm.unit || 'Liters'})</label>
+                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -2604,13 +2761,20 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Color</label>
-                      <select style={inputStyle} value={outwardForm.color} onChange={e => handleColorChange('outward', outwardTab, e.target.value)}>
-                        {['C', 'M', 'Y', 'K'].map(c => <option key={c} value={c}>{c}</option>)}
+                      <select 
+                        style={inputStyle} 
+                        value={resolveInkColorCode(outwardForm.color)} 
+                        onChange={e => handleColorChange('outward', outwardTab, e.target.value)}
+                      >
+                        <option value="C">Cyan (C)</option>
+                        <option value="M">Magenta (M)</option>
+                        <option value="Y">Yellow (Y)</option>
+                        <option value="K">Black (K)</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Qty (Cans)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 2" required={outwardItems.length === 0} />
+                      <label style={labelStyle}>Qty ({outwardForm.unit || 'Liters'})</label>
+                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
