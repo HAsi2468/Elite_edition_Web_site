@@ -2249,28 +2249,31 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
                                       if (nextMap[t.status]) handleStatusChange(t, nextMap[t.status]);
                                     }}
                                     style={{
-                                      background: '#eff6ff',
-                                      border: '1px solid #bfdbfe',
-                                      color: '#2563eb',
+                                      background: t.status === 'In Review' ? '#dcfce7' : '#eff6ff',
+                                      border: `1px solid ${t.status === 'In Review' ? '#86efac' : '#bfdbfe'}`,
+                                      color: t.status === 'In Review' ? '#16a34a' : '#2563eb',
                                       fontSize: '0.67rem',
                                       fontWeight: 800,
-                                      padding: '3px 8px',
+                                      padding: 0,
                                       borderRadius: '6px',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '4px',
+                                      justifyContent: 'center',
                                       whiteSpace: 'nowrap',
                                       flexShrink: 0,
-                                      height: '26px'
+                                      height: '26px',
+                                      width: '26px'
                                     }}
-                                    title={`Advance to ${t.status === 'In Review' ? 'Done' : 'Next Stage'}`}
+                                    title={t.status === 'In Review' ? 'Mark Done' : `Advance to ${t.status === 'Backlog' ? 'To Do' : t.status === 'To Do' ? 'In Progress' : 'In Review'}`}
                                   >
-                                    <span>{t.status === 'In Review' ? '✓ Mark Done' : `➔ ${t.status === 'Backlog' ? 'To Do' : t.status === 'To Do' ? 'In Progress' : 'In Review'}`}</span>
+                                    {t.status === 'In Review'
+                                      ? <CheckCircle2 size={13} />
+                                      : <ArrowRight size={13} />}
                                   </button>
                                 ) : (
                                   <span style={{ fontSize: '0.68rem', color: '#16a34a', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                    <CheckCircle2 size={13} /> Done
+                                    <CheckCircle2 size={13} />
                                   </span>
                                 )}
 
