@@ -6,7 +6,7 @@ import { matchSearchQuery } from '../utils/searchUtils';
 import StitchingChallanPanel from './StitchingChallanPanel';
 import FabricInventoryPanel from './FabricInventoryPanel';
 import DigitalPrintExpenseModule from './DigitalPrintExpenseModule';
-import DigitalPrintCostingScreen from './DigitalPrintCostingScreen';
+
 import ScreenGroupRoster from './ScreenGroupRoster';
 import { dispatchScreenGroupEvent } from '../services/screenGroupService';
 import { triggerEliteAlert, triggerEliteConfirm } from './EliteModalDialog';
@@ -295,7 +295,7 @@ function getDatePresetRange(preset, customStart = '', customEnd = '') {
 }
 
 export default function EliteBillingDepartment({ initialChallanData = null, department = 'digital_print', companyEntity = 'Elite Edition', initialTab = null }) {
-  const [activeTab, setActiveTab] = useState(() => initialTab || (companyEntity === 'Elite Edition' || companyEntity === 'Elite Fabtex' ? 'invoices' : 'challans')); // 'challans', 'invoices', 'dashboard', 'create', 'customers', 'items'
+  const [activeTab, setActiveTab] = useState(() => (initialTab && initialTab !== 'costing') || (companyEntity === 'Elite Edition' || companyEntity === 'Elite Fabtex' ? 'invoices' : 'challans')); // 'challans', 'invoices', 'dashboard', 'create', 'customers', 'items'
   const [challanDept, setChallanDept] = useState(() => (department === 'stitching' ? 'stitching' : 'digital_print'));
   const [stats, setStats] = useState({
     totalInvoices: 0,
@@ -2793,7 +2793,6 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
           {[
             { id: 'challans', label: 'Challan' },
             { id: 'invoices', label: 'Invoices', count: stats.totalInvoices },
-            { id: 'costing', label: 'Costing' },
             { id: 'purchase', label: 'Purchases' },
             ...(activeTab === 'create' ? [{ id: 'create', label: editingInvoiceId ? 'Edit Invoice' : 'New Invoice' }] : []),
             { id: 'expense', label: 'Expenses & Ledger' },
@@ -3990,10 +3989,6 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
         </div>
       )}
 
-      {/* ── TAB: COSTING & MONTHLY P&L ────────────────────────────────────────── */}
-      {activeTab === 'costing' && (
-        <DigitalPrintCostingScreen companyEntity={companyEntity} />
-      )}
 
       {/* ── TAB 6: EXPENSE & LEDGER MODULE ───────────────────────────────────── */}
       {activeTab === 'expense' && (

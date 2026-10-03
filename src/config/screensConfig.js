@@ -44,6 +44,7 @@ export const AVAILABLE_SCREENS = [
   { id: 'jobcards_fusing_log', label: 'Elite Prints: Fusing Department', category: 'Elite Digital Print' },
   { id: 'jobcards_fabric', label: 'Elite Prints: Fabric Management', category: 'Elite Digital Print' },
   { id: 'jobcards_billing', label: 'Elite Prints: Finance & Invoicing', category: 'Elite Digital Print' },
+  { id: 'jobcards_costing', label: 'Elite Prints: Costing & Monthly P&L', category: 'Elite Digital Print' },
   { id: 'jobcards_crm', label: 'Elite Prints: CRM & Lead Management', category: 'Elite Digital Print' },
   { id: 'jobcards_business_connection', label: 'Elite Prints: Business Connection', category: 'Elite Digital Print' },
   { id: 'jobcards_list', label: 'Elite Prints: Job Card List', category: 'Elite Digital Print' },
@@ -93,6 +94,14 @@ export const SCREEN_GROUPS = {
     screenName: 'Billing & Invoicing',
     permissionKeys: ['jobcards_billing', 'jobcards_billing_elite', 'jobcards_billing_fabtex', 'invoices'],
     description: 'GST Invoicing, Accounts & Receivables Group'
+  },
+  jobcards_costing: {
+    id: 'jobcards_costing',
+    name: '[EDP] Costing & P&L',
+    deptShort: 'EDP',
+    screenName: 'Costing & P&L',
+    permissionKeys: ['jobcards_costing', 'jobcards_billing'],
+    description: 'Monthly cost centers breakdown, invoice billing realization & net financial standing'
   },
   jobcards_billing_elite: {
     id: 'jobcards_billing_elite',
