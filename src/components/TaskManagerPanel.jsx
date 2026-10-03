@@ -1113,6 +1113,163 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
             grid-template-columns: repeat(5, minmax(260px, 1fr)) !important;
           }
         }
+
+        /* ── TASK DETAIL DRAWER ── */
+        /* Desktop: right-side panel */
+        .task-detail-drawer-panel {
+          width: 100%;
+          max-width: 840px;
+          height: 100vh;
+          border-radius: 16px 0 0 16px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          background: var(--bg-modal, #ffffff);
+          box-shadow: -12px 0 40px rgba(0,0,0,0.3);
+          position: relative;
+          right: 0;
+          animation: slideInRight 0.22s cubic-bezier(0.34, 1.22, 0.64, 1);
+        }
+        @keyframes slideInRight {
+          from { transform: translateX(60px); opacity: 0; }
+          to   { transform: translateX(0);   opacity: 1; }
+        }
+
+        /* Desktop: 2-column body */
+        .task-detail-body-grid {
+          display: grid;
+          grid-template-columns: 1fr 300px;
+          flex: 1;
+          min-height: 0;
+          overflow: hidden;
+        }
+
+        /* Mobile: bottom sheet */
+        @media (max-width: 768px) {
+          .task-detail-drawer-overlay {
+            justify-content: flex-end !important;
+            align-items: flex-end !important;
+          }
+          .task-detail-drawer-panel {
+            max-width: 100% !important;
+            width: 100% !important;
+            height: 92dvh !important;
+            border-radius: 20px 20px 0 0 !important;
+            box-shadow: 0 -12px 40px rgba(0,0,0,0.25) !important;
+            animation: slideUpSheet 0.25s cubic-bezier(0.34, 1.22, 0.64, 1) !important;
+          }
+          @keyframes slideUpSheet {
+            from { transform: translateY(80px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+          }
+          /* Bottom-sheet drag handle */
+          .task-detail-drawer-panel::before {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 4px;
+            background: #cbd5e1;
+            border-radius: 2px;
+            margin: 10px auto 0;
+            flex-shrink: 0;
+          }
+          /* Stack columns vertically on mobile */
+          .task-detail-body-grid {
+            grid-template-columns: 1fr !important;
+            overflow-y: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .task-detail-sidebar-col {
+            border-top: 1px solid var(--border-light) !important;
+            border-right: none !important;
+            overflow-y: visible !important;
+          }
+          /* Assignees list — compact on mobile */
+          .task-assignee-list {
+            max-height: none !important;
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 4px !important;
+          }
+        }
+
+        /* ── Inputs / Selects inside the drawer: reset global overrides ── */
+        .task-detail-drawer-panel input,
+        .task-detail-drawer-panel select,
+        .task-detail-drawer-panel textarea {
+          font-size: 0.8rem !important;
+          min-height: unset !important;
+          width: auto !important;
+          max-width: 100% !important;
+          padding: 5px 8px !important;
+          line-height: 1.4 !important;
+        }
+        .task-detail-drawer-panel textarea {
+          min-height: 60px !important;
+          width: 100% !important;
+          resize: vertical;
+        }
+        /* Full-width comment / checklist inputs */
+        .task-detail-drawer-panel .task-full-input {
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        /* Status select */
+        .task-detail-drawer-panel select {
+          width: 100% !important;
+        }
+
+        /* ── Checkboxes inside the drawer ── */
+        .task-detail-drawer-panel input[type="checkbox"] {
+          width: 16px !important;
+          min-height: 16px !important;
+          height: 16px !important;
+          flex-shrink: 0 !important;
+          cursor: pointer !important;
+          accent-color: #2563eb;
+          border-radius: 3px;
+          padding: 0 !important;
+        }
+
+        /* Edit Task Modal – same resets */
+        .task-edit-modal input,
+        .task-edit-modal select,
+        .task-edit-modal textarea {
+          font-size: 0.82rem !important;
+          min-height: unset !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 6px 10px !important;
+          box-sizing: border-box !important;
+        }
+        .task-edit-modal textarea {
+          min-height: 70px !important;
+        }
+        .task-edit-modal input[type="checkbox"] {
+          width: 16px !important;
+          height: 16px !important;
+          min-height: 16px !important;
+          padding: 0 !important;
+          flex-shrink: 0 !important;
+          accent-color: #2563eb;
+        }
+
+        /* ── Create Task Modal ── */
+        .task-create-modal input,
+        .task-create-modal select,
+        .task-create-modal textarea {
+          font-size: 0.82rem !important;
+          min-height: unset !important;
+          width: 100% !important;
+          padding: 6px 10px !important;
+          box-sizing: border-box !important;
+        }
+        .task-create-modal textarea { min-height: 70px !important; }
+        .task-create-modal input[type="checkbox"] {
+          width: 16px !important; height: 16px !important; min-height: 16px !important;
+          padding: 0 !important; flex-shrink: 0 !important; accent-color: #2563eb;
+        }
       `}</style>
 
       {/* ── DESKTOP: UNIFIED ENTERPRISE TASK HEADER ── */}
@@ -2909,7 +3066,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
       {/* ── CREATE TASK MODAL ── */}
       {showCreateModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: 620, maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.2s ease-out', background: '#ffffff' }}>
+          <div className="glass-panel task-create-modal" style={{ width: '100%', maxWidth: 620, maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.2s ease-out', background: '#ffffff' }}>
             
             <div style={{ padding: '1.1rem 1.4rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)', color: '#fff' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -3404,7 +3561,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
       {/* ── EDIT TASK MODAL ── */}
       {showEditModal && editingTask && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: 620, maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.2s ease-out', background: '#ffffff', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+          <div className="glass-panel task-edit-modal" style={{ width: '100%', maxWidth: 620, maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.2s ease-out', background: '#ffffff', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
             
             {/* Modal Header */}
             <div style={{ padding: '1.1rem 1.4rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)', color: '#fff' }}>
@@ -3727,12 +3884,12 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
       {selectedTask && (
         <div 
           onClick={() => setSelectedTask(null)}
-          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end' }}
+          className="task-detail-drawer-overlay"
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-end' }}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="kanban-detail-drawer open" 
-            style={{ width: '100%', maxWidth: 840, height: '100vh', borderRadius: '16px 0 0 16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-modal, #ffffff)', boxShadow: '-12px 0 40px rgba(0,0,0,0.3)', position: 'relative', right: 0 }}
+            className="task-detail-drawer-panel"
           >
             
             {/* Header */}
@@ -3795,7 +3952,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
             </div>
 
             {/* Two-Column Body Layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div className="task-detail-body-grid">
               
               {/* LEFT COLUMN: Main Details, Checklists, Comments */}
               <div style={{ padding: '1.2rem', overflowY: 'auto', borderRight: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
@@ -3850,12 +4007,13 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
                   <form onSubmit={handleAddChecklist} style={{ display: 'flex', gap: '0.4rem' }}>
                     <input
                       type="text"
+                      className="task-full-input"
                       placeholder="+ Add checklist item..."
                       value={newChecklistText}
                       onChange={(e) => setNewChecklistText(e.target.value)}
-                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: 0 }}
                     />
-                    <button type="submit" className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>Add</button>
+                    <button type="submit" className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Add</button>
                   </form>
                 </div>
 
@@ -4039,19 +4197,20 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
                   <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '0.4rem' }}>
                     <input
                       type="text"
+                      className="task-full-input"
                       placeholder="Write a comment or mention @staff..."
                       value={newCommentText}
                       onChange={(e) => setNewCommentText(e.target.value)}
-                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', borderRadius: '6px', border: '1px solid var(--border-light)', minWidth: 0 }}
                     />
-                    <button type="submit" className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>Send</button>
+                    <button type="submit" className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Send</button>
                   </form>
                 </div>
 
               </div>
 
               {/* RIGHT COLUMN: Sidebar Controls */}
-              <div style={{ padding: '1.2rem', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
+              <div className="task-detail-sidebar-col" style={{ padding: '1.2rem', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
                 
                 <div>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Status</label>
@@ -4211,7 +4370,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
                 <div>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Assigned To</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                  <div className="task-assignee-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
                     {allUsers.map((u) => {
                       const isAssigned = (selectedTask.assignees || []).some(
                         (a) => String(typeof a === 'object' ? (a._id || a.id) : a) === String(u._id)
@@ -4227,16 +4386,17 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
                           style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '3px 6px',
-                            borderRadius: '5px',
+                            gap: '8px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
                             background: isAssigned ? '#eff6ff' : '#ffffff',
                             border: isAssigned ? '1px solid #bfdbfe' : '1px solid var(--border-light)',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            minHeight: '36px'
                           }}
                         >
-                          <input type="checkbox" checked={isAssigned} onChange={() => {}} style={{ cursor: 'pointer' }} />
-                          <span style={{ fontSize: '0.75rem', fontWeight: isAssigned ? 700 : 500, color: isAssigned ? '#2563eb' : 'var(--text-primary)' }}>
+                          <input type="checkbox" checked={isAssigned} onChange={() => {}} />
+                          <span style={{ fontSize: '0.78rem', fontWeight: isAssigned ? 700 : 500, color: isAssigned ? '#2563eb' : 'var(--text-primary)' }}>
                             {u.name || u.username}
                           </span>
                         </div>
