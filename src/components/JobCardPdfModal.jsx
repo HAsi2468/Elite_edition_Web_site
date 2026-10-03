@@ -3,6 +3,7 @@ import { X, Printer, Download, ExternalLink, Loader2, Image as ImageIcon, AlertC
 import { api } from '../services/api';
 import { triggerJobCardPrint, JobCardQrBadge } from './JobCardPanel';
 import DesignImage from './DesignImage';
+import { buildTpAndWasteGrid } from '../utils/jobCardTpHelper';
 
 export default function JobCardPdfModal({ card, loading, error, onClose, onNavigateToJobCards }) {
   const [resolvedImages, setResolvedImages] = useState({
@@ -39,6 +40,32 @@ export default function JobCardPdfModal({ card, loading, error, onClose, onNavig
       setResolvedImages({ imageUrl1: img1, imageUrl2: img2 });
     }
   }, [card]);
+
+  const [challans, setChallans] = useState(card?.challans || []);
+
+  useEffect(() => {
+    if (card?.challans && card.challans.length > 0) {
+      setChallans(card.challans);
+      return;
+    }
+    if (!card?.jobNo) return;
+    let isMounted = true;
+    const fetchChallans = async () => {
+      try {
+        const cleanNo = String(card.jobNo).replace(/^#?JOB\s*NO\.?\s*[-:]?\s*/i, '').replace(/^JC-/i, '').trim();
+        const digits = cleanNo.match(/\d+/)?.[0];
+        const res = await api.getFabricChallans({ search: digits || cleanNo, limit: 10 });
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        if (isMounted) setChallans(list);
+      } catch (e) {
+        console.warn('Error fetching challans in JobCardPdfModal:', e);
+      }
+    };
+    fetchChallans();
+    return () => { isMounted = false; };
+  }, [card]);
+
+  const { rows: tpRows, totalMtr: finalTpTotal, challanNosStr } = buildTpAndWasteGrid(challans, card);
 
   if (!card && !loading) return null;
 
@@ -552,50 +579,60 @@ export default function JobCardPdfModal({ card, loading, error, onClose, onNavig
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Row 1 */}
                   <tr>
-                    <td style={tdTpLabel}>1)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>6)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>11)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>16)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>20)</td><td style={tdTpVal}></td>
-                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>1)</td><td style={{ ...tdTpVal, background: '#fff1f2' }}></td>
+                    <td style={tdTpLabel}>1)</td><td style={tdTpVal}>{tpRows[0][0].val}</td>
+                    <td style={tdTpLabel}>6)</td><td style={tdTpVal}>{tpRows[0][1].val}</td>
+                    <td style={tdTpLabel}>11)</td><td style={tdTpVal}>{tpRows[0][2].val}</td>
+                    <td style={tdTpLabel}>16)</td><td style={tdTpVal}>{tpRows[0][3].val}</td>
+                    <td style={tdTpLabel}>20)</td><td style={tdTpVal}>{tpRows[0][4].val}</td>
+                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>1)</td><td style={{ ...tdTpVal, background: '#fff1f2', color: '#b91c1c', fontWeight: 700 }}>{tpRows[0][5].wVal}</td>
                   </tr>
+                  {/* Row 2 */}
                   <tr>
-                    <td style={tdTpLabel}>2)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>7)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>12)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>17)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>21)</td><td style={tdTpVal}></td>
-                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>2)</td><td style={{ ...tdTpVal, background: '#fff1f2' }}></td>
+                    <td style={tdTpLabel}>2)</td><td style={tdTpVal}>{tpRows[1][0].val}</td>
+                    <td style={tdTpLabel}>7)</td><td style={tdTpVal}>{tpRows[1][1].val}</td>
+                    <td style={tdTpLabel}>12)</td><td style={tdTpVal}>{tpRows[1][2].val}</td>
+                    <td style={tdTpLabel}>17)</td><td style={tdTpVal}>{tpRows[1][3].val}</td>
+                    <td style={tdTpLabel}>21)</td><td style={tdTpVal}>{tpRows[1][4].val}</td>
+                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>2)</td><td style={{ ...tdTpVal, background: '#fff1f2', color: '#b91c1c', fontWeight: 700 }}>{tpRows[1][5].wVal}</td>
                   </tr>
+                  {/* Row 3 */}
                   <tr>
-                    <td style={tdTpLabel}>3)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>8)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>13)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>18)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>22)</td><td style={tdTpVal}></td>
-                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>3)</td><td style={{ ...tdTpVal, background: '#fff1f2' }}></td>
+                    <td style={tdTpLabel}>3)</td><td style={tdTpVal}>{tpRows[2][0].val}</td>
+                    <td style={tdTpLabel}>8)</td><td style={tdTpVal}>{tpRows[2][1].val}</td>
+                    <td style={tdTpLabel}>13)</td><td style={tdTpVal}>{tpRows[2][2].val}</td>
+                    <td style={tdTpLabel}>18)</td><td style={tdTpVal}>{tpRows[2][3].val}</td>
+                    <td style={tdTpLabel}>22)</td><td style={tdTpVal}>{tpRows[2][4].val}</td>
+                    <td style={{ ...tdTpLabel, background: '#fff1f2' }}>3)</td><td style={{ ...tdTpVal, background: '#fff1f2', color: '#b91c1c', fontWeight: 700 }}>{tpRows[2][5].wVal}</td>
                   </tr>
+                  {/* Row 4 */}
                   <tr>
-                    <td style={tdTpLabel}>4)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>9)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>14)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>19)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>23)</td><td style={tdTpVal}></td>
-                    <td style={{ ...tdTpLabel, background: '#f8fafc' }}></td><td style={tdTpVal}></td>
+                    <td style={tdTpLabel}>4)</td><td style={tdTpVal}>{tpRows[3][0].val}</td>
+                    <td style={tdTpLabel}>9)</td><td style={tdTpVal}>{tpRows[3][1].val}</td>
+                    <td style={tdTpLabel}>14)</td><td style={tdTpVal}>{tpRows[3][2].val}</td>
+                    <td style={tdTpLabel}>19)</td><td style={tdTpVal}>{tpRows[3][3].val}</td>
+                    <td style={tdTpLabel}>23)</td><td style={tdTpVal}>{tpRows[3][4].val}</td>
+                    <td style={{ ...tdTpLabel, background: '#f8fafc' }}>{tpRows[3][5].wLbl}</td><td style={{ ...tdTpVal, color: '#b91c1c', fontWeight: 700 }}>{tpRows[3][5].wVal}</td>
                   </tr>
+                  {/* Row 5 */}
                   <tr>
-                    <td style={tdTpLabel}>5)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>10)</td><td style={tdTpVal}></td>
-                    <td style={tdTpLabel}>15)</td><td style={tdTpVal}></td>
+                    <td style={tdTpLabel}>5)</td><td style={tdTpVal}>{tpRows[4][0].val}</td>
+                    <td style={tdTpLabel}>10)</td><td style={tdTpVal}>{tpRows[4][1].val}</td>
+                    <td style={tdTpLabel}>15)</td><td style={tdTpVal}>{tpRows[4][2].val}</td>
                     <td colSpan={3} style={{ border: '1px solid #000', fontWeight: 900, fontSize: '7.2pt', textAlign: 'right', paddingRight: '6px', background: '#f8fafc' }}>
                       TOTAL :-
                     </td>
-                    <td style={{ ...tdTpVal, fontWeight: 900 }}>{card?.printMtr || ''}</td>
-                    <td style={{ ...tdTpLabel, background: '#f8fafc' }}></td><td style={tdTpVal}></td>
+                    <td style={{ ...tdTpVal, fontWeight: 900, color: '#1e3a8a' }}>{finalTpTotal}</td>
+                    <td style={{ ...tdTpLabel, background: '#fef2f2', fontWeight: 800 }}>{(tpRows[4][5] || tpRows[4][3])?.wLbl}</td>
+                    <td style={{ ...tdTpVal, background: '#fef2f2', color: '#b91c1c', fontWeight: 900 }}>{(tpRows[4][5] || tpRows[4][3])?.wVal}</td>
                   </tr>
                 </tbody>
               </table>
+              <div style={{ padding: '2px 4px', border: '1.2px solid #000', borderTop: 'none', fontSize: '6pt', color: '#334155', background: '#ffffff', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', lineHeight: 1.25 }}>
+                <span><strong>Wastage:</strong> <strong>FF:</strong> Fabric Fault | <strong>PF:</strong> Print Fault | <strong>FS:</strong> Fusing Fault | <strong>GF:</strong> Genuine Fault | <strong>CW:</strong> Challan Waste | <strong>TOT:</strong> Total Wastage</span>
+                {challanNosStr && <span><strong>Challan:</strong> {challanNosStr}</span>}
+              </div>
             </div>
           )}
         </div>
