@@ -396,15 +396,27 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       resolvedUnit = 'Bottles';
     }
 
-    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/"/g, '').replace(/panna/i, '').trim() : '';
+    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/[^0-9]/g, '').trim() : '';
+
+    let paperGrade = extraOpts.paperQuality || '';
+    if (!isInk && !mat.toLowerCase().includes('butter')) {
+      const comb = `${mat} ${extraOpts.paperQuality || ''}`.toLowerCase();
+      if (comb.includes('a++')) paperGrade = 'A++';
+      else if (comb.includes('a+')) paperGrade = 'A+';
+      else if (/\ba\b/.test(comb) || comb.includes('(a)')) paperGrade = 'A';
+      else paperGrade = paperGrade || 'A++';
+    }
+
+    const defaultVendor = (inwardForm.vendorName || '').trim() || (vendorsList?.[0]?.name) || 'ELITE EDITION';
 
     setInwardForm(prev => ({
       ...prev,
       ...defaults,
       materialName: tab,
-      panna: cleanPanna || prev.panna || defaults.panna || '',
-      paperQuality: extraOpts.paperQuality || prev.paperQuality || defaults.paperQuality || '',
-      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || '',
+      panna: cleanPanna || prev.panna || defaults.panna || '58',
+      paperQuality: paperGrade || prev.paperQuality || defaults.paperQuality || 'A++',
+      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || (tab.toLowerCase().includes('butter') ? 100 : 1000),
+      vendorName: prev.vendorName || defaultVendor,
       color: resolvedColorName,
       canSize: resolvedCanSize,
       unit: resolvedUnit,
@@ -442,15 +454,24 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       resolvedUnit = 'Bottles';
     }
 
-    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/"/g, '').replace(/panna/i, '').trim() : '';
+    const cleanPanna = !isInk && pannaOrColor ? String(pannaOrColor).replace(/[^0-9]/g, '').trim() : '';
+
+    let paperGrade = extraOpts.paperQuality || '';
+    if (!isInk && !mat.toLowerCase().includes('butter')) {
+      const comb = `${mat} ${extraOpts.paperQuality || ''}`.toLowerCase();
+      if (comb.includes('a++')) paperGrade = 'A++';
+      else if (comb.includes('a+')) paperGrade = 'A+';
+      else if (/\ba\b/.test(comb) || comb.includes('(a)')) paperGrade = 'A';
+      else paperGrade = paperGrade || 'A++';
+    }
 
     setOutwardForm(prev => ({
       ...prev,
       ...defaults,
       materialName: tab,
-      panna: cleanPanna || prev.panna || defaults.panna || '',
-      paperQuality: extraOpts.paperQuality || prev.paperQuality || defaults.paperQuality || '',
-      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || '',
+      panna: cleanPanna || prev.panna || defaults.panna || '58',
+      paperQuality: paperGrade || prev.paperQuality || defaults.paperQuality || 'A++',
+      metersPerRoll: extraOpts.metersPerRoll || prev.metersPerRoll || defaults.metersPerRoll || (tab.toLowerCase().includes('butter') ? 100 : 1000),
       color: resolvedColorName,
       canSize: resolvedCanSize,
       unit: resolvedUnit,
@@ -554,9 +575,9 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
 
     if (isSublimation) {
       extra = {
-        panna: configData?.widths?.[0] || '44',
-        paperQuality: configData?.paperTypes?.[0] || '70 GSM',
-        metersPerRoll: 100,
+        panna: configData?.widths?.[0] ? String(configData.widths[0]).replace(/[^0-9]/g, '') : '58',
+        paperQuality: configData?.paperTypes?.[0] || 'A++',
+        metersPerRoll: 1000,
         color: '',
         canSize: '',
         unit: 'Rolls'
@@ -646,15 +667,9 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
     if (!qty || Number(qty) <= 0) {
       return 'Please enter a valid quantity.';
     }
-    const isPaperGrade = ['a++', 'a+', 'a'].includes((tabName || '').toLowerCase());
-    const isSublimation = tabName.toLowerCase().includes('sublimation') || isPaperGrade;
-    const isButter = tabName.toLowerCase().includes('butter');
-    const isGrando = tabName.toLowerCase().includes('grando');
-    const isPrintdot = tabName.toLowerCase().includes('printdot');
+    const isGrando = (tabName || '').toLowerCase().includes('grando');
+    const isPrintdot = (tabName || '').toLowerCase().includes('printdot');
 
-    if ((isSublimation || isButter) && (!metersPerRoll || Number(metersPerRoll) <= 0)) {
-      return 'Please enter a valid meters per roll.';
-    }
     if ((isGrando || isPrintdot) && (!canSize || parseCanSize(canSize) <= 0)) {
       return 'Please enter a valid can/bottle size.';
     }
@@ -662,10 +677,6 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
   };
 
   const addInwardItemToList = () => {
-    if (!inwardForm.vendorName) {
-      alert('Please select or enter a Vendor / Supplier Name.');
-      return;
-    }
     const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize);
     if (err) {
       alert(err);
@@ -675,18 +686,23 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
     const isInkTab = inwardTab.toLowerCase().includes('grando') || inwardTab.toLowerCase().includes('printdot');
     const matName = isInkTab ? resolveInkMaterialName(inwardTab, inwardForm.color) : inwardTab;
     const colorVal = isInkTab ? resolveInkColorName(inwardForm.color) : (inwardForm.color || '');
+    const isPaper = isSublimationTab(inwardTab) || inwardTab.toLowerCase().includes('paper');
+    const cleanPanna = inwardForm.panna ? String(inwardForm.panna).replace(/[^0-9]/g, '').trim() : '';
+    const paperQual = isPaper ? (inwardForm.paperQuality || 'A++') : '';
+    const mtrRoll = inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : (isPaper ? 1000 : '');
+    const vendorVal = (inwardForm.vendorName || '').trim() || 'ELITE EDITION';
 
     const itemToAdd = {
       materialName: matName,
       qty: Number(inwardForm.qty),
       unit: inwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
-      panna: inwardForm.panna || '',
-      paperQuality: inwardForm.paperQuality || '',
+      panna: cleanPanna || (isPaper ? '58' : ''),
+      paperQuality: paperQual,
       color: colorVal,
       canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
-      metersPerRoll: inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : '',
+      metersPerRoll: mtrRoll,
       challanNo: inwardForm.challanNo,
-      vendorName: inwardForm.vendorName,
+      vendorName: vendorVal,
       date: inwardForm.date,
       notes: inwardForm.notes,
     };
@@ -705,16 +721,20 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
     const isInkTab = outwardTab.toLowerCase().includes('grando') || outwardTab.toLowerCase().includes('printdot');
     const matName = isInkTab ? resolveInkMaterialName(outwardTab, outwardForm.color) : outwardTab;
     const colorVal = isInkTab ? resolveInkColorName(outwardForm.color) : (outwardForm.color || '');
+    const isPaper = isSublimationTab(outwardTab) || outwardTab.toLowerCase().includes('paper');
+    const cleanPanna = outwardForm.panna ? String(outwardForm.panna).replace(/[^0-9]/g, '').trim() : '';
+    const paperQual = isPaper ? (outwardForm.paperQuality || 'A++') : '';
+    const mtrRoll = outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : (isPaper ? 1000 : '');
 
     const itemToAdd = {
       materialName: matName,
       qty: Number(outwardForm.qty),
       unit: outwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
-      panna: outwardForm.panna || '',
-      paperQuality: outwardForm.paperQuality || '',
+      panna: cleanPanna || (isPaper ? '58' : ''),
+      paperQuality: paperQual,
       color: colorVal,
       canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
-      metersPerRoll: outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : '',
+      metersPerRoll: mtrRoll,
       jobNo: outwardForm.jobNo,
       partyName: outwardForm.partyName,
       date: outwardForm.date,
@@ -731,11 +751,6 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
     try {
       let payload = [...inwardItems];
       if (payload.length === 0) {
-        if (!inwardForm.vendorName) {
-          alert('Please select or enter a Vendor / Supplier Name.');
-          setLoading(false);
-          return;
-        }
         const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize);
         if (err) {
           alert(err);
@@ -746,18 +761,23 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
         const isInkTab = inwardTab.toLowerCase().includes('grando') || inwardTab.toLowerCase().includes('printdot');
         const matName = isInkTab ? resolveInkMaterialName(inwardTab, inwardForm.color) : inwardTab;
         const colorVal = isInkTab ? resolveInkColorName(inwardForm.color) : (inwardForm.color || '');
+        const isPaper = isSublimationTab(inwardTab) || inwardTab.toLowerCase().includes('paper');
+        const cleanPanna = inwardForm.panna ? String(inwardForm.panna).replace(/[^0-9]/g, '').trim() : '';
+        const paperQual = isPaper ? (inwardForm.paperQuality || 'A++') : '';
+        const mtrRoll = inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : (isPaper ? 1000 : '');
+        const vendorVal = (inwardForm.vendorName || '').trim() || 'ELITE EDITION';
 
         payload = [{
           materialName: matName,
           qty: Number(inwardForm.qty),
           unit: inwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
-          panna: inwardForm.panna || '',
-          paperQuality: inwardForm.paperQuality || '',
+          panna: cleanPanna || (isPaper ? '58' : ''),
+          paperQuality: paperQual,
           color: colorVal,
           canSize: inwardForm.canSize ? parseCanSize(inwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
-          metersPerRoll: inwardForm.metersPerRoll ? Number(inwardForm.metersPerRoll) : '',
+          metersPerRoll: mtrRoll,
           challanNo: inwardForm.challanNo,
-          vendorName: inwardForm.vendorName,
+          vendorName: vendorVal,
           date: inwardForm.date,
           notes: inwardForm.notes,
         }];
@@ -798,16 +818,20 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
         const isInkTab = outwardTab.toLowerCase().includes('grando') || outwardTab.toLowerCase().includes('printdot');
         const matName = isInkTab ? resolveInkMaterialName(outwardTab, outwardForm.color) : outwardTab;
         const colorVal = isInkTab ? resolveInkColorName(outwardForm.color) : (outwardForm.color || '');
+        const isPaper = isSublimationTab(outwardTab) || outwardTab.toLowerCase().includes('paper');
+        const cleanPanna = outwardForm.panna ? String(outwardForm.panna).replace(/[^0-9]/g, '').trim() : '';
+        const paperQual = isPaper ? (outwardForm.paperQuality || 'A++') : '';
+        const mtrRoll = outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : (isPaper ? 1000 : '');
 
         payload = [{
           materialName: matName,
           qty: Number(outwardForm.qty),
           unit: outwardForm.unit || (isInkTab ? 'Liters' : 'Rolls'),
-          panna: outwardForm.panna || '',
-          paperQuality: outwardForm.paperQuality || '',
+          panna: cleanPanna || (isPaper ? '58' : ''),
+          paperQuality: paperQual,
           color: colorVal,
           canSize: outwardForm.canSize ? parseCanSize(outwardForm.canSize) : (isInkTab ? (colorVal === 'Cleaning Solution' ? 1 : 5) : ''),
-          metersPerRoll: outwardForm.metersPerRoll ? Number(outwardForm.metersPerRoll) : '',
+          metersPerRoll: mtrRoll,
           jobNo: outwardForm.jobNo,
           partyName: outwardForm.partyName,
           date: outwardForm.date,
@@ -2310,14 +2334,19 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Panna (Width)</label>
-                      <select style={inputStyle} value={inwardForm.panna} onChange={e => setInwardForm(p => ({ ...p, panna: e.target.value }))}>
-                        {printConfig?.widths?.map(p => <option key={p} value={p}>{p}"</option>) || <option value="44">44"</option>}
+                      <select style={inputStyle} value={String(inwardForm.panna || '').replace(/[^0-9]/g, '') || '58'} onChange={e => setInwardForm(p => ({ ...p, panna: e.target.value }))}>
+                        {((printConfig?.widths && printConfig.widths.length > 0) ? printConfig.widths : ['36', '38', '44', '48', '52', '54', '58', '60']).map(p => {
+                          const pClean = String(p).replace(/[^0-9]/g, '');
+                          return <option key={p} value={pClean}>{pClean}" Panna</option>;
+                        })}
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Paper Quality</label>
-                      <select style={inputStyle} value={inwardForm.paperQuality} onChange={e => setInwardForm(p => ({ ...p, paperQuality: e.target.value }))}>
-                        {printConfig?.paperTypes?.map(q => <option key={q} value={q}>{q}</option>) || <option value="70 GSM">70 GSM</option>}
+                      <select style={inputStyle} value={inwardForm.paperQuality || 'A++'} onChange={e => setInwardForm(p => ({ ...p, paperQuality: e.target.value }))}>
+                        {((printConfig?.paperTypes && printConfig.paperTypes.length > 0) ? printConfig.paperTypes : ['A++', 'A+', 'A']).map(q => (
+                          <option key={q} value={q}>{q}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -2328,7 +2357,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Meters per Roll</label>
-                      <input type="number" min="0" style={inputStyle} value={inwardForm.metersPerRoll} onChange={e => setInwardForm(p => ({ ...p, metersPerRoll: e.target.value }))} placeholder="e.g. 100" required={inwardItems.length === 0} />
+                      <input type="number" min="0" style={inputStyle} value={inwardForm.metersPerRoll || 1000} onChange={e => setInwardForm(p => ({ ...p, metersPerRoll: e.target.value }))} placeholder="e.g. 1000" />
                     </div>
                   </div>
                 </div>
@@ -2667,14 +2696,19 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Panna (Width)</label>
-                      <select style={inputStyle} value={outwardForm.panna} onChange={e => setOutwardForm(p => ({ ...p, panna: e.target.value }))}>
-                        {printConfig?.widths?.map(p => <option key={p} value={p}>{p}"</option>) || <option value="44">44"</option>}
+                      <select style={inputStyle} value={String(outwardForm.panna || '').replace(/[^0-9]/g, '') || '58'} onChange={e => setOutwardForm(p => ({ ...p, panna: e.target.value }))}>
+                        {((printConfig?.widths && printConfig.widths.length > 0) ? printConfig.widths : ['36', '38', '44', '48', '52', '54', '58', '60']).map(p => {
+                          const pClean = String(p).replace(/[^0-9]/g, '');
+                          return <option key={p} value={pClean}>{pClean}" Panna</option>;
+                        })}
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Paper Quality</label>
-                      <select style={inputStyle} value={outwardForm.paperQuality} onChange={e => setOutwardForm(p => ({ ...p, paperQuality: e.target.value }))}>
-                        {printConfig?.paperTypes?.map(q => <option key={q} value={q}>{q}</option>) || <option value="70 GSM">70 GSM</option>}
+                      <select style={inputStyle} value={outwardForm.paperQuality || 'A++'} onChange={e => setOutwardForm(p => ({ ...p, paperQuality: e.target.value }))}>
+                        {((printConfig?.paperTypes && printConfig.paperTypes.length > 0) ? printConfig.paperTypes : ['A++', 'A+', 'A']).map(q => (
+                          <option key={q} value={q}>{q}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -2685,7 +2719,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Meters per Roll</label>
-                      <input type="number" min="0" style={inputStyle} value={outwardForm.metersPerRoll} onChange={e => setOutwardForm(p => ({ ...p, metersPerRoll: e.target.value }))} placeholder="e.g. 100" required={outwardItems.length === 0} />
+                      <input type="number" min="0" style={inputStyle} value={outwardForm.metersPerRoll || 1000} onChange={e => setOutwardForm(p => ({ ...p, metersPerRoll: e.target.value }))} placeholder="e.g. 1000" />
                     </div>
                   </div>
                 </div>
