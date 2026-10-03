@@ -92,8 +92,8 @@ export default function EliteModalDialog() {
     title,
     message,
     type = 'info',
-    confirmText = 'OK',
-    cancelText = 'Cancel',
+    confirmText = mode === 'confirm' ? 'Yes' : 'Close',
+    cancelText = 'No',
     placeholder = '',
     resolve
   } = dialogState;

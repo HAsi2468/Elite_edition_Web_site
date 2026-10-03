@@ -16,7 +16,7 @@ import { triggerPushNotification } from '../components/NotificationToast';
  * @param {'info'|'warning'|'error'|'success'|'danger'} type 
  * @returns {Promise<boolean>}
  */
-export const triggerEliteAlert = (title, message = '', type = 'info') => {
+export const triggerEliteAlert = (title, message = '', type = 'warning', confirmText = 'Close') => {
   return new Promise((resolve) => {
     // If only one argument is provided, treat it as message with a standard title
     let resolvedTitle = title;
@@ -25,16 +25,17 @@ export const triggerEliteAlert = (title, message = '', type = 'info') => {
       if (type === 'error' || type === 'danger') resolvedTitle = 'Error';
       else if (type === 'warning') resolvedTitle = 'Warning';
       else if (type === 'success') resolvedTitle = 'Success';
-      else resolvedTitle = 'Notification';
+      else resolvedTitle = 'Attention';
       resolvedMessage = title;
     }
 
     const event = new CustomEvent('elite-modal-dialog', {
       detail: {
         mode: 'alert',
-        title: typeof resolvedTitle === 'object' ? JSON.stringify(resolvedTitle) : String(resolvedTitle || 'Alert'),
+        title: typeof resolvedTitle === 'object' ? JSON.stringify(resolvedTitle) : String(resolvedTitle || 'Warning'),
         message: typeof resolvedMessage === 'object' ? JSON.stringify(resolvedMessage) : String(resolvedMessage || ''),
         type: type === 'danger' ? 'error' : type,
+        confirmText: confirmText || 'Close',
         resolve
       }
     });
@@ -47,16 +48,16 @@ export const triggerEliteAlert = (title, message = '', type = 'info') => {
  * @param {object} options
  * @param {string} options.title
  * @param {string} options.message
- * @param {string} [options.confirmText='Confirm']
- * @param {string} [options.cancelText='Cancel']
+ * @param {string} [options.confirmText='Yes']
+ * @param {string} [options.cancelText='No']
  * @param {'info'|'warning'|'error'|'success'|'danger'} [options.type='warning']
  * @returns {Promise<boolean>}
  */
 export const triggerEliteConfirm = ({
   title = 'Confirmation Required',
   message = '',
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText = 'Yes',
+  cancelText = 'No',
   type = 'warning'
 }) => {
   return new Promise((resolve) => {
@@ -65,8 +66,8 @@ export const triggerEliteConfirm = ({
         mode: 'confirm',
         title: typeof title === 'object' ? JSON.stringify(title) : String(title),
         message: typeof message === 'object' ? JSON.stringify(message) : String(message),
-        confirmText,
-        cancelText,
+        confirmText: confirmText || 'Yes',
+        cancelText: cancelText || 'No',
         type: type === 'danger' ? 'error' : type,
         resolve
       }
@@ -125,10 +126,10 @@ export const showToast = (title, message = '', type = 'info', actionTab = null) 
 export const installGlobalDialogInterceptors = () => {
   if (typeof window === 'undefined') return;
 
-  // Intercept window.alert
+  // Intercept window.alert with in-app Warning Box modal (Close button)
   window.alert = function (message) {
-    console.warn('[Global Interceptor] Intercepted native alert():', message);
-    triggerPushNotification('System Alert', String(message || ''), 'warning');
+    console.warn('[Global Interceptor] Showing Warning Box for alert():', message);
+    triggerEliteAlert('Warning', String(message || ''), 'warning', 'Close');
   };
 
   // Preserve native window.confirm so synchronous confirmation boxes work properly

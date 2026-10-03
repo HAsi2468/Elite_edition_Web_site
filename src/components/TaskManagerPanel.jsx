@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useSocket } from '../contexts/SocketContext';
+import { triggerEliteAlert, triggerEliteConfirm } from '../services/dialogService';
 import '../styles/taskManager.css';
 import {
   Check,
@@ -600,7 +601,14 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
   const handleDeleteDrawerAttachment = async (attachmentId) => {
     if (!selectedTask || !attachmentId) return;
-    if (!window.confirm('Are you sure you want to delete this attachment?')) return;
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Attachment',
+      message: 'Are you sure you want to delete this attachment?',
+      confirmText: 'Yes',
+      cancelText: 'No',
+      type: 'danger'
+    });
+    if (!confirmed) return;
 
     try {
       const res = await api.deleteTaskAttachment(selectedTask._id, attachmentId);
@@ -610,7 +618,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
       }
     } catch (err) {
       console.error('Failed to delete attachment:', err);
-      alert('Failed to delete attachment: ' + err.message);
+      triggerEliteAlert('Error', 'Failed to delete attachment: ' + err.message, 'error');
     }
   };
 
@@ -813,7 +821,14 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
   const handleDeleteTask = async (taskId, e) => {
     if (e) e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this task?')) return;
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task? This action cannot be undone.',
+      confirmText: 'Yes',
+      cancelText: 'No',
+      type: 'danger'
+    });
+    if (!confirmed) return;
 
     try {
       const res = await api.deleteTask(taskId);
@@ -824,7 +839,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
         }
       }
     } catch (err) {
-      alert('Failed to delete task: ' + err.message);
+      triggerEliteAlert('Error', 'Failed to delete task: ' + err.message, 'error');
     }
   };
 
@@ -1123,25 +1138,25 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
           }
         }
 
-        /* ── TASK DETAIL DRAWER ── */
-        /* Desktop: right-side panel */
+        /* ── TASK DETAIL MODAL (CENTERED) ── */
+        /* Desktop: centered modal */
         .task-detail-drawer-panel {
           width: 100%;
-          max-width: 840px;
-          height: 100vh;
-          border-radius: 16px 0 0 16px;
+          max-width: 880px;
+          height: 88vh;
+          max-height: 88vh;
+          border-radius: 16px;
           overflow: hidden;
           display: flex;
           flex-direction: column;
           background: var(--bg-modal, #ffffff);
-          box-shadow: -12px 0 40px rgba(0,0,0,0.3);
+          box-shadow: 0 24px 60px -10px rgba(15, 23, 42, 0.28), 0 0 1px rgba(15, 23, 42, 0.15);
           position: relative;
-          right: 0;
-          animation: slideInRight 0.22s cubic-bezier(0.34, 1.22, 0.64, 1);
+          animation: modalCenterZoom 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        @keyframes slideInRight {
-          from { transform: translateX(60px); opacity: 0; }
-          to   { transform: translateX(0);   opacity: 1; }
+        @keyframes modalCenterZoom {
+          from { transform: scale(0.96); opacity: 0; }
+          to   { transform: scale(1);    opacity: 1; }
         }
 
         /* Desktop: 2-column body */
@@ -1156,13 +1171,15 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
         /* Mobile: bottom sheet */
         @media (max-width: 768px) {
           .task-detail-drawer-overlay {
-            justify-content: flex-end !important;
+            justify-content: center !important;
             align-items: flex-end !important;
+            padding: 0 !important;
           }
           .task-detail-drawer-panel {
             max-width: 100% !important;
             width: 100% !important;
             height: 92dvh !important;
+            max-height: 92dvh !important;
             border-radius: 20px 20px 0 0 !important;
             box-shadow: 0 -12px 40px rgba(0,0,0,0.25) !important;
             animation: slideUpSheet 0.25s cubic-bezier(0.34, 1.22, 0.64, 1) !important;
@@ -3923,7 +3940,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
         <div 
           onClick={() => setSelectedTask(null)}
           className="task-detail-drawer-overlay"
-          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-end' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
