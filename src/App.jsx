@@ -179,6 +179,20 @@ export default function App() {
     };
   }, []);
 
+  // Handle QR code scan redirect to public Job Card viewer
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const search = new URLSearchParams(window.location.search || '');
+    const hash = window.location.hash || '';
+    let jcId = search.get('id') || search.get('jobNo') || search.get('jobcard');
+    if (!jcId && (hash.startsWith('#jobcard_') || hash.startsWith('#jc_'))) {
+      jcId = hash.replace(/^#(jobcard_|jc_)/, '').split('?')[0];
+    }
+    if ((search.get('view') === 'jobcard' || hash.includes('jobcard_view')) && jcId) {
+      window.location.replace(`/verify/jobcard/${encodeURIComponent(jcId)}`);
+    }
+  }, []);
+
   const [activeTab, setActiveTab] = useState(initialNav.tab);
   const [items, setItems] = useState([]);
   const [catalogItems, setCatalogItems] = useState([]);

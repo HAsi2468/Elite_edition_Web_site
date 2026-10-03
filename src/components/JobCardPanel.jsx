@@ -33,6 +33,34 @@ import { SmartActionGroup, SmartIconButton } from './common/SmartActionGroup';
 import { areDesignsEquivalent, cleanDesignNameString, extractDesignNames } from '../utils/designUtils';
 import { R2_PUBLIC_BASE, convertDriveUrl, getImageCandidates } from '../utils/imageUrlHelper';
 import InfiniteScrollPagination from './InfiniteScrollPagination';
+import QRCode from 'qrcode';
+
+export function JobCardQrBadge({ card, size = 32 }) {
+  const [qrUrl, setQrUrl] = useState('');
+  useEffect(() => {
+    let active = true;
+    const cleanJobNo = String(card?.jobNo || '').replace(/^JC-/i, '').replace(/^JOB\s*NO\.?\s*[-:]?\s*/i, '').trim();
+    const id = cleanJobNo || card?._id || card?.id;
+    if (!id) return;
+    const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://erp.eliteedition.in';
+    const baseUrl = origin.includes('localhost') ? 'https://erp.eliteedition.in' : origin;
+    const targetUrl = `${baseUrl}/verify/jobcard/${encodeURIComponent(id)}`;
+    QRCode.toDataURL(targetUrl, { width: 120, margin: 1, errorCorrectionLevel: 'M' }).then(url => {
+      if (active) setQrUrl(url);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [card?.jobNo, card?._id, card?.id]);
+
+  if (!qrUrl) return <div style={{ width: size, height: size }} />;
+  return (
+    <img
+      src={qrUrl}
+      alt="Job Card QR"
+      style={{ width: `${size}px`, height: `${size}px`, objectFit: 'contain' }}
+      title="Scan to view full Job Card"
+    />
+  );
+}
 
 const normalizeFabricName = (val, pannaVal = '') => {
   if (!val) return '';
@@ -264,6 +292,23 @@ export async function triggerJobCardPrint(cardOrCards) {
     const finalImg1 = dataUrl1 || candidates1[0] || convertDriveUrl(imageUrl1, design1) || '';
     const finalImg2 = showTwoImages ? (dataUrl2 || candidates2[0] || convertDriveUrl(imageUrl2, design2) || '') : '';
 
+    const cleanJobNo = String(card.jobNo || '').replace(/^JC-/i, '').replace(/^JOB\s*NO\.?\s*[-:]?\s*/i, '').trim();
+    const qrIdentifier = cleanJobNo || card._id || card.id || '';
+    const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://erp.eliteedition.in';
+    const baseUrl = origin.includes('localhost') ? 'https://erp.eliteedition.in' : origin;
+    const qrTargetUrl = `${baseUrl}/verify/jobcard/${encodeURIComponent(qrIdentifier)}`;
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrTargetUrl, {
+        width: 140,
+        margin: 1,
+        color: { dark: '#000000', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+      });
+    } catch (e) {
+      console.warn('QR generation error:', e);
+    }
+
     return {
       card,
       design1,
@@ -272,7 +317,8 @@ export async function triggerJobCardPrint(cardOrCards) {
       img1: finalImg1,
       img2: finalImg2,
       candidates1,
-      candidates2
+      candidates2,
+      qrDataUrl
     };
   }));
 
@@ -281,7 +327,7 @@ export async function triggerJobCardPrint(cardOrCards) {
   const titleText = cards.length === 1 ? `Job Card ${cards[0].jobNo || ''}` : `${cards.length} Job Cards`;
 
   const pagesHtml = preparedCards.map((item, idx) => {
-    const { card, design1, design2, showTwoImages, img1, img2, candidates1, candidates2 } = item;
+    const { card, design1, design2, showTwoImages, img1, img2, candidates1, candidates2, qrDataUrl } = item;
 
     const c1Json = JSON.stringify(candidates1).replace(/"/g, '&quot;');
     const c2Json = JSON.stringify(candidates2).replace(/"/g, '&quot;');
@@ -352,8 +398,8 @@ export async function triggerJobCardPrint(cardOrCards) {
             ${card.machineName || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}
           </div>
         </div>
-        <div class="logo-box-right">
-          <img src="${window.location.origin}/DigitalLogo.png" alt="Elite Digital Prints" style="height: 36px; object-fit: contain;">
+        <div class="qr-box-right">
+          ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR: Scan to view full Job Card" style="height: 40px; width: 40px; object-fit: contain;">` : ''}
         </div>
       </div>
 
@@ -522,13 +568,14 @@ export async function triggerJobCardPrint(cardOrCards) {
         justify-content: center;
         border-right: 1.5px solid #000;
       }
-      .logo-box-right {
-        width: 140px;
-        padding: 4px 6px;
+      .qr-box-right {
+        width: 52px;
+        padding: 1px 2px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-left: 1.5px solid #000;
+        background: #fff;
       }
       .center-box {
         flex: 1;
@@ -1193,12 +1240,7 @@ function JobCardPrintView({ card, onClose, onShare }) {
                       {card?.machineName || 'MACHINE'}
                     </div>
                   </div>
-                  <img
-                    src="/DigitalLogo.png"
-                    alt="Elite Digital Prints"
-                    style={{ height: '32px', objectFit: 'contain' }}
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                  />
+                  <JobCardQrBadge card={card} size={32} />
                 </div>
 
                 {/* Main 18-Specification Grid Table */}

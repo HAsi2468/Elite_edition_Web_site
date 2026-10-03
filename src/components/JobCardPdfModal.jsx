@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Printer, Download, ExternalLink, Loader2, Image as ImageIcon, AlertCircle, FileText } from 'lucide-react';
 import { api } from '../services/api';
-import { triggerJobCardPrint } from './JobCardPanel';
+import { triggerJobCardPrint, JobCardQrBadge } from './JobCardPanel';
 import DesignImage from './DesignImage';
 
 export default function JobCardPdfModal({ card, loading, error, onClose, onNavigateToJobCards }) {
@@ -297,12 +297,7 @@ export default function JobCardPdfModal({ card, loading, error, onClose, onNavig
                     {card?.machineName || 'MACHINE'}
                   </div>
                 </div>
-                <img
-                  src="/DigitalLogo.png"
-                  alt="Elite Digital Prints"
-                  style={{ height: '30px', objectFit: 'contain' }}
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
+                <JobCardQrBadge card={card} size={30} />
               </div>
 
               {/* Specification Grid Table */}
