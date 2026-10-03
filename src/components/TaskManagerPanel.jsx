@@ -1020,12 +1020,21 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
   const getPriorityBadge = (priority) => {
     switch ((priority || '').toLowerCase()) {
-      case 'urgent': return { label: '🔥 URGENT', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' };
-      case 'high': return { label: '⚡ HIGH', color: '#d97706', bg: '#fef3c7', border: '#fde68a' };
-      case 'medium': return { label: '🟡 MED', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
-      case 'low': return { label: '🟢 LOW', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
-      default: return { label: '🟡 MED', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+      case 'urgent': return { label: 'Urgent', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' };
+      case 'high': return { label: 'High', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
+      case 'medium': return { label: 'Medium', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+      case 'low': return { label: 'Low', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+      default: return { label: 'Medium', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
     }
+  };
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const clean = String(name).replace(/\(.*?\)/g, '').trim();
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
   const calculateTotalLoggedHours = (timeLogs = []) => {
@@ -2111,47 +2120,82 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
                               key={t._id}
                               onClick={() => setSelectedTask(t)}
                               className={`task-card ${isOverdue ? 'overdue' : ''}`}
-                              style={{
-                                background: '#ffffff',
-                                border: isOverdue ? '1.5px solid #ef4444' : '1px solid var(--border-light)',
-                                borderRadius: '10px',
-                                padding: '0.75rem',
-                                cursor: 'pointer',
-                                boxShadow: isOverdue ? '0 4px 14px rgba(239,68,68,0.12)' : '0 2px 6px rgba(0,0,0,0.03)',
-                                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.45rem'
-                              }}
                             >
-                              {/* Badges Row */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              {/* Header: Priority & Status Badges on Left, Ghost Actions on Right */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: '0.6rem', fontWeight: 800, color: pri.color, background: pri.bg, border: `1px solid ${pri.border}`, padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
-                                    {pri.label}
+                                  {/* Refined Priority Badge */}
+                                  <span style={{
+                                    fontSize: '0.64rem',
+                                    fontWeight: 700,
+                                    color: pri.color,
+                                    background: pri.bg,
+                                    border: `1px solid ${pri.border}`,
+                                    padding: '2px 7px',
+                                    borderRadius: '5px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: pri.color, flexShrink: 0 }} />
+                                    <span>{pri.label}</span>
                                   </span>
+
+                                  {/* Overdue Badge */}
+                                  {isOverdue && (
+                                    <span style={{
+                                      fontSize: '0.62rem',
+                                      fontWeight: 700,
+                                      color: '#dc2626',
+                                      background: '#fef2f2',
+                                      border: '1px solid #fecaca',
+                                      padding: '2px 6px',
+                                      borderRadius: '5px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px'
+                                    }}>
+                                      <AlertCircle size={10} color="#dc2626" />
+                                      <span>Overdue</span>
+                                    </span>
+                                  )}
+
+                                  {/* Attachments */}
                                   {t.attachments && t.attachments.length > 0 && (
-                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#0284c7', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '1px 5px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '2px' }} title={`${t.attachments.length} attachment(s)`}>
+                                    <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#0284c7', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '2px 5px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '2px' }} title={`${t.attachments.length} attachment(s)`}>
                                       <Paperclip size={10} />
                                       <span>{t.attachments.length}</span>
                                     </span>
                                   )}
+
+                                  {/* Recurrence */}
                                   {t.recurrence && t.recurrence.isRecurring && (
-                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#7c3aed', background: '#f3e8ff', border: '1px solid #ddd6fe', padding: '1px 6px', borderRadius: '4px' }}>
-                                      🔄 {t.recurrence.frequency ? t.recurrence.frequency.toUpperCase() : 'RECURRING'}
-                                    </span>
-                                  )}
-                                  {isOverdue && (
-                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#ef4444', background: '#fef2f2', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
-                                      🚨 OVERDUE
+                                    <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ede9fe', padding: '2px 6px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title={`Recurs ${t.recurrence.frequency || 'periodically'}`}>
+                                      <Repeat size={10} />
+                                      <span style={{ textTransform: 'capitalize' }}>{t.recurrence.frequency || 'Recurring'}</span>
                                     </span>
                                   )}
                                 </div>
-                                
-                                {/* Assigned By Pill */}
-                                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>
-                                  By: <strong>{assignerName}</strong>
-                                </span>
+
+                                {/* Top Right: Ghost Edit & Delete Actions */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }} onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleOpenEditModal(t, e)}
+                                    className="task-card-action-btn"
+                                    title="Edit Task"
+                                  >
+                                    <Edit2 size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteTask(t._id, e)}
+                                    className="task-card-action-btn delete-action"
+                                    title="Delete Task"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Cover Image if available */}
@@ -2169,7 +2213,7 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
                               {/* Tag Pills */}
                               {t.tags && t.tags.length > 0 && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '2px 0' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                   {t.tags.map((tag, idx) => (
                                     <span key={idx} className="kanban-tag-pill feature" style={{ fontSize: '0.62rem' }}>
                                       #{tag}
@@ -2180,172 +2224,163 @@ export default function TaskManagerPanel({ currentUser, onNavigateTab }) {
 
                               {/* Title & Project Ref */}
                               <div>
-                                <h5 style={{ margin: '0 0 2px', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                                <h5 style={{
+                                  margin: '0 0 2px',
+                                  fontSize: '0.84rem',
+                                  fontWeight: 600,
+                                  color: 'var(--text-primary)',
+                                  lineHeight: 1.35,
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden'
+                                }}>
                                   {t.title}
                                 </h5>
                                 {t.projectRef && (
-                                  <div style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                                  <div style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                                     <ExternalLink size={10} />
                                     <span>{t.projectRef}</span>
                                   </div>
                                 )}
                               </div>
 
-                              {/* Assigned To Row */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)' }}>Assigned To:</span>
-                                {(t.assignees || []).length === 0 ? (
-                                  <span style={{ fontSize: '0.65rem', color: '#94a3b8', italic: 'true' }}>Unassigned</span>
-                                ) : (
-                                  (t.assignees || []).map((a) => (
-                                    <span key={a._id || a} style={{ fontSize: '0.64rem', fontWeight: 800, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: '10px' }}>
-                                      {typeof a === 'object' ? (a.name || a.username) : 'Staff'}
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-
                               {/* Sub-Task Checklist Visual Progress Bar */}
                               {totalCheck > 0 && (
-                                <div style={{ marginTop: '2px' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '2px' }}>
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.63rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                      <CheckSquare size={11} color={completedCheck === totalCheck ? '#16a34a' : 'var(--primary)'} />
+                                      <CheckSquare size={11} color={completedCheck === totalCheck ? '#16a34a' : '#2563eb'} />
                                       <span>Checklist</span>
                                     </span>
                                     <span>{completedCheck}/{totalCheck} ({Math.round((completedCheck / totalCheck) * 100)}%)</span>
                                   </div>
-                                  <div style={{ width: '100%', height: '4px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{ width: '100%', height: '3.5px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
                                     <div style={{ width: `${(completedCheck / totalCheck) * 100}%`, height: '100%', background: completedCheck === totalCheck ? '#16a34a' : '#2563eb', transition: 'width 0.3s ease' }} />
                                   </div>
                                 </div>
                               )}
 
-                              {/* Due Date & Time Log Meta */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', paddingTop: '2px' }}>
-                                {t.dueDate ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 700, color: isOverdue ? '#ef4444' : 'var(--text-muted)' }}>
-                                    <Calendar size={11} />
-                                    <span>Due: {new Date(t.dueDate).toLocaleDateString()}</span>
-                                  </div>
-                                ) : <span />}
+                              {/* Assignee & Due Date Row */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '0.68rem', paddingTop: '2px' }}>
+                                {/* Assignee Avatar & Name */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                                  {(t.assignees || []).length > 0 ? (
+                                    <>
+                                      <span
+                                        style={{
+                                          width: '20px',
+                                          height: '20px',
+                                          borderRadius: '50%',
+                                          background: '#dbeafe',
+                                          color: '#1d4ed8',
+                                          fontSize: '0.62rem',
+                                          fontWeight: 800,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          flexShrink: 0,
+                                          textTransform: 'uppercase'
+                                        }}
+                                        title={(t.assignees || []).map(a => typeof a === 'object' ? (a.name || a.username) : 'Staff').join(', ')}
+                                      >
+                                        {getInitials(typeof t.assignees[0] === 'object' ? (t.assignees[0].name || t.assignees[0].username) : 'Staff')}
+                                      </span>
+                                      <span
+                                        style={{
+                                          fontSize: '0.68rem',
+                                          fontWeight: 600,
+                                          color: '#334155',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          maxWidth: '85px'
+                                        }}
+                                        title={(t.assignees || []).map(a => typeof a === 'object' ? (a.name || a.username) : 'Staff').join(', ')}
+                                      >
+                                        {typeof t.assignees[0] === 'object' ? (t.assignees[0].name || t.assignees[0].username || '').split(' ')[0] : 'Staff'}
+                                        {(t.assignees || []).length > 1 ? ` +${t.assignees.length - 1}` : ''}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span style={{ fontSize: '0.66rem', color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <User size={11} />
+                                      <span>Unassigned</span>
+                                    </span>
+                                  )}
+                                </div>
 
-                                {t.estimatedHours > 0 && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.64rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                    <Clock size={10} />
-                                    <span>Est: {t.estimatedHours}h</span>
-                                  </div>
-                                )}
+                                {/* Due Date & Est Hours */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                  {t.dueDate ? (
+                                    <div
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontWeight: 600,
+                                        fontSize: '0.68rem',
+                                        color: isOverdue ? '#dc2626' : 'var(--text-muted)'
+                                      }}
+                                      title={`Due date: ${new Date(t.dueDate).toLocaleDateString()}`}
+                                    >
+                                      <Calendar size={11} color={isOverdue ? '#dc2626' : '#94a3b8'} />
+                                      <span>{new Date(t.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                    </div>
+                                  ) : null}
+
+                                  {t.estimatedHours > 0 && (
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '0.64rem', fontWeight: 600, color: 'var(--text-muted)' }} title={`Estimated: ${t.estimatedHours}h`}>
+                                      <Clock size={10} />
+                                      <span>{t.estimatedHours}h</span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
 
-                              {/* Footer: One-Tap Quick Advance & Move Select */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '4px', paddingTop: '0.45rem', borderTop: '1px solid var(--border-light)' }}>
-                                {t.status !== 'Done' ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const nextMap = { 'Backlog': 'To Do', 'To Do': 'In Progress', 'In Progress': 'In Review', 'In Review': 'Done' };
-                                      if (nextMap[t.status]) handleStatusChange(t, nextMap[t.status]);
-                                    }}
-                                    style={{
-                                      background: t.status === 'In Review' ? '#dcfce7' : '#eff6ff',
-                                      border: `1px solid ${t.status === 'In Review' ? '#86efac' : '#bfdbfe'}`,
-                                      color: t.status === 'In Review' ? '#16a34a' : '#2563eb',
-                                      fontSize: '0.67rem',
-                                      fontWeight: 800,
-                                      padding: 0,
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      whiteSpace: 'nowrap',
-                                      flexShrink: 0,
-                                      height: '26px',
-                                      width: '26px'
-                                    }}
-                                    title={t.status === 'In Review' ? 'Mark Done' : `Advance to ${t.status === 'Backlog' ? 'To Do' : t.status === 'To Do' ? 'In Progress' : 'In Review'}`}
-                                  >
-                                    {t.status === 'In Review'
-                                      ? <CheckCircle2 size={13} />
-                                      : <ArrowRight size={13} />}
-                                  </button>
-                                ) : (
-                                  <span style={{ fontSize: '0.68rem', color: '#16a34a', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                    <CheckCircle2 size={13} />
-                                  </span>
-                                )}
+                              {/* Footer: Creator info on left, Status Dropdown & Advance Arrow on right */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', paddingTop: '6px', marginTop: '2px', borderTop: '1px solid #f1f5f9' }}>
+                                {/* Subtle Created By Tag */}
+                                <span style={{ fontSize: '0.63rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }} title={`Created by ${assignerName}`}>
+                                  by {assignerName}
+                                </span>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  {/* Status Quick Shift Select */}
+                                {/* Status Switcher & Advance */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
                                   <select
                                     value={t.status}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => handleStatusChange(t, e.target.value)}
-                                    style={{
-                                      fontSize: '0.68rem',
-                                      padding: '2px 5px',
-                                      borderRadius: '6px',
-                                      border: '1px solid var(--border-light)',
-                                      background: '#ffffff',
-                                      cursor: 'pointer',
-                                      fontWeight: 700,
-                                      height: '26px',
-                                      maxWidth: '95px',
-                                      flexShrink: 0
-                                    }}
+                                    className="task-card-status-select"
                                   >
                                     {KANBAN_COLUMNS.map((c) => (
                                       <option key={c.id} value={c.id}>{c.label}</option>
                                     ))}
                                   </select>
 
-                                  {/* Edit Task Button */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleOpenEditModal(t, e)}
-                                    style={{
-                                      background: '#eff6ff',
-                                      border: '1px solid #bfdbfe',
-                                      color: '#2563eb',
-                                      padding: 0,
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      height: '26px',
-                                      width: '26px',
-                                      flexShrink: 0
-                                    }}
-                                    title="Edit Task"
-                                  >
-                                    <Edit2 size={12} />
-                                  </button>
-
-                                  {/* Delete Task Button */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleDeleteTask(t._id, e)}
-                                    style={{
-                                      background: '#fee2e2',
-                                      border: '1px solid #fca5a5',
-                                      color: '#dc2626',
-                                      padding: 0,
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      height: '26px',
-                                      width: '26px',
-                                      flexShrink: 0
-                                    }}
-                                    title="Delete Task"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                                  {t.status !== 'Done' ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const nextMap = { 'Backlog': 'To Do', 'To Do': 'In Progress', 'In Progress': 'In Review', 'In Review': 'Done' };
+                                        if (nextMap[t.status]) handleStatusChange(t, nextMap[t.status]);
+                                      }}
+                                      className="task-card-advance-btn"
+                                      style={{
+                                        background: t.status === 'In Review' ? '#dcfce7' : '#eff6ff',
+                                        border: `1px solid ${t.status === 'In Review' ? '#86efac' : '#bfdbfe'}`,
+                                        color: t.status === 'In Review' ? '#16a34a' : '#2563eb'
+                                      }}
+                                      title={t.status === 'In Review' ? 'Mark Done' : `Advance to ${t.status === 'Backlog' ? 'To Do' : t.status === 'To Do' ? 'In Progress' : 'In Review'}`}
+                                    >
+                                      {t.status === 'In Review' ? <CheckCircle2 size={13} /> : <ArrowRight size={13} />}
+                                    </button>
+                                  ) : (
+                                    <span style={{ fontSize: '0.68rem', color: '#16a34a', display: 'inline-flex', alignItems: 'center', padding: '0 4px' }} title="Completed">
+                                      <CheckCircle2 size={14} />
+                                    </span>
+                                  )}
                                 </div>
                               </div>
 

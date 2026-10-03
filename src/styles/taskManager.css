@@ -455,23 +455,94 @@
   border-radius: 10px !important;
   padding: 10px 12px !important;
   cursor: pointer !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02) !important;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 6px !important;
+  gap: 8px !important;
   user-select: none !important;
+  position: relative !important;
 }
 
 .task-card:hover {
   transform: translateY(-2px) !important;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.08) !important;
-  border-color: #bfdbfe !important;
+  box-shadow: 0 8px 18px -2px rgba(15, 23, 42, 0.09), 0 3px 6px -1px rgba(15, 23, 42, 0.04) !important;
+  border-color: #cbd5e1 !important;
 }
 
 .task-card.overdue {
-  border-color: #fca5a5 !important;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08) !important;
+  border-left: 3.5px solid #ef4444 !important;
+  border-color: #fecaca !important;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.08) !important;
+}
+
+.task-card.overdue:hover {
+  box-shadow: 0 8px 18px -2px rgba(239, 68, 68, 0.15) !important;
+}
+
+/* Card Ghost Action Buttons */
+.task-card-action-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  padding: 4px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 24px !important;
+  height: 24px !important;
+  transition: all 0.15s ease !important;
+}
+
+.task-card-action-btn:hover {
+  color: #2563eb !important;
+  background: #eff6ff !important;
+}
+
+.task-card-action-btn.delete-action:hover {
+  color: #dc2626 !important;
+  background: #fef2f2 !important;
+}
+
+/* Status Dropdown */
+.task-card-status-select {
+  font-size: 0.7rem !important;
+  font-weight: 600 !important;
+  padding: 0 8px !important;
+  border-radius: 6px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  color: #334155 !important;
+  cursor: pointer !important;
+  height: 26px !important;
+  min-width: 105px !important;
+  outline: none !important;
+  transition: border-color 0.15s ease !important;
+}
+
+.task-card-status-select:focus,
+.task-card-status-select:hover {
+  border-color: #94a3b8 !important;
+}
+
+/* Advance Arrow Button */
+.task-card-advance-btn {
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 26px !important;
+  width: 26px !important;
+  flex-shrink: 0 !important;
+  padding: 0 !important;
+  transition: all 0.15s ease !important;
+}
+
+.task-card-advance-btn:hover {
+  transform: translateX(1px);
 }
 
 /* ─── MOBILE ADAPTIVE RESPONSIVENESS (< 768px) ─── */
