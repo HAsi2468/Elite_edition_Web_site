@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import {
   SlidersHorizontal,
   Search,
@@ -67,6 +67,7 @@ export default function UnifiedFilterPopover(props) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState(filters[0]?.id || '');
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const [popoverStyle, setPopoverStyle] = useState({});
   const popoverRef = useRef(null);
   const triggerRef = useRef(null);
 
@@ -102,6 +103,68 @@ export default function UnifiedFilterPopover(props) {
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  // ── Smart viewport-aware positioning ──
+  const calculatePosition = () => {
+    if (!triggerRef.current) return;
+
+    const POPOVER_W = 580;
+    const POPOVER_MAX_H = 440;
+    const MARGIN = 8;
+
+    const rect = triggerRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Mobile/tablet ≤768px → CSS bottom-sheet handles it
+    if (vw <= 768) {
+      setPopoverStyle({});
+      return;
+    }
+
+    const style = { position: 'fixed' };
+    const popoverWidth = Math.min(POPOVER_W, vw - MARGIN * 2);
+    style.width = `${popoverWidth}px`;
+
+    // Horizontal: left-align from trigger, flip right if it overflows viewport
+    if (rect.left + popoverWidth > vw - MARGIN) {
+      style.left = 'auto';
+      style.right = `${Math.max(vw - rect.right, MARGIN)}px`;
+    } else {
+      style.left = `${Math.max(rect.left, MARGIN)}px`;
+      style.right = 'auto';
+    }
+
+    // Vertical: prefer below, flip above if not enough space
+    const spaceBelow = vh - rect.bottom - MARGIN;
+    const spaceAbove = rect.top - MARGIN;
+    const neededH = Math.min(POPOVER_MAX_H + 120, vh * 0.8);
+
+    if (spaceBelow >= neededH || spaceBelow >= spaceAbove) {
+      style.top = `${rect.bottom + MARGIN}px`;
+      style.bottom = 'auto';
+      style.maxHeight = `${Math.max(spaceBelow - MARGIN, 200)}px`;
+    } else {
+      style.bottom = `${vh - rect.top + MARGIN}px`;
+      style.top = 'auto';
+      style.maxHeight = `${Math.max(spaceAbove - MARGIN, 200)}px`;
+    }
+
+    setPopoverStyle(style);
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    calculatePosition();
+
+    const onResize = () => calculatePosition();
+    window.addEventListener('resize', onResize, { passive: true });
+    window.addEventListener('scroll', onResize, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onResize, { capture: true });
     };
   }, [isOpen]);
 
@@ -287,6 +350,7 @@ export default function UnifiedFilterPopover(props) {
           <div
             ref={popoverRef}
             className={`ufp-popover ${align === 'right' ? 'ufp-align-right' : ''}`}
+            style={popoverStyle}
             role="dialog"
             aria-label="Filter Options"
           >
