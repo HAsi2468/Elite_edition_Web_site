@@ -4,7 +4,7 @@ import { formatDateDDMMYYYY } from '../utils/dateUtils';
 import {
   Layers, Database, Settings, Trash2, Search, X, FileDown,
   Plus, Edit, ArrowDownToLine, ArrowUpFromLine, RefreshCw, FileSpreadsheet, AlertCircle,
-  FileText, Droplet, Printer, CheckCircle2, ChevronRight
+  FileText, Droplet, Printer, CheckCircle2, ChevronRight, PlusCircle
 } from 'lucide-react';
 import DateRangePicker, { getDatePresetRange } from './DateRangePicker';
 
