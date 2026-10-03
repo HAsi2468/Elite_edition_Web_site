@@ -715,6 +715,20 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   const [inwardBulkPasteOpen, setInwardBulkPasteOpen] = useState(false);
   const [inwardBulkPasteText, setInwardBulkPasteText] = useState('');
   const [inwardTpSaving, setInwardTpSaving] = useState(false);
+  const [showRollRemarks, setShowRollRemarks] = useState(false);
+  const tpListRef = useRef(null);
+  const prevTpLenRef = useRef(0);
+
+  useEffect(() => {
+    if (inwardTpRows.length > prevTpLenRef.current && tpListRef.current) {
+      setTimeout(() => {
+        if (tpListRef.current) {
+          tpListRef.current.scrollTop = tpListRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+    prevTpLenRef.current = inwardTpRows.length;
+  }, [inwardTpRows.length]);
 
   // Form states
   const [inwardForm, setInwardForm] = useState({
@@ -1125,6 +1139,9 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
     setSyncInwardQty(false);
     setInwardBulkPasteOpen(false);
     setInwardBulkPasteText('');
+    const hasNotes = existingTps.some(r => r.notes && r.notes.trim());
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    setShowRollRemarks(isMobile ? Boolean(hasNotes) : true);
   };
 
   const closeInwardTpModal = () => {
@@ -6435,6 +6452,26 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                   >
                     ⚡ Bulk Paste
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRollRemarks(!showRollRemarks)}
+                    style={{
+                      background: showRollRemarks ? '#e0f2fe' : '#f8fafc',
+                      border: `1px solid ${showRollRemarks ? '#7dd3fc' : '#cbd5e1'}`,
+                      color: showRollRemarks ? '#0369a1' : '#334155',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title={showRollRemarks ? 'Hide Remarks column to give full width to Meter entry' : 'Show Roll No / Remarks column'}
+                  >
+                    <span>{showRollRemarks ? '✓ Remarks ON' : '+ Remarks'}</span>
+                  </button>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
@@ -6485,23 +6522,26 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
               )}
 
               {/* Table Column Headers */}
-              <div className="inward-tp-table-header">
+              <div className={`inward-tp-table-header ${showRollRemarks ? 'with-remarks' : 'no-remarks'}`}>
                 <div>TP #</div>
                 <div>Meter (Mtr) *</div>
-                <div>Roll No / Remarks</div>
+                {showRollRemarks && <div>Roll No / Remarks</div>}
                 <div style={{ textAlign: 'center' }}>Del</div>
               </div>
 
               {/* Rows List */}
-              <div className="inward-tp-list">
+              <div className="inward-tp-list" ref={tpListRef}>
                 {inwardTpRows.map((row, idx) => (
-                  <div key={row.id || idx} className="inward-tp-row">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '6px', height: '34px', fontSize: '0.8rem', fontWeight: 700, color: '#475569', border: '1px solid #e2e8f0' }}>
+                  <div key={row.id || idx} className={`inward-tp-row ${showRollRemarks ? 'with-remarks' : 'no-remarks'}`}>
+                    <div className="inward-tp-num-cell">
                       #{row.tpNo || idx + 1}
                     </div>
                     <div>
                       <input
+                        id={`tp-meter-input-${idx}`}
                         type="number"
+                        inputMode="decimal"
+                        pattern="[0-9]*[.,]?[0-9]*"
                         step="0.01"
                         placeholder="0.00"
                         value={row.tpMeter}
@@ -6511,29 +6551,38 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                             e.preventDefault();
                             if (idx === inwardTpRows.length - 1) {
                               addInwardTpRows(1);
+                              setTimeout(() => {
+                                const nextInput = document.getElementById(`tp-meter-input-${idx + 1}`);
+                                if (nextInput) nextInput.focus();
+                              }, 60);
+                            } else {
+                              const nextInput = document.getElementById(`tp-meter-input-${idx + 1}`);
+                              if (nextInput) nextInput.focus();
                             }
                           }
                         }}
-                        style={{ width: '100%', height: '34px', padding: '0 0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', background: '#ffffff', outline: 'none' }}
+                        className="inward-tp-meter-input"
                       />
                     </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="e.g. Roll A-1 / Mill tag"
-                        value={row.notes}
-                        onChange={e => updateInwardTpRow(idx, 'notes', e.target.value)}
-                        style={{ width: '100%', height: '34px', padding: '0 0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', color: '#334155', background: '#ffffff', outline: 'none' }}
-                      />
-                    </div>
+                    {showRollRemarks && (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="e.g. Roll A-1 / Tag"
+                          value={row.notes}
+                          onChange={e => updateInwardTpRow(idx, 'notes', e.target.value)}
+                          className="inward-tp-notes-input"
+                        />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                       <button
                         type="button"
                         onClick={() => removeInwardTpRow(idx)}
-                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
+                        className="inward-tp-del-btn"
                         title="Remove row"
                       >
-                        <Trash2 size={15} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
