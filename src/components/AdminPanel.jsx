@@ -36,7 +36,12 @@ import {
   EyeOff,
   ShieldCheck,
   Sparkles,
-  FilterX
+  FilterX,
+  Cloud,
+  Zap,
+  TrendingUp,
+  Info,
+  ExternalLink
 } from 'lucide-react';
 import { AVAILABLE_SCREENS } from '../config/screensConfig';
 import AdminSignedDocumentsApproval from './AdminSignedDocumentsApproval';
@@ -75,6 +80,12 @@ export default function AdminPanel() {
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [bills, setBills] = useState([]);
   const [billsLoading, setBillsLoading] = useState(false);
+  const [billingCurrency, setBillingCurrency] = useState('INR'); // 'INR' or 'USD'
+  const [exchangeRateInput, setExchangeRateInput] = useState(86.5);
+  const [awsSyncLoading, setAwsSyncLoading] = useState(false);
+  const [selectedBillBreakdown, setSelectedBillBreakdown] = useState(null);
+  const [showAwsGuide, setShowAwsGuide] = useState(false);
+  const [awsErrorHint, setAwsErrorHint] = useState('');
   const [billFormData, setBillFormData] = useState({
     month: '',
     awsAmount: '',
@@ -241,6 +252,28 @@ export default function AdminPanel() {
       }
     } catch (err) {
       setError(err.message || 'Failed to delete billing record.');
+    }
+  };
+
+  const handleSyncAwsCosts = async () => {
+    setAwsSyncLoading(true);
+    setError('');
+    setSuccess('');
+    setAwsErrorHint('');
+    try {
+      const res = await api.syncAwsCosts({ exchangeRate: Number(exchangeRateInput || 86.5) });
+      if (res && res.success) {
+        setSuccess(res.message || 'Successfully synced monthly bills from AWS Cost Explorer.');
+        await fetchBills();
+      } else {
+        setError(res.error || 'Failed to sync from AWS Cost Explorer.');
+        if (res.hint) setAwsErrorHint(res.hint);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to sync from AWS Cost Explorer.');
+      if (err.data?.hint) setAwsErrorHint(err.data.hint);
+    } finally {
+      setAwsSyncLoading(false);
     }
   };
 
@@ -2480,185 +2513,581 @@ export default function AdminPanel() {
       )}
 
       {activeSubTab === 'billing' && (
-        <div style={styles.contentLayout}>
-          {/* Left Side: Bills List */}
-          <div className="glass-panel" style={styles.tablePanel}>
-            <div style={styles.panelHeader}>
-              <CreditCard size={16} color="var(--primary)" />
-              <h3 style={styles.panelTitle}>Monthly Bills History</h3>
-              {billsLoading && <RotateCw size={14} className="spin-loader" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }} />}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Top Metric Cards for Cloud Infrastructure */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            {/* Card 1: AWS Spend */}
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #f59e0b', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Cloud size={22} color="#d97706" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Latest AWS Cloud Spend
+                </div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                  {billingCurrency === 'USD'
+                    ? `$${(bills.length > 0 && bills[0].awsUsdAmount ? Number(bills[0].awsUsdAmount) : (Number(bills[0]?.awsAmount || 0) / (bills[0]?.exchangeRate || exchangeRateInput || 86.5))).toFixed(2)}`
+                    : `₹${Number(bills[0]?.awsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                  {bills[0]?.month || 'No data'} {bills[0]?.isAutoSynced && <span style={{ color: '#059669', fontWeight: 700 }}>• ⚡ AWS Synced</span>}
+                </div>
+              </div>
             </div>
 
-            <div className="table-container" style={styles.tableWrap}>
-              {billsLoading && bills.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <RotateCw size={24} className="spin-loader" color="var(--primary)" />
-                  <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Loading billing history...</p>
+            {/* Card 2: MongoDB Atlas */}
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Database size={22} color="#059669" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Latest MongoDB Spend
                 </div>
-              ) : bills.length === 0 ? (
-                <div style={styles.emptyState}>
-                  <CreditCard size={28} color="var(--text-muted)" />
-                  <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>No billing records registered yet.</p>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                  {billingCurrency === 'USD'
+                    ? `$${(Number(bills[0]?.mongoDbAmount || 0) / (exchangeRateInput || 86.5)).toFixed(2)}`
+                    : `₹${Number(bills[0]?.mongoDbAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </div>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Sr. No.</th>
-                      <th>Month</th>
-                      <th className="text-right">AWS Amount</th>
-                      <th className="text-right">MongoDB Amount</th>
-                      <th className="text-right">Total Amount</th>
-                      <th>Notes</th>
-                      <th className="text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bills.map((b, idx) => (
-                      <tr key={b._id || b.id}>
-                        <td>{idx + 1}</td>
-                        <td>
-                          <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{b.month}</span>
-                        </td>
-                        <td className="text-right" style={{ color: 'var(--text-primary)' }}>Rs. {Number(b.awsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="text-right" style={{ color: 'var(--text-primary)' }}>Rs. {Number(b.mongoDbAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="text-right" style={{ fontWeight: '700', color: 'var(--primary)' }}>Rs. {Number(b.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.notes}>{b.notes || '—'}</td>
-                        <td>
-                          <div style={styles.actionsCell}>
-                            <button
-                              onClick={() => handleEditBillClick(b)}
-                              className="btn-icon"
-                              title="Edit Bill"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteBill(b)}
-                              className="btn-icon"
-                              style={styles.trashBtn}
-                              title="Delete Bill"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                  {bills[0]?.month || 'No data'}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Total Combined Cloud Bill */}
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #2563eb', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TrendingUp size={22} color="#2563eb" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Latest Total Cloud Bill
+                </div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#2563eb', marginTop: 2 }}>
+                  {billingCurrency === 'USD'
+                    ? `$${(Number(bills[0]?.totalAmount || 0) / (exchangeRateInput || 86.5)).toFixed(2)}`
+                    : `₹${Number(bills[0]?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                  Across All Infrastructure
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: AWS Integration Status */}
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #8b5cf6', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Zap size={22} color="#7c3aed" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  AWS Cost Explorer
+                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', marginTop: 2, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>API Integration</span>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#dcfce7', color: '#16a34a', fontWeight: 800 }}>READY</span>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>
+                  Auto-sync EC2, ALB, S3 & DB
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Right Side: Add/Edit Bill Form */}
-          <div className="glass-panel" style={styles.formPanel}>
-            <div style={styles.panelHeader}>
-              <UserPlus size={16} color="var(--primary)" />
-              <h3 style={styles.panelTitle}>
-                {editingBill ? `Edit Billing Record — ${editingBill.month}` : 'Add Monthly Bill'}
-              </h3>
+          {/* Action Toolbar: Sync Button, Currency Toggle & Setup Guide */}
+          <div className="glass-panel" style={{ padding: '0.85rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleSyncAwsCosts}
+                disabled={awsSyncLoading}
+                className="btn-primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.55rem 1.15rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  border: 'none',
+                  boxShadow: '0 2px 6px rgba(217,119,6,0.3)',
+                  cursor: awsSyncLoading ? 'not-allowed' : 'pointer',
+                  opacity: awsSyncLoading ? 0.8 : 1
+                }}
+                title="Fetch live bills from AWS Cost Explorer API"
+              >
+                {awsSyncLoading ? <RotateCw size={15} className="spin-loader" /> : <Zap size={15} />}
+                <span>{awsSyncLoading ? 'Syncing with AWS...' : 'Sync from AWS Cost Explorer'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAwsGuide(!showAwsGuide)}
+                className="btn-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.95rem', fontSize: '0.82rem' }}
+              >
+                <Info size={14} color="#0284c7" />
+                <span>{showAwsGuide ? 'Hide AWS Setup Guide' : 'AWS Cost Explorer Guide'}</span>
+              </button>
             </div>
 
-            <form onSubmit={handleBillSubmit} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Month *</label>
-                <div style={styles.inputWrapper}>
-                  <input
-                    type="text"
-                    name="month"
-                    value={billFormData.month}
-                    onChange={e => setBillFormData(p => ({ ...p, month: e.target.value }))}
-                    placeholder="e.g. June 2026"
-                    required
-                    style={styles.formInputWithoutIcon}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>AWS Amount (Rs.) *</label>
-                <div style={styles.inputWrapper}>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    name="awsAmount"
-                    value={billFormData.awsAmount}
-                    onChange={e => setBillFormData(p => ({ ...p, awsAmount: e.target.value }))}
-                    placeholder="e.g. 2169.78"
-                    required
-                    style={styles.formInputWithoutIcon}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>MongoDB Amount (Rs.) *</label>
-                <div style={styles.inputWrapper}>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    name="mongoDbAmount"
-                    value={billFormData.mongoDbAmount}
-                    onChange={e => setBillFormData(p => ({ ...p, mongoDbAmount: e.target.value }))}
-                    placeholder="e.g. 0.00"
-                    required
-                    style={styles.formInputWithoutIcon}
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Notes</label>
-                <textarea
-                  name="notes"
-                  value={billFormData.notes}
-                  onChange={e => setBillFormData(p => ({ ...p, notes: e.target.value }))}
-                  placeholder="Add any billing context or invoices details..."
-                  style={{
-                    ...styles.formInputWithoutIcon,
-                    minHeight: '80px',
-                    background: 'rgba(17, 24, 39, 0.7)',
-                    border: '1px solid var(--border-light)',
-                    color: 'var(--text-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '0.65rem 0.75rem',
-                    outline: 'none',
-                    resize: 'vertical'
-                  }}
-                />
-              </div>
-
-              <div style={styles.formActions}>
-                {editingBill && (
-                  <button
-                    type="button"
-                    onClick={handleCancelBillEdit}
-                    className="btn-secondary"
-                    style={styles.btn}
-                  >
-                    <X size={14} />
-                    <span>Cancel</span>
-                  </button>
-                )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              {/* Currency Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-secondary, #f1f5f9)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
                 <button
-                  type="submit"
-                  className="btn-success"
-                  style={{ ...styles.btn, ...styles.submitBtn }}
-                  disabled={submitLoading}
+                  type="button"
+                  onClick={() => setBillingCurrency('INR')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: billingCurrency === 'INR' ? '#2563eb' : 'transparent',
+                    color: billingCurrency === 'INR' ? '#ffffff' : '#64748b'
+                  }}
                 >
-                  {submitLoading ? (
-                    <RotateCw size={14} className="spin-loader" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  <span>{editingBill ? 'Save Changes' : 'Log Bill'}</span>
+                  ₹ INR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCurrency('USD')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: billingCurrency === 'USD' ? '#2563eb' : 'transparent',
+                    color: billingCurrency === 'USD' ? '#ffffff' : '#64748b'
+                  }}
+                >
+                  $ USD
                 </button>
               </div>
-            </form>
+
+              {/* Exchange Rate Input */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: '#64748b' }}>
+                <span style={{ fontWeight: 600 }}>1 USD = ₹</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={exchangeRateInput}
+                  onChange={e => setExchangeRateInput(Number(e.target.value) || 86.5)}
+                  style={{ width: '60px', padding: '3px 6px', fontSize: '0.78rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1', textAlign: 'center' }}
+                  title="USD to INR Exchange Rate"
+                />
+              </div>
+            </div>
           </div>
+
+          {/* AWS Error Hint Box (if any) */}
+          {awsErrorHint && (
+            <div style={{
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+              borderRadius: '8px',
+              padding: '0.85rem 1.15rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.75rem',
+              color: '#92400e'
+            }}>
+              <Info size={18} color="#d97706" style={{ marginTop: '2px', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>AWS Cost Explorer Requirement</div>
+                <div style={{ fontSize: '0.8rem', marginTop: '2px' }}>{awsErrorHint}</div>
+              </div>
+            </div>
+          )}
+
+          {/* AWS Cost Explorer Setup Guide Drawer */}
+          {showAwsGuide && (
+            <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '10px', background: 'rgba(240, 249, 255, 0.75)', border: '1px solid #bae6fd' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <Cloud size={18} color="#0284c7" />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0369a1' }}>
+                  How to Enable & Configure AWS Cost Explorer Integration
+                </h4>
+              </div>
+              <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.82rem', color: '#0f172a', lineHeight: 1.6 }}>
+                <li>
+                  <strong>Enable Cost Explorer in AWS Console:</strong> Log into AWS Console ➔ Search <strong>Cost Explorer</strong> ➔ Click <em>"Launch Cost Explorer"</em>. (Note: AWS takes ~24 hours after initial activation to generate billing data).
+                </li>
+                <li>
+                  <strong>IAM Permissions Required:</strong> Your AWS user or EC2 Instance Profile needs the <code>ce:GetCostAndUsage</code> action, or the AWS managed policy <code>arn:aws:iam::aws:policy/CostExplorerReadOnlyAccess</code>.
+                </li>
+                <li>
+                  <strong>Server Credentials:</strong> If not using an EC2 IAM role, add <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> in <code>/home/ubuntu/EliteEditionMongo/.env</code>.
+                </li>
+              </ol>
+            </div>
+          )}
+
+          {/* Main Layout: Left Side List & Right Side Form */}
+          <div style={styles.contentLayout}>
+            {/* Left Side: Bills List */}
+            <div className="glass-panel" style={styles.tablePanel}>
+              <div style={styles.panelHeader}>
+                <CreditCard size={16} color="var(--primary)" />
+                <h3 style={styles.panelTitle}>Monthly Bills History</h3>
+                {billsLoading && <RotateCw size={14} className="spin-loader" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }} />}
+              </div>
+
+              <div className="table-container" style={styles.tableWrap}>
+                {billsLoading && bills.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <RotateCw size={24} className="spin-loader" color="var(--primary)" />
+                    <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Loading billing history...</p>
+                  </div>
+                ) : bills.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <CreditCard size={28} color="var(--text-muted)" />
+                    <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>No billing records registered yet.</p>
+                    <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.25rem' }}>Click "Sync from AWS Cost Explorer" above or enter a monthly bill manually.</p>
+                  </div>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Sr. No.</th>
+                        <th>Month</th>
+                        <th className="text-right">AWS Amount</th>
+                        <th className="text-right">MongoDB Amount</th>
+                        <th className="text-right">Total Amount</th>
+                        <th>Breakdown & Notes</th>
+                        <th className="text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bills.map((b, idx) => {
+                        const effectiveRate = b.exchangeRate || exchangeRateInput || 86.5;
+                        const awsDisplay = billingCurrency === 'USD'
+                          ? `$${(b.awsUsdAmount ? Number(b.awsUsdAmount) : Number(b.awsAmount || 0) / effectiveRate).toFixed(2)}`
+                          : `₹${Number(b.awsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                        const mongoDisplay = billingCurrency === 'USD'
+                          ? `$${(Number(b.mongoDbAmount || 0) / effectiveRate).toFixed(2)}`
+                          : `₹${Number(b.mongoDbAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                        const totalDisplay = billingCurrency === 'USD'
+                          ? `$${((Number(b.totalAmount || 0)) / effectiveRate).toFixed(2)}`
+                          : `₹${Number(b.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                        return (
+                          <tr key={b._id || b.id}>
+                            <td>{idx + 1}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{b.month}</span>
+                                {b.isAutoSynced && (
+                                  <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#16a34a', fontWeight: 800 }} title="Auto-synced from AWS Cost Explorer">
+                                    ⚡ AWS
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="text-right" style={{ color: '#d97706', fontWeight: '700' }}>
+                              {awsDisplay}
+                              {billingCurrency === 'INR' && b.awsUsdAmount > 0 && (
+                                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 400 }}>
+                                  (${Number(b.awsUsdAmount).toFixed(2)})
+                                </div>
+                              )}
+                            </td>
+                            <td className="text-right" style={{ color: '#059669', fontWeight: '600' }}>
+                              {mongoDisplay}
+                            </td>
+                            <td className="text-right" style={{ fontWeight: '800', color: 'var(--primary)' }}>
+                              {totalDisplay}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {b.awsBreakdown && b.awsBreakdown.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedBillBreakdown(b)}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.3rem',
+                                      background: '#fef3c7',
+                                      color: '#b45309',
+                                      border: '1px solid #fde68a',
+                                      borderRadius: '6px',
+                                      padding: '2px 8px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      width: 'fit-content'
+                                    }}
+                                  >
+                                    <Cloud size={11} />
+                                    <span>View {b.awsBreakdown.length} AWS Services</span>
+                                  </button>
+                                ) : null}
+                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.notes}>
+                                  {b.notes || '—'}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={styles.actionsCell}>
+                                <button
+                                  onClick={() => handleEditBillClick(b)}
+                                  className="btn-icon"
+                                  title="Edit Bill"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBill(b)}
+                                  className="btn-icon"
+                                  style={styles.trashBtn}
+                                  title="Delete Bill"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Right Side: Add/Edit Bill Form */}
+            <div className="glass-panel" style={styles.formPanel}>
+              <div style={styles.panelHeader}>
+                <UserPlus size={16} color="var(--primary)" />
+                <h3 style={styles.panelTitle}>
+                  {editingBill ? `Edit Billing Record — ${editingBill.month}` : 'Manual Bill Entry'}
+                </h3>
+              </div>
+
+              <form onSubmit={handleBillSubmit} style={styles.form}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Month *</label>
+                  <div style={styles.inputWrapper}>
+                    <input
+                      type="text"
+                      name="month"
+                      value={billFormData.month}
+                      onChange={e => setBillFormData(p => ({ ...p, month: e.target.value }))}
+                      placeholder="e.g. October 2026"
+                      required
+                      style={styles.formInputWithoutIcon}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>AWS Amount (₹ INR) *</label>
+                  <div style={styles.inputWrapper}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      name="awsAmount"
+                      value={billFormData.awsAmount}
+                      onChange={e => setBillFormData(p => ({ ...p, awsAmount: e.target.value }))}
+                      placeholder="e.g. 2169.78"
+                      required
+                      style={styles.formInputWithoutIcon}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>MongoDB Amount (₹ INR) *</label>
+                  <div style={styles.inputWrapper}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      name="mongoDbAmount"
+                      value={billFormData.mongoDbAmount}
+                      onChange={e => setBillFormData(p => ({ ...p, mongoDbAmount: e.target.value }))}
+                      placeholder="e.g. 0.00"
+                      required
+                      style={styles.formInputWithoutIcon}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Notes</label>
+                  <textarea
+                    name="notes"
+                    value={billFormData.notes}
+                    onChange={e => setBillFormData(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="Add billing context, invoice number or notes..."
+                    style={{
+                      ...styles.formInputWithoutIcon,
+                      minHeight: '70px',
+                      background: 'rgba(17, 24, 39, 0.7)',
+                      border: '1px solid var(--border-light)',
+                      color: 'var(--text-primary)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.65rem 0.75rem',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                <div style={styles.formActions}>
+                  {editingBill && (
+                    <button
+                      type="button"
+                      onClick={handleCancelBillEdit}
+                      className="btn-secondary"
+                      style={styles.btn}
+                    >
+                      <X size={14} />
+                      <span>Cancel</span>
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn-success"
+                    style={{ ...styles.btn, ...styles.submitBtn }}
+                    disabled={submitLoading}
+                  >
+                    {submitLoading ? (
+                      <RotateCw size={14} className="spin-loader" />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    <span>{editingBill ? 'Save Changes' : 'Save Bill'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* AWS Service Breakdown Modal */}
+          {selectedBillBreakdown && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                width: '100%',
+                maxWidth: '650px',
+                maxHeight: '85vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                overflow: 'hidden'
+              }}>
+                {/* Modal Header */}
+                <div style={{
+                  padding: '1.25rem 1.5rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '8px', background: '#f59e0b', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Cloud size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>
+                        AWS Cost Breakdown
+                      </h3>
+                      <div style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 600 }}>
+                        {selectedBillBreakdown.month} • Total: ₹{Number(selectedBillBreakdown.awsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {selectedBillBreakdown.awsUsdAmount > 0 && ` ($${Number(selectedBillBreakdown.awsUsdAmount).toFixed(2)})`}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBillBreakdown(null)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#92400e', padding: '4px' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Body: Services List */}
+                <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1 }}>
+                  {(!selectedBillBreakdown.awsBreakdown || selectedBillBreakdown.awsBreakdown.length === 0) ? (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                      No service breakdown details recorded for this month.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                      {selectedBillBreakdown.awsBreakdown.map((s, idx) => {
+                        const totalUsd = selectedBillBreakdown.awsUsdAmount || (selectedBillBreakdown.awsAmount / (selectedBillBreakdown.exchangeRate || 86.5)) || 1;
+                        const pct = Math.min(100, Math.round(((s.amountUsd || 0) / totalUsd) * 100));
+
+                        return (
+                          <div key={idx} style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0f172a' }}>
+                                {s.service}
+                              </span>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0369a1' }}>
+                                  ₹{Number(s.amountInr || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '6px' }}>
+                                  (${Number(s.amountUsd || 0).toFixed(2)})
+                                </span>
+                              </div>
+                            </div>
+                            {/* Visual Progress Bar */}
+                            <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b, #0284c7)', borderRadius: '3px' }} />
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '4px', textAlign: 'right' }}>
+                              {pct}% of monthly AWS bill
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div style={{ padding: '0.85rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', background: '#f8fafc' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBillBreakdown(null)}
+                    className="btn-primary"
+                    style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

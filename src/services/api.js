@@ -1625,6 +1625,22 @@ export const api = {
     return request(`/infra-bills/${id}`, { method: 'DELETE' });
   },
 
+  async getAwsLiveCost(params = {}) {
+    const q = new URLSearchParams();
+    if (params.startDate) q.append('startDate', params.startDate);
+    if (params.endDate) q.append('endDate', params.endDate);
+    if (params.exchangeRate) q.append('exchangeRate', params.exchangeRate);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request(`/infra-bills/aws-live${qs}`, { method: 'GET' });
+  },
+
+  async syncAwsCosts(payload = {}) {
+    return request('/infra-bills/aws-sync', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // ── Fabric Challan ─────────────────────────────────────────────────────
   async getFabricChallans(params = {}) {
     const q = new URLSearchParams();
