@@ -84,8 +84,16 @@ export default function AdminPanel() {
   const [exchangeRateInput, setExchangeRateInput] = useState(86.5);
   const [awsSyncLoading, setAwsSyncLoading] = useState(false);
   const [selectedBillBreakdown, setSelectedBillBreakdown] = useState(null);
-  const [showAwsGuide, setShowAwsGuide] = useState(false);
-  const [awsErrorHint, setAwsErrorHint] = useState('');
+  const [paymentModalBill, setPaymentModalBill] = useState(null);
+  const [paymentFormData, setPaymentFormData] = useState({
+    paymentStatus: 'PAID',
+    paymentMethod: 'Credit Card',
+    paymentRef: '',
+    paidAt: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState(null);
   const [billFormData, setBillFormData] = useState({
     month: '',
     awsAmount: '',
@@ -259,23 +267,75 @@ export default function AdminPanel() {
     setAwsSyncLoading(true);
     setError('');
     setSuccess('');
-    setAwsErrorHint('');
     try {
       const res = await api.syncAwsCosts({ exchangeRate: Number(exchangeRateInput || 86.5) });
       if (res && res.success) {
         setSuccess(res.message || 'Successfully synced monthly bills from AWS Cost Explorer.');
         await fetchBills();
       } else {
-        setError(res.error || 'Failed to sync from AWS Cost Explorer.');
-        if (res.hint) setAwsErrorHint(res.hint);
+        setError(res.error || res.hint || 'Failed to sync from AWS Cost Explorer.');
       }
     } catch (err) {
-      setError(err.message || 'Failed to sync from AWS Cost Explorer.');
-      if (err.data?.hint) setAwsErrorHint(err.data.hint);
+      setError(err.data?.hint || err.message || 'Failed to sync from AWS Cost Explorer.');
     } finally {
       setAwsSyncLoading(false);
     }
   };
+
+  const handleDownloadInvoice = async (bill) => {
+    try {
+      setDownloadingInvoiceId(bill._id || bill.id);
+      setError('');
+      setSuccess('');
+      await api.downloadInfraBillInvoicePdf(bill._id || bill.id, bill.month);
+      setSuccess(`Invoice for "${bill.month}" downloaded successfully.`);
+    } catch (err) {
+      setError(err.message || 'Failed to download invoice PDF.');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
+
+  const handleOpenPayModal = (bill) => {
+    setPaymentModalBill(bill);
+    setPaymentFormData({
+      paymentStatus: bill.paymentStatus || 'PAID',
+      paymentMethod: bill.paymentMethod || 'Credit Card',
+      paymentRef: bill.paymentRef || '',
+      paidAt: bill.paidAt ? new Date(bill.paidAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      notes: bill.notes || ''
+    });
+    setError('');
+  };
+
+  const handleClosePayModal = () => {
+    setPaymentModalBill(null);
+  };
+
+  const handleSavePayment = async (e) => {
+    if (e) e.preventDefault();
+    if (!paymentModalBill) return;
+    setPaymentSubmitting(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.recordInfraBillPayment(paymentModalBill._id || paymentModalBill.id, {
+        paymentStatus: paymentFormData.paymentStatus,
+        paymentMethod: paymentFormData.paymentMethod,
+        paymentRef: paymentFormData.paymentRef,
+        paidAt: paymentFormData.paidAt,
+        notes: paymentFormData.notes,
+      });
+      setSuccess(`Payment details for "${paymentModalBill.month}" updated successfully.`);
+      handleClosePayModal();
+      await fetchBills();
+    } catch (err) {
+      setError(err.message || 'Failed to record payment.');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
+
 
   const handleDownloadBackup = async (e) => {
     e.preventDefault();
@@ -2623,15 +2683,26 @@ export default function AdminPanel() {
                 <span>{awsSyncLoading ? 'Syncing with AWS...' : 'Sync from AWS Cost Explorer'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowAwsGuide(!showAwsGuide)}
+              <a
+                href="https://us-east-1.console.aws.amazon.com/billing/home#/payments"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn-secondary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.95rem', fontSize: '0.82rem' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.55rem 1rem',
+                  fontSize: '0.82rem',
+                  textDecoration: 'none',
+                  fontWeight: 700,
+                  color: '#0f172a'
+                }}
+                title="Open AWS Billing & Payments Console in a new tab"
               >
-                <Info size={14} color="#0284c7" />
-                <span>{showAwsGuide ? 'Hide AWS Setup Guide' : 'AWS Cost Explorer Guide'}</span>
-              </button>
+                <ExternalLink size={14} color="#f59e0b" />
+                <span>AWS Payment Console</span>
+              </a>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -2686,49 +2757,6 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* AWS Error Hint Box (if any) */}
-          {awsErrorHint && (
-            <div style={{
-              background: '#fffbeb',
-              border: '1px solid #fcd34d',
-              borderRadius: '8px',
-              padding: '0.85rem 1.15rem',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0.75rem',
-              color: '#92400e'
-            }}>
-              <Info size={18} color="#d97706" style={{ marginTop: '2px', flexShrink: 0 }} />
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>AWS Cost Explorer Requirement</div>
-                <div style={{ fontSize: '0.8rem', marginTop: '2px' }}>{awsErrorHint}</div>
-              </div>
-            </div>
-          )}
-
-          {/* AWS Cost Explorer Setup Guide Drawer */}
-          {showAwsGuide && (
-            <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '10px', background: 'rgba(240, 249, 255, 0.75)', border: '1px solid #bae6fd' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                <Cloud size={18} color="#0284c7" />
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0369a1' }}>
-                  How to Enable & Configure AWS Cost Explorer Integration
-                </h4>
-              </div>
-              <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.82rem', color: '#0f172a', lineHeight: 1.6 }}>
-                <li>
-                  <strong>Enable Cost Explorer in AWS Console:</strong> Log into AWS Console ➔ Search <strong>Cost Explorer</strong> ➔ Click <em>"Launch Cost Explorer"</em>. (Note: AWS takes ~24 hours after initial activation to generate billing data).
-                </li>
-                <li>
-                  <strong>IAM Permissions Required:</strong> Your AWS user or EC2 Instance Profile needs the <code>ce:GetCostAndUsage</code> action, or the AWS managed policy <code>arn:aws:iam::aws:policy/CostExplorerReadOnlyAccess</code>.
-                </li>
-                <li>
-                  <strong>Server Credentials:</strong> If not using an EC2 IAM role, add <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code> in <code>/home/ubuntu/EliteEditionMongo/.env</code>.
-                </li>
-              </ol>
-            </div>
-          )}
-
           {/* Main Layout: Left Side List & Right Side Form */}
           <div style={styles.contentLayout}>
             {/* Left Side: Bills List */}
@@ -2760,6 +2788,7 @@ export default function AdminPanel() {
                         <th className="text-right">AWS Amount</th>
                         <th className="text-right">MongoDB Amount</th>
                         <th className="text-right">Total Amount</th>
+                        <th className="text-center">Status</th>
                         <th>Breakdown & Notes</th>
                         <th className="text-center">Actions</th>
                       </tr>
@@ -2778,6 +2807,8 @@ export default function AdminPanel() {
                         const totalDisplay = billingCurrency === 'USD'
                           ? `$${((Number(b.totalAmount || 0)) / effectiveRate).toFixed(2)}`
                           : `₹${Number(b.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                        const isPaid = b.paymentStatus === 'PAID';
 
                         return (
                           <tr key={b._id || b.id}>
@@ -2805,6 +2836,58 @@ export default function AdminPanel() {
                             </td>
                             <td className="text-right" style={{ fontWeight: '800', color: 'var(--primary)' }}>
                               {totalDisplay}
+                            </td>
+                            <td className="text-center">
+                              {isPaid ? (
+                                <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenPayModal(b)}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      background: '#dcfce7',
+                                      color: '#15803d',
+                                      border: '1px solid #86efac',
+                                      borderRadius: '999px',
+                                      padding: '2px 8px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 800,
+                                      cursor: 'pointer'
+                                    }}
+                                    title="Payment Settled — Click to view/edit payment record"
+                                  >
+                                    <Check size={11} /> PAID
+                                  </button>
+                                  {b.paidAt && (
+                                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                                      {new Date(b.paidAt).toLocaleDateString('en-GB')}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPayModal(b)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: '#fee2e2',
+                                    color: '#b91c1c',
+                                    border: '1px solid #fca5a5',
+                                    borderRadius: '999px',
+                                    padding: '2px 8px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Payment Due — Click to Pay or Record Settlement"
+                                >
+                                  <CreditCard size={11} /> UNPAID
+                                </button>
+                              )}
                             </td>
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2839,6 +2922,34 @@ export default function AdminPanel() {
                             <td>
                               <div style={styles.actionsCell}>
                                 <button
+                                  type="button"
+                                  onClick={() => handleDownloadInvoice(b)}
+                                  className="btn-icon"
+                                  disabled={downloadingInvoiceId === (b._id || b.id)}
+                                  style={{ color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd' }}
+                                  title="Download Official Invoice (PDF)"
+                                >
+                                  {downloadingInvoiceId === (b._id || b.id) ? (
+                                    <RotateCw size={14} className="spin-loader" />
+                                  ) : (
+                                    <Download size={14} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPayModal(b)}
+                                  className="btn-icon"
+                                  style={{
+                                    color: isPaid ? '#16a34a' : '#ea580c',
+                                    background: isPaid ? '#f0fdf4' : '#fff7ed',
+                                    borderColor: isPaid ? '#bbf7d0' : '#fed7aa'
+                                  }}
+                                  title={isPaid ? 'View / Update Payment' : 'Pay Bill'}
+                                >
+                                  <CreditCard size={14} />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => handleEditBillClick(b)}
                                   className="btn-icon"
                                   title="Edit Bill"
@@ -2846,6 +2957,7 @@ export default function AdminPanel() {
                                   <Edit2 size={14} />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteBill(b)}
                                   className="btn-icon"
                                   style={styles.trashBtn}
@@ -3084,6 +3196,232 @@ export default function AdminPanel() {
                   >
                     Close
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pay Infrastructure Bill & Record Settlement Modal */}
+          {paymentModalBill && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                width: '100%',
+                maxWidth: '600px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                overflow: 'hidden'
+              }}>
+                {/* Modal Header */}
+                <div style={{
+                  padding: '1.25rem 1.5rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 38, height: 38, borderRadius: '10px', background: '#2563eb', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <CreditCard size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e3a8a' }}>
+                        Pay Infrastructure Bill
+                      </h3>
+                      <div style={{ fontSize: '0.8rem', color: '#3b82f6', fontWeight: 600 }}>
+                        {paymentModalBill.month} • Total: ₹{Number(paymentModalBill.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {paymentModalBill.awsUsdAmount > 0 && ` ($${Number(paymentModalBill.awsUsdAmount).toFixed(2)})`}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClosePayModal}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1e3a8a', padding: '4px' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Quick Action: Open AWS Payment Gateway */}
+                  <div style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.6rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#b45309', fontWeight: 700, fontSize: '0.88rem' }}>
+                      <Zap size={16} color="#d97706" />
+                      <span>Step 1: Settle Bill on AWS Console</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#78350f', lineHeight: 1.5 }}>
+                      Amazon Web Services charges cards directly inside your AWS Account console. Click below to open the official AWS Payments page directly and pay the pending invoice.
+                    </p>
+                    <div>
+                      <a
+                        href="https://us-east-1.console.aws.amazon.com/billing/home#/payments"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.6rem 1.2rem',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                          textDecoration: 'none',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <ExternalLink size={15} />
+                        <span>Open AWS Payments Console ↗</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Form: Step 2 Record Payment in ERP */}
+                  <form onSubmit={handleSavePayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '0.4rem', fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>
+                      Step 2: Record Payment in ERP & Mark as Paid
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                          Payment Status *
+                        </label>
+                        <select
+                          value={paymentFormData.paymentStatus}
+                          onChange={e => setPaymentFormData(p => ({ ...p, paymentStatus: e.target.value }))}
+                          style={styles.selectInput}
+                        >
+                          <option value="PAID">✅ PAID / Settled</option>
+                          <option value="UNPAID">⏳ UNPAID / Pending</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                          Payment Method *
+                        </label>
+                        <select
+                          value={paymentFormData.paymentMethod}
+                          onChange={e => setPaymentFormData(p => ({ ...p, paymentMethod: e.target.value }))}
+                          style={styles.selectInput}
+                        >
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="AWS Auto-Debit">AWS Auto-Debit</option>
+                          <option value="Debit Card">Debit Card</option>
+                          <option value="Net Banking">Net Banking</option>
+                          <option value="UPI">UPI</option>
+                          <option value="Bank Wire / Transfer">Bank Wire / Transfer</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                          Payment Date *
+                        </label>
+                        <input
+                          type="date"
+                          value={paymentFormData.paidAt}
+                          onChange={e => setPaymentFormData(p => ({ ...p, paidAt: e.target.value }))}
+                          style={styles.formInputWithoutIcon}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                          Transaction / Reference ID
+                        </label>
+                        <input
+                          type="text"
+                          value={paymentFormData.paymentRef}
+                          onChange={e => setPaymentFormData(p => ({ ...p, paymentRef: e.target.value }))}
+                          placeholder="e.g. AWS-PAY-49210 or UTR #"
+                          style={styles.formInputWithoutIcon}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                        Notes / Remarks
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentFormData.notes}
+                        onChange={e => setPaymentFormData(p => ({ ...p, notes: e.target.value }))}
+                        placeholder="e.g. Paid via ICICI Corporate Credit Card"
+                        style={styles.formInputWithoutIcon}
+                      />
+                    </div>
+
+                    {/* Modal Footer Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadInvoice(paymentModalBill)}
+                        className="btn-secondary"
+                        disabled={downloadingInvoiceId === (paymentModalBill._id || paymentModalBill.id)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+                      >
+                        {downloadingInvoiceId === (paymentModalBill._id || paymentModalBill.id) ? (
+                          <RotateCw size={14} className="spin-loader" />
+                        ) : (
+                          <Download size={14} color="#0284c7" />
+                        )}
+                        <span>Download Invoice PDF</span>
+                      </button>
+
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={handleClosePayModal}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.82rem' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="btn-primary"
+                          disabled={paymentSubmitting}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+                        >
+                          {paymentSubmitting ? <RotateCw size={14} className="spin-loader" /> : <Save size={14} />}
+                          <span>{paymentSubmitting ? 'Saving...' : 'Save Payment Record'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
                 </div>
               </div>
             </div>

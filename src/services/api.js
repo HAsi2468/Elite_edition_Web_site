@@ -1641,6 +1641,28 @@ export const api = {
     });
   },
 
+  async downloadInfraBillInvoicePdf(id, month) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const url = `${baseUrl}/infra-bills/${id}/invoice-pdf`;
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Failed to download Infrastructure Invoice PDF');
+    const blob = await response.blob();
+    const safeMonth = (month || 'Bill').replace(/\s+/g, '_');
+    const fileName = `Infrastructure_Invoice_${safeMonth}.pdf`;
+    downloadOrPreviewPdf(blob, fileName, { title: `Infrastructure Invoice - ${month || ''}` });
+  },
+
+  async recordInfraBillPayment(id, payload) {
+    return request(`/infra-bills/${id}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+
   // ── Fabric Challan ─────────────────────────────────────────────────────
   async getFabricChallans(params = {}) {
     const q = new URLSearchParams();
