@@ -1415,19 +1415,53 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
         XLSX.utils.book_append_sheet(wb, ws, 'Party Statement');
 
         // ── SHEET 2: TALLY PRIME / ACCOUNTING IMPORT FORMAT ──
+        const sortVouchersInSeries = (list) => {
+          return [...(list || [])].sort((a, b) => {
+            const parseSeq = (str) => {
+              if (!str) return null;
+              const m = String(str).match(/(\d+)(?!.*\d)/);
+              return m ? parseInt(m[1], 10) : null;
+            };
+            const seqA = parseSeq(a.voucherNo);
+            const seqB = parseSeq(b.voucherNo);
+            if (seqA !== null && seqB !== null && seqA !== seqB) {
+              return seqA - seqB;
+            }
+            const cmp = String(a.voucherNo || '').localeCompare(String(b.voucherNo || ''), undefined, { numeric: true, sensitivity: 'base' });
+            if (cmp !== 0) return cmp;
+            return (a.rawDate || 0) - (b.rawDate || 0);
+          });
+        };
+
+        const sortedPartyTransactions = sortVouchersInSeries(ledger.transactions);
+
         const tallyRows = [
-          ['Date', 'Voucher Type', 'Voucher No', 'Party Ledger Name', 'Product / Service', 'Taxable Amount (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Total Amount (₹)', 'Debit (₹)', 'Credit (₹)', 'Place of Supply', 'Party GSTIN']
+          ['Date', 'Voucher Type', 'Voucher No', 'Party Ledger Name', 'Product / Service', 'Taxable Amount (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Round Off (₹)', 'Total Amount (₹)', 'Place of Supply', 'Party GSTIN']
         ];
 
-        ledger.transactions.forEach(t => {
+        sortedPartyTransactions.forEach(t => {
           const vType = t.voucherType || (t.debit > 0 ? 'Sales' : 'Receipt');
           const prodService = t.productService || t.opposingLedger || (vType === 'Sales' ? (t.department === 'Elite Stitching' ? 'GARMENT STITCHING JOB WORK' : 'DIGITAL PRINT JOB WORK 58"') : 'Bank Account');
-          const totAmt = t.debit > 0 ? t.debit : t.credit;
+          const baseTot = Number(t.debit > 0 ? t.debit : t.credit) || 0;
 
           const rowPartyName = t.partyName || (selectedPartyId !== 'ALL' && partyName !== 'All Customers (Combined)' ? partyName : '') || 'Sundry Debtors';
           const rowGstin = (t.partyGstin || t.gstin || (selectedPartyId !== 'ALL' ? cleanPGst : '') || '').trim().toUpperCase();
           const cleanRowGst = (rowGstin === 'N/A' || rowGstin === 'UNDEFINED' || rowGstin === 'NULL') ? '' : rowGstin;
           const rowState = t.state || pState || (cleanRowGst.startsWith('24') ? 'Gujarat (24)' : 'Gujarat (24)');
+
+          const rawTaxable = Number(t.taxableAmount) || 0;
+          const rawCgst = Number(t.cgstAmount) || 0;
+          const rawSgst = Number(t.sgstAmount) || 0;
+          const rawIgst = Number(t.igstAmount) || 0;
+
+          let rawTaxSum = parseFloat((rawTaxable + rawCgst + rawSgst + rawIgst).toFixed(2));
+          if (rawTaxSum === 0 && baseTot > 0) {
+            rawTaxSum = parseFloat(baseTot.toFixed(2));
+          }
+
+          // Round Off: decimals >= 0.50 adds the round off, < 0.50 decreases to result in an exact integer total
+          const roundedTotal = Math.round(rawTaxSum);
+          const roundOff = parseFloat((roundedTotal - rawTaxSum).toFixed(2));
 
           tallyRows.push([
             t.date,
@@ -1435,13 +1469,12 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             t.voucherNo,
             rowPartyName,
             prodService,
-            Number(t.taxableAmount) || 0,
-            Number(t.cgstAmount) || 0,
-            Number(t.sgstAmount) || 0,
-            Number(t.igstAmount) || 0,
-            Number(totAmt) || 0,
-            Number(t.debit) || 0,
-            Number(t.credit) || 0,
+            rawTaxable,
+            rawCgst,
+            rawSgst,
+            rawIgst,
+            roundOff,
+            roundedTotal,
             rowState,
             cleanRowGst
           ]);
@@ -1454,15 +1487,14 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
           { wch: 20 }, // Voucher No
           { wch: 32 }, // Party Ledger Name
           { wch: 32 }, // Product / Service
-          { wch: 16 }, // Taxable Amount
-          { wch: 12 }, // CGST
-          { wch: 12 }, // SGST
-          { wch: 12 }, // IGST
-          { wch: 16 }, // Total Amount
-          { wch: 14 }, // Debit
-          { wch: 14 }, // Credit
-          { wch: 18 }, // POS
-          { wch: 18 }, // GSTIN
+          { wch: 18 }, // Taxable Amount (₹)
+          { wch: 12 }, // CGST (₹)
+          { wch: 12 }, // SGST (₹)
+          { wch: 12 }, // IGST (₹)
+          { wch: 14 }, // Round Off (₹)
+          { wch: 18 }, // Total Amount (₹)
+          { wch: 18 }, // Place of Supply
+          { wch: 18 }, // Party GSTIN
         ];
         XLSX.utils.book_append_sheet(wb, wsTally, 'Tally Import Format');
 
@@ -1750,22 +1782,50 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
         ];
         XLSX.utils.book_append_sheet(wb, ws, 'Master Summary');
 
-        // ── SHEET 2: ALL VOUCHERS FOR TALLY IMPORT ──
-        allTransactions.sort((a, b) => (a.rawDate || 0) - (b.rawDate || 0));
+        // ── SHEET 2: ALL VOUCHERS FOR TALLY IMPORT (INVOICES IN SERIES) ──
+        allTransactions.sort((a, b) => {
+          const parseSeq = (str) => {
+            if (!str) return null;
+            const m = String(str).match(/(\d+)(?!.*\d)/);
+            return m ? parseInt(m[1], 10) : null;
+          };
+          const seqA = parseSeq(a.voucherNo);
+          const seqB = parseSeq(b.voucherNo);
+          if (seqA !== null && seqB !== null && seqA !== seqB) {
+            return seqA - seqB;
+          }
+          const cmp = String(a.voucherNo || '').localeCompare(String(b.voucherNo || ''), undefined, { numeric: true, sensitivity: 'base' });
+          if (cmp !== 0) return cmp;
+          return (a.rawDate || 0) - (b.rawDate || 0);
+        });
 
         const tallyRows = [
-          ['Date', 'Voucher Type', 'Voucher No', 'Party Ledger Name', 'Product / Service', 'Taxable Amount (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Total Amount (₹)', 'Debit (₹)', 'Credit (₹)', 'Place of Supply', 'Party GSTIN']
+          ['Date', 'Voucher Type', 'Voucher No', 'Party Ledger Name', 'Product / Service', 'Taxable Amount (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Round Off (₹)', 'Total Amount (₹)', 'Place of Supply', 'Party GSTIN']
         ];
 
         allTransactions.forEach(t => {
           const vType = t.voucherType || (t.debit > 0 ? 'Sales' : 'Receipt');
           const prodService = t.productService || t.opposingLedger || (vType === 'Sales' ? (t.department === 'Elite Stitching' ? 'GARMENT STITCHING JOB WORK' : 'DIGITAL PRINT JOB WORK 58"') : 'Bank Account');
-          const totAmt = t.debit > 0 ? t.debit : t.credit;
+          const baseTot = Number(t.debit > 0 ? t.debit : t.credit) || 0;
 
           const rowPartyName = t.partyName || 'Sundry Debtors';
           const rowGstin = (t.partyGstin || t.gstin || '').trim().toUpperCase();
           const cleanRowGst = (rowGstin === 'N/A' || rowGstin === 'UNDEFINED' || rowGstin === 'NULL') ? '' : rowGstin;
           const rowState = t.partyState || t.state || (cleanRowGst.startsWith('24') ? 'Gujarat (24)' : (cleanRowGst ? 'Inter-State' : 'Gujarat (24)'));
+
+          const rawTaxable = Number(t.taxableAmount) || 0;
+          const rawCgst = Number(t.cgstAmount) || 0;
+          const rawSgst = Number(t.sgstAmount) || 0;
+          const rawIgst = Number(t.igstAmount) || 0;
+
+          let rawTaxSum = parseFloat((rawTaxable + rawCgst + rawSgst + rawIgst).toFixed(2));
+          if (rawTaxSum === 0 && baseTot > 0) {
+            rawTaxSum = parseFloat(baseTot.toFixed(2));
+          }
+
+          // Round Off: decimals >= 0.50 adds the round off, < 0.50 decreases to result in an exact integer total
+          const roundedTotal = Math.round(rawTaxSum);
+          const roundOff = parseFloat((roundedTotal - rawTaxSum).toFixed(2));
 
           tallyRows.push([
             t.date,
@@ -1773,13 +1833,12 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             t.voucherNo,
             rowPartyName,
             prodService,
-            Number(t.taxableAmount) || 0,
-            Number(t.cgstAmount) || 0,
-            Number(t.sgstAmount) || 0,
-            Number(t.igstAmount) || 0,
-            Number(totAmt) || 0,
-            Number(t.debit) || 0,
-            Number(t.credit) || 0,
+            rawTaxable,
+            rawCgst,
+            rawSgst,
+            rawIgst,
+            roundOff,
+            roundedTotal,
             rowState,
             cleanRowGst
           ]);
@@ -1787,20 +1846,19 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
 
         const wsTally = XLSX.utils.aoa_to_sheet(tallyRows);
         wsTally['!cols'] = [
-          { wch: 13 },
-          { wch: 14 },
-          { wch: 20 },
-          { wch: 32 },
-          { wch: 32 },
-          { wch: 16 },
-          { wch: 12 },
-          { wch: 12 },
-          { wch: 12 },
-          { wch: 16 },
-          { wch: 14 },
-          { wch: 14 },
-          { wch: 18 },
-          { wch: 18 },
+          { wch: 13 }, // Date
+          { wch: 14 }, // Voucher Type
+          { wch: 20 }, // Voucher No
+          { wch: 32 }, // Party Ledger Name
+          { wch: 32 }, // Product / Service
+          { wch: 18 }, // Taxable Amount (₹)
+          { wch: 12 }, // CGST (₹)
+          { wch: 12 }, // SGST (₹)
+          { wch: 12 }, // IGST (₹)
+          { wch: 14 }, // Round Off (₹)
+          { wch: 18 }, // Total Amount (₹)
+          { wch: 18 }, // Place of Supply
+          { wch: 18 }, // Party GSTIN
         ];
         XLSX.utils.book_append_sheet(wb, wsTally, 'Tally All Vouchers');
 
