@@ -2049,6 +2049,7 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
   const [pdfDuplicateModal, setPdfDuplicateModal] = useState(null); // { inv } when open
   const [pdfDuplicateChecked, setPdfDuplicateChecked] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [printingInvoiceId, setPrintingInvoiceId] = useState(null);
   const [previewImageModal, setPreviewImageModal] = useState(null);
 
   const openPdfDialog = (inv) => {
@@ -3252,6 +3253,23 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
                                     variant: 'purple',
                                     color: '#a78bfa',
                                     onClick: () => openPdfDialog(inv),
+                                    isPrimary: true
+                                  },
+                                  {
+                                    id: 'print-invoice',
+                                    icon: Printer,
+                                    label: 'Print Invoice',
+                                    tooltip: 'Print Tax Invoice (Auto-loads images)',
+                                    variant: 'blue',
+                                    color: '#38bdf8',
+                                    onClick: async () => {
+                                      try {
+                                        triggerPushNotification('🖨️ Preparing Invoice', `Loading images & preparing print for #${inv.invoiceNo}...`, 'info');
+                                        await api.downloadInvoicePdf(inv._id, inv.invoiceNo, false);
+                                      } catch (err) {
+                                        alert('Failed to prepare invoice for printing: ' + err.message);
+                                      }
+                                    },
                                     isPrimary: true
                                   },
                                   {
@@ -5081,6 +5099,23 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             {/* Modal Actions */}
             <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end', flexWrap: 'wrap', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
               <button style={{ padding: '0.5rem 1.1rem', background: '#f1f5f9', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={() => setViewInvoiceModal(null)}>Close</button>
+              <button
+                style={{ padding: '0.5rem 1.1rem', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#ffffff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                disabled={printingInvoiceId === viewInvoiceModal._id}
+                onClick={async () => {
+                  setPrintingInvoiceId(viewInvoiceModal._id);
+                  try {
+                    triggerPushNotification('🖨️ Preparing Invoice', `Loading images & preparing print for #${viewInvoiceModal.invoiceNo}...`, 'info');
+                    await api.downloadInvoicePdf(viewInvoiceModal._id, viewInvoiceModal.invoiceNo, false);
+                  } catch (err) {
+                    alert('Failed to load invoice for printing: ' + err.message);
+                  } finally {
+                    setPrintingInvoiceId(null);
+                  }
+                }}
+              >
+                <Printer size={15} /> {printingInvoiceId === viewInvoiceModal._id ? 'Loading Images...' : 'Print Invoice'}
+              </button>
               <button style={{ padding: '0.5rem 1.1rem', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#ffffff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }} onClick={() => openPdfDialog(viewInvoiceModal)}>
                 <Download size={15} /> Download PDF
               </button>
