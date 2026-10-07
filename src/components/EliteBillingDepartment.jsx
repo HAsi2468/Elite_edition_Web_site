@@ -1991,6 +1991,7 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
   const [pdfDuplicateModal, setPdfDuplicateModal] = useState(null); // { inv } when open
   const [pdfDuplicateChecked, setPdfDuplicateChecked] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [previewImageModal, setPreviewImageModal] = useState(null);
 
   const openPdfDialog = (inv) => {
     setPdfDuplicateChecked(false);
@@ -4905,9 +4906,30 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
                         <td style={{ padding: '0.7rem 0.6rem', color: '#64748b', fontWeight: 700 }}>{idx + 1}</td>
                         <td style={{ padding: '0.7rem 0.6rem' }}>
                           {it.imageUrl ? (
-                            <img src={convertDriveUrl(it.imageUrl, it.itemName)} alt="Item" style={{ width: 38, height: 38, borderRadius: 6, objectFit: 'cover', border: '1px solid #cbd5e1' }} onError={e => { e.target.style.display = 'none'; }} />
+                            <div
+                              style={{ position: 'relative', width: 44, height: 44, cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #cbd5e1', boxShadow: '0 2px 4px rgba(0,0,0,0.08)', background: '#f8fafc' }}
+                              onClick={() => setPreviewImageModal({ url: convertDriveUrl(it.imageUrl, it.itemName), title: it.itemName, jobNo: it.jobNo, fabric: it.fabric })}
+                              title="Click to view full design preview"
+                            >
+                              <img
+                                src={convertDriveUrl(it.imageUrl, it.itemName)}
+                                alt="Item"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.18s ease' }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.12)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                onError={e => {
+                                  e.target.style.display = 'none';
+                                  if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                                }}
+                              />
+                              <div style={{ display: 'none', width: '100%', height: '100%', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>
+                                No Img
+                              </div>
+                            </div>
                           ) : (
-                            <div style={{ width: 38, height: 38, borderRadius: 6, background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>No Img</div>
+                            <div style={{ width: 44, height: 44, borderRadius: 8, background: '#f1f5f9', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>
+                              No Img
+                            </div>
                           )}
                         </td>
                         <td style={{ padding: '0.7rem 0.6rem' }}>
@@ -5609,6 +5631,61 @@ export default function EliteBillingDepartment({ initialChallanData = null, depa
             });
           }}
         />
+      )}
+
+      {previewImageModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.78)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '1.5rem',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              padding: '1.25rem',
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              position: 'relative'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>{previewImageModal.title || 'Design Artwork Preview'}</h4>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: 4 }}>
+                  {previewImageModal.jobNo && <span style={{ fontSize: '0.75rem', color: '#7c3aed', background: '#f3e8ff', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>Job: {previewImageModal.jobNo}</span>}
+                  {previewImageModal.fabric && <span style={{ fontSize: '0.75rem', color: '#0284c7', background: '#e0f2fe', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>Fabric: {previewImageModal.fabric}</span>}
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewImageModal(null)}
+                style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8, padding: '0.45rem 0.85rem', fontWeight: 700, cursor: 'pointer', color: '#475569' }}
+              >
+                ✕ Close
+              </button>
+            </div>
+            <img
+              src={previewImageModal.url}
+              alt="Design Preview"
+              style={{ maxWidth: '82vw', maxHeight: '70vh', objectFit: 'contain', borderRadius: 10, border: '1px solid #e2e8f0' }}
+            />
+          </div>
+        </div>
       )}
 
     </div>
