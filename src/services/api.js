@@ -2048,7 +2048,79 @@ export const api = {
     }, 2000);
   },
 
+  async getDailyBackupHistory() {
+    return request('/backup/history');
+  },
+
+  async downloadDailyBackupArchive(fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const res = await fetch(`${baseUrl}/backup/download-archive/${encodeURIComponent(fileName)}`, {
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to download backup archive: ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 2000);
+  },
+
+  async sendBackupEmail({ fileName, recipients } = {}) {
+    return request('/backup/send-email', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, recipients }),
+    });
+  },
+
+  async getImagesBackupHistory() {
+    return request('/backup/images-history');
+  },
+
+  async downloadImagesBackupArchive(fileName) {
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('elite_auth_token');
+    const res = await fetch(`${baseUrl}/backup/download-images-archive/${encodeURIComponent(fileName)}`, {
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to download images archive: ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 2000);
+  },
+
+  async triggerR2Backup() {
+    return request('/backup/trigger-r2', { method: 'POST' });
+  },
+
+  async listR2Backups() {
+    return request('/backup/list-r2');
+  },
+
   // ── Authority-Based Inter-Department Communication ───────────────────────
+
   async getCommunicationGroups(userId) {
     const user = this.getCurrentUser();
     const uId = userId || (user ? (user._id || user.id) : '');
