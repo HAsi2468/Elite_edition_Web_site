@@ -771,6 +771,20 @@ export default function ScanAndPackScreen({ currentUser }) {
   // ── 📦 Mandatory Action 3: Store in Dispatch & Auto-Update ───────────────
   const handleStoreDispatch = async (order) => {
     if (!order || !order.awb) return;
+    const cleanAwb = String(order.awb).trim().toUpperCase();
+    const isReturnAwb = order.isReturn ||
+      cleanAwb.startsWith('MYSR') ||
+      cleanAwb.startsWith('RPC') ||
+      cleanAwb.startsWith('RP') ||
+      cleanAwb.startsWith('RET') ||
+      cleanAwb.startsWith('RMA') ||
+      cleanAwb.startsWith('FMPR') ||
+      cleanAwb.startsWith('RTO');
+
+    if (isReturnAwb) {
+      return await handleStoreReturn(order, order.orderClassification === 'RETURN_RTO' ? 'RTO' : 'CUSTOMER_RETURN');
+    }
+
     setStoringActionLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -1035,14 +1049,23 @@ export default function ScanAndPackScreen({ currentUser }) {
 
       // ⚡ Smart Auto-Routing Pipeline (Default behavior)
       if (screen1TargetMode === 'AUTO_CLASSIFY') {
-        if (orderData.isReturn) {
+        const isReturnOrder = orderData.isReturn ||
+          upperTrimmed.startsWith('MYSR') ||
+          upperTrimmed.startsWith('RPC') ||
+          upperTrimmed.startsWith('RP') ||
+          upperTrimmed.startsWith('RET') ||
+          upperTrimmed.startsWith('RMA') ||
+          upperTrimmed.startsWith('FMPR') ||
+          upperTrimmed.startsWith('RTO');
+
+        if (isReturnOrder) {
           // AUTO-SET TO SCREEN 3 (RETURN QC / INWARD)
           await handleStoreReturn(orderData, orderData.orderClassification === 'RETURN_RTO' ? 'RTO' : 'CUSTOMER_RETURN');
           setSessionReturnCount(c => c + 1);
           setExpandedRowAwb(trimmed.toUpperCase());
           setActiveOrder(null);
           playAudioCue('success');
-          setSuccessMsg(`🔄 [AUTO-SET TO RETURN SCREEN] AWB "${trimmed}" identified as ${orderData.orderClassificationLabel} & automatically stored into Screen 3 (Return QC)!`);
+          setSuccessMsg(`🔄 [AUTO-SET TO RETURN SCREEN] AWB "${trimmed}" identified as ${orderData.orderClassificationLabel || 'Return Parcel'} & automatically stored into Screen 3 (Return QC)!`);
           return;
         } else {
           // AUTO-SET TO SCREEN 2 (DISPATCH / PACK)
