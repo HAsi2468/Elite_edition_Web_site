@@ -2095,10 +2095,13 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
   };
 
   const openFileDialog = (acceptType = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,audio/*') => {
-    if (fileInputRef.current) {
-      fileInputRef.current.value = null;
-      if (acceptType) fileInputRef.current.accept = acceptType;
-      fileInputRef.current.click();
+    const el = fileInputRef.current || (typeof document !== 'undefined' ? document.getElementById('phoenix-chat-file-input') : null);
+    if (el) {
+      try {
+        el.value = '';
+      } catch (e) {}
+      if (acceptType) el.accept = acceptType;
+      el.click();
     }
   };
 

@@ -3406,7 +3406,7 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department, cu
   const [pageSize, setPageSize] = useState(25);
   const pageSizeRef = useRef(pageSize);
   pageSizeRef.current = pageSize;
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -3842,7 +3842,11 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department, cu
 
   useEffect(() => {
     fetchCards(false, 1);
-    const interval = setInterval(() => fetchCards(true, pageRef.current), 15000);
+    // Safety fallback poll every 2 minutes only when tab is active (relies primarily on real-time 'elite-data-refresh')
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchCards(true, pageRef.current);
+    }, 120000);
     const handleDataRefresh = () => fetchCards(true, pageRef.current);
     window.addEventListener('elite-data-refresh', handleDataRefresh);
 
