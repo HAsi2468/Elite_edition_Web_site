@@ -2781,7 +2781,17 @@ function JobCardForm({ card, onSave, onClose, department }) {
       } else {
         await api.createJobCard(payload);
         triggerPushNotification('✨ Job Card Created', `Job Card #${form.jobNo} created successfully!`, 'success');
-        dispatchScreenGroupEvent('jobcards', 'New Job Card Created 🚀', `Job Card #${form.jobNo} for ${form.party || 'Customer'} was created and dispatched to Job Cards Group.`, 'jobcards_list');
+        const isTestRecord = (
+          currentUser?.role === 'qa-automation' ||
+          currentUser?.companyId === 'TEST_COMPANY' ||
+          currentUser?.companyId === 'SANDBOX' ||
+          payload?.isSandbox === true ||
+          /^TEST[-_]/i.test(form.jobNo || form.designName || form.designNo || '') ||
+          /^QA[-_]/i.test(form.jobNo || form.designName || form.designNo || '')
+        );
+        if (!isTestRecord) {
+          dispatchScreenGroupEvent('jobcards', 'New Job Card Created 🚀', `Job Card #${form.jobNo} for ${form.party || 'Customer'} was created and dispatched to Job Cards Group.`, 'jobcards_list');
+        }
       }
       onSave();
     } catch (err) {
@@ -4018,8 +4028,12 @@ export default function JobCardPanel({ activeSubTab = 'jobcards', department, cu
           currentUser={currentUser}
           initialSubTab={effectiveSubTab === 'master' ? 'master' : (effectiveSubTab === 'sample' || effectiveSubTab === 'sample_design') ? 'sample' : 'catalogue'} 
         />
-      ) : effectiveSubTab === 'fabric' ? (
-        <FabricInventoryPanel department={department} onNavigateToBilling={(ch) => { setBillingChallanData(ch); setOverrideSubTab('billing'); }} />
+      ) : effectiveSubTab === 'fabric' || effectiveSubTab === 'challan' || effectiveSubTab === 'challans' || effectiveSubTab === 'dispatch' || effectiveSubTab === 'outward' ? (
+        <FabricInventoryPanel
+          department={department}
+          initialTab={effectiveSubTab === 'dispatch' || effectiveSubTab === 'outward' ? 'outward' : (effectiveSubTab === 'challan' || effectiveSubTab === 'challans') ? 'challan' : 'dashboard'}
+          onNavigateToBilling={(ch) => { setBillingChallanData(ch); setOverrideSubTab('billing'); }}
+        />
       ) : effectiveSubTab === 'costing' || effectiveSubTab === 'costing_pl' ? (
         <DigitalPrintCostingScreen companyEntity={department === 'stitching' ? "Elite Stitching" : "Elite Digital Print"} />
       ) : effectiveSubTab === 'billing' || effectiveSubTab === 'billing_digital' || effectiveSubTab === 'billing_elite' ? (
