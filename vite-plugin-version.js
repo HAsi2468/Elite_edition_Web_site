@@ -29,7 +29,7 @@ export default function versionPlugin() {
       const versionData = {
         version: Date.now(),
         releaseVersion: `v${getPkgVersion()}`,
-        releaseName: `v${getPkgVersion()} — Clean Chat Input Focus Ring & Ergonomics Suite`,
+        releaseName: `v${getPkgVersion()} — ERP-Core Orchestrator Autonomous AI Operations Suite`,
         gitCommit: commitHash,
         buildTime: new Date().toISOString(),
       };
@@ -51,7 +51,7 @@ export default function versionPlugin() {
       const versionData = {
         version: Date.now(),
         releaseVersion: `v${getPkgVersion()}`,
-        releaseName: `v${getPkgVersion()} — Clean Chat Input Focus Ring & Ergonomics Suite`,
+        releaseName: `v${getPkgVersion()} — ERP-Core Orchestrator Autonomous AI Operations Suite`,
         gitCommit: commitHash,
         buildTime: new Date().toISOString(),
       };
