@@ -3831,6 +3831,10 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   padding: 0 !important;
                   background: #ffffff !important;
                 }
+                .challan-copy-block {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
               }
             `}</style>
 
@@ -3838,8 +3842,18 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
             {(() => {
               const renderCopy = (copyLabel, copyColor) => {
                 const lotDisplay = showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A';
+                const tpsList = showPrintChallanModal.tps || [];
+                const numCols = 4;
+                const numRows = Math.ceil(tpsList.length / numCols);
+                const tableRows = Array.from({ length: numRows }, (_, rowIdx) => {
+                  return Array.from({ length: numCols }, (_, colIdx) => {
+                    const itemIdx = colIdx * numRows + rowIdx;
+                    return tpsList[itemIdx] || null;
+                  });
+                });
                 return (
                   <div
+                    className="challan-copy-block"
                     style={{
                       border: '1.5px solid #0f172a',
                       padding: '8px 12px',
@@ -3906,31 +3920,45 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       </div>
                     </div>
 
-                    {/* TP Breakdown Table */}
-                    <div style={{ marginBottom: '5px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.66rem', border: '1px solid #0f172a' }}>
+                    {/* 4-Column TP Breakdown Table */}
+                    <div style={{ marginBottom: '4px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.60rem', border: '1.5px solid #0f172a' }}>
                         <thead>
-                          <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
-                            <th style={{ padding: '3px 6px', borderRight: '1px solid #0f172a', width: 48 }}>Sr. No</th>
-                            <th style={{ padding: '3px 6px', borderRight: '1px solid #0f172a' }}>TP No.</th>
-                            <th style={{ padding: '3px 6px' }}>TP Meter (Mtr)</th>
+                          <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
+                            {[0, 1, 2, 3].map((cIdx) => (
+                              <React.Fragment key={cIdx}>
+                                <th style={{ padding: '2px 2px', width: '4%', borderRight: '1px solid #cbd5e1' }}>Sr</th>
+                                <th style={{ padding: '2px 3px', width: '10%', borderRight: '1px solid #cbd5e1' }}>TP No.</th>
+                                <th style={{ padding: '2px 3px', width: '11%', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none' }}>Mtr</th>
+                              </React.Fragment>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {(showPrintChallanModal.tps || []).map((tp, idx) => (
-                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
-                              <td style={{ padding: '2px 4px', borderRight: '1px solid #0f172a', fontWeight: 700 }}>{tp.srNo}</td>
-                              <td style={{ padding: '2px 4px', borderRight: '1px solid #0f172a', fontWeight: 800 }}>{tp.tpNo}</td>
-                              <td style={{ padding: '2px 4px', fontWeight: 800 }}>{Number(tp.tpMtr).toFixed(1)}</td>
+                          {tableRows.map((cols, rIdx) => (
+                            <tr key={rIdx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center', background: rIdx % 2 === 1 ? '#fafafa' : '#ffffff' }}>
+                              {cols.map((item, cIdx) => (
+                                <React.Fragment key={cIdx}>
+                                  <td style={{ padding: '1px 2px', borderRight: '1px solid #cbd5e1', fontWeight: 700, color: item ? '#475569' : 'transparent', fontSize: '0.58rem' }}>
+                                    {item ? item.srNo : '-'}
+                                  </td>
+                                  <td style={{ padding: '1px 2px', borderRight: '1px solid #cbd5e1', fontWeight: 800, color: item ? '#0f172a' : 'transparent', fontSize: '0.61rem' }}>
+                                    {item ? item.tpNo : '-'}
+                                  </td>
+                                  <td style={{ padding: '1px 3px', fontWeight: 800, color: item ? '#0f172a' : 'transparent', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none', fontSize: '0.61rem' }}>
+                                    {item ? Number(item.tpMtr).toFixed(1) : '-'}
+                                  </td>
+                                </React.Fragment>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
                         <tfoot>
                           <tr style={{ background: '#f8fafc', borderTop: '1.5px solid #0f172a', fontWeight: 900 }}>
-                            <td colSpan={2} style={{ padding: '3px 6px', borderRight: '1px solid #0f172a' }}>
+                            <td colSpan={6} style={{ padding: '3px 6px', borderRight: '1.5px solid #0f172a', textAlign: 'left', fontSize: '0.68rem' }}>
                               TOTAL TPs: {showPrintChallanModal.totalTps}
                             </td>
-                            <td style={{ padding: '3px 6px', textAlign: 'right', fontSize: '0.72rem' }}>
+                            <td colSpan={6} style={{ padding: '3px 6px', textAlign: 'right', fontSize: '0.70rem' }}>
                               GRAND TOTAL METERS: {showPrintChallanModal.totalMeters.toFixed(1)} Mtr
                             </td>
                           </tr>
@@ -3946,17 +3974,17 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                     )}
 
                     {/* Signatures */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '8px', paddingTop: '3px', fontSize: '0.65rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '4px', paddingTop: '2px', fontSize: '0.64rem' }}>
                       <div>
-                        <div style={{ height: '16px' }}></div>
-                        <div style={{ borderTop: '1px solid #0f172a', width: '140px', fontWeight: 700 }}>
+                        <div style={{ height: '14px' }}></div>
+                        <div style={{ borderTop: '1px solid #0f172a', width: '135px', fontWeight: 700 }}>
                           Receiver's Signature (Mill)
                         </div>
                       </div>
 
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ height: '16px' }}></div>
-                        <div style={{ borderTop: '1px solid #0f172a', width: '140px', marginLeft: 'auto', fontWeight: 700 }}>
+                        <div style={{ height: '14px' }}></div>
+                        <div style={{ borderTop: '1px solid #0f172a', width: '135px', marginLeft: 'auto', fontWeight: 700 }}>
                           For YAMUNAJI (Authorized)
                         </div>
                       </div>
