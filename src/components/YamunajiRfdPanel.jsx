@@ -359,6 +359,7 @@ const SEED_MILL_CHALLANS = [
     driverName: 'Ramesh Patel',
     processRequired: 'RFD Bleaching, Scouring & Heat Setting',
     fabricQuality: 'Pure Viscose Rayon 14kg',
+    lotNumber: 'GRAY-2026-001',
     totalTps: 5,
     totalMeters: 512.0,
     status: 'At Mill',
@@ -1095,6 +1096,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
       driverName: millChallanForm.driverName.trim() || 'Driver',
       processRequired: millChallanForm.processRequired,
       fabricQuality: primaryQuality,
+      lotNumber: Array.from(new Set(selectedMillTps.map(t => t.lotNumber).filter(Boolean))).join(', ') || 'GRAY-LOT-MIX',
       totalTps: selectedMillTps.length,
       totalMeters: totalMtrs,
       status: 'At Mill',
@@ -3609,6 +3611,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   <div><strong>Date:</strong> {showPrintChallanModal.challanDate}</div>
                   <div><strong>Vehicle No:</strong> {showPrintChallanModal.vehicleNo}</div>
                   <div><strong>Quality:</strong> {showPrintChallanModal.fabricQuality}</div>
+                  <div><strong>Lot No:</strong> <span style={{ fontWeight: 800 }}>{showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A'}</span></div>
                 </div>
               </div>
 
@@ -3618,7 +3621,6 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   <thead>
                     <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
                       <th style={{ padding: '6px', borderRight: '1px solid #0f172a', width: 60 }}>Sr. No</th>
-                      <th style={{ padding: '6px', borderRight: '1px solid #0f172a' }}>Lot Number</th>
                       <th style={{ padding: '6px', borderRight: '1px solid #0f172a' }}>TP No.</th>
                       <th style={{ padding: '6px' }}>TP Meter (Mtr)</th>
                     </tr>
@@ -3627,7 +3629,6 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                     {(showPrintChallanModal.tps || []).map((tp, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
                         <td style={{ padding: '5px', borderRight: '1px solid #0f172a', fontWeight: 700 }}>{tp.srNo}</td>
-                        <td style={{ padding: '5px', borderRight: '1px solid #0f172a' }}>{tp.lotNumber}</td>
                         <td style={{ padding: '5px', borderRight: '1px solid #0f172a', fontWeight: 800 }}>{tp.tpNo}</td>
                         <td style={{ padding: '5px', fontWeight: 800 }}>{Number(tp.tpMtr).toFixed(1)}</td>
                       </tr>
@@ -3638,7 +3639,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       <td colSpan={2} style={{ padding: '8px', borderRight: '1px solid #0f172a' }}>
                         TOTAL TPs: {showPrintChallanModal.totalTps}
                       </td>
-                      <td colSpan={2} style={{ padding: '8px', textAlign: 'right', fontSize: '0.95rem' }}>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '0.95rem' }}>
                         GRAND TOTAL METERS: {showPrintChallanModal.totalMeters.toFixed(1)} Mtr
                       </td>
                     </tr>
