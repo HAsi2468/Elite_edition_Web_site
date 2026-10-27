@@ -1159,6 +1159,60 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
     triggerEliteAlert(`Mill Outward Challan ${challanNo} (${primaryQuality}) created for ${selectedMillTps.length} TPs (${totalMtrs} Mtr)!`, 'Challan Created');
   };
 
+  const handlePrintChallanA4 = () => {
+    const el = document.getElementById('printable-mill-challan-a4');
+    if (!el) {
+      window.print();
+      return;
+    }
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Delivery Challan ${showPrintChallanModal?.challanNo || ''} - 2 Copies A4</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 5mm 8mm;
+            }
+            * {
+              box-sizing: border-box;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              color: #0f172a;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            table {
+              border-collapse: collapse;
+            }
+          </style>
+        </head>
+        <body>
+          ${el.innerHTML}
+          <script>
+            window.onload = function() {
+              window.focus();
+              setTimeout(function() {
+                window.print();
+              }, 250);
+            };
+          <\/script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
       {/* 🌟 Master Header Banner */}
@@ -3521,30 +3575,35 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
             className="glass-panel"
             style={{
               width: '100%',
-              maxWidth: 720,
+              maxWidth: 780,
               maxHeight: '94vh',
               overflowY: 'auto',
               background: '#ffffff',
               borderRadius: 12,
               boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
-              padding: '2rem',
+              padding: '1.5rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '1.25rem'
+              gap: '1rem'
             }}
           >
             {/* Top Toolbar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0f172a' }}>
-                Print Preview: Delivery Challan to Processing Mill
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <span style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a' }}>
+                  Delivery Challan to Processing Mill
+                </span>
+                <span style={{ marginLeft: 8, fontSize: '0.72rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: 4, fontWeight: 800, border: '1px solid #bbf7d0' }}>
+                  2 Copies on A4 (Original + Duplicate)
+                </span>
+              </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintChallanA4}
                   className="btn-primary"
-                  style={{ padding: '0.4rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  style={{ padding: '0.4rem 0.95rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', background: '#0284c7' }}
                 >
-                  <Printer size={14} /> Print Now
+                  <Printer size={15} /> Print / Save PDF (2 Copies A4)
                 </button>
                 <button
                   onClick={() => setShowPrintChallanModal(null)}
@@ -3555,121 +3614,184 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
               </div>
             </div>
 
-            {/* Printable Document Sheet */}
-            <div
-              id="printable-mill-challan"
-              style={{
-                border: '2px solid #0f172a',
-                padding: '1.5rem',
-                borderRadius: 4,
-                background: '#ffffff',
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-                color: '#0f172a'
-              }}
-            >
-              {/* Company Header */}
-              <div style={{ textAlign: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-                <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 900, letterSpacing: '0.05em' }}>
-                  YAMUNAJI (YJ)
-                </h1>
-                <p style={{ margin: '3px 0 0', fontSize: '0.82rem', fontWeight: 700 }}>
-                  TEXTILE GRAY & RFD PROCESSING DIVISION — SURAT, GUJARAT
-                </p>
-                <p style={{ margin: '2px 0 0', fontSize: '0.76rem', color: '#334155' }}>
-                  GSTIN: <strong>24AAGFY0182C1ZP</strong> | Ring Road Textile Market, Surat - 395002 | Phone: +91 98250 12345
-                </p>
-                <div style={{ marginTop: 6, display: 'inline-block', border: '1.5px solid #0f172a', padding: '3px 14px', fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  DELIVERY CHALLAN FOR PROCESSING MILL
-                </div>
-              </div>
+            {/* Embedded Print Styles for A4 Portrait 2-Copies */}
+            <style>{`
+              @page {
+                size: A4 portrait;
+                margin: 5mm 7mm;
+              }
+              @media print {
+                html, body {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #ffffff !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body * {
+                  visibility: hidden !important;
+                }
+                #printable-mill-challan-a4, #printable-mill-challan-a4 * {
+                  visibility: visible !important;
+                }
+                #printable-mill-challan-a4 {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #ffffff !important;
+                }
+              }
+            `}</style>
 
-              {/* Meta Info Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1rem', borderBottom: '1px solid #0f172a', paddingBottom: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>TO (PROCESSING MILL):</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 900, marginTop: 2, color: '#0f172a' }}>{showPrintChallanModal.millParty}</div>
-                  {showPrintChallanModal.millGst && (
-                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0369a1', marginTop: 2 }}>
-                      GSTIN: {showPrintChallanModal.millGst}
+            {/* Helper to render each Challan copy */}
+            {(() => {
+              const renderCopy = (copyLabel, copyColor) => {
+                const lotDisplay = showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A';
+                return (
+                  <div
+                    style={{
+                      border: '1.5px solid #0f172a',
+                      padding: '8px 12px',
+                      borderRadius: 4,
+                      background: '#ffffff',
+                      fontFamily: 'system-ui, -apple-system, sans-serif',
+                      color: '#0f172a',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {/* Company Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px', marginBottom: '5px' }}>
+                      <div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 900, letterSpacing: '0.03em', lineHeight: 1.1, color: '#0f172a' }}>
+                          YAMUNAJI (YJ)
+                        </div>
+                        <div style={{ fontSize: '0.66rem', fontWeight: 700, color: '#1e293b', marginTop: 1 }}>
+                          TEXTILE GRAY & RFD PROCESSING DIVISION — SURAT, GUJARAT
+                        </div>
+                        <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: 1 }}>
+                          GSTIN: <strong>24AAGFY0182C1ZP</strong> | Ring Road Textile Market, Surat - 395002 | Phone: +91 98250 12345
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ display: 'inline-block', border: `1.5px solid ${copyColor}`, background: `${copyColor}15`, color: copyColor, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 900, borderRadius: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          {copyLabel}
+                        </span>
+                        <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#0f172a', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                          DELIVERY CHALLAN (PROCESSING MILL)
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  {(showPrintChallanModal.millAddress || showPrintChallanModal.millCity) && (
-                    <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: 2 }}>
-                      {showPrintChallanModal.millAddress ? `${showPrintChallanModal.millAddress}, ` : ''}{showPrintChallanModal.millCity || ''}
+
+                    {/* Meta Info Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '0.75rem', borderBottom: '1px solid #0f172a', paddingBottom: '4px', marginBottom: '5px', fontSize: '0.68rem' }}>
+                      <div>
+                        <div style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 700 }}>TO (PROCESSING MILL):</div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 900, color: '#0f172a', marginTop: 1 }}>{showPrintChallanModal.millParty}</div>
+                        {showPrintChallanModal.millGst && (
+                          <div style={{ fontSize: '0.66rem', fontWeight: 800, color: '#0369a1', marginTop: 1 }}>
+                            GSTIN: {showPrintChallanModal.millGst}
+                          </div>
+                        )}
+                        {(showPrintChallanModal.millAddress || showPrintChallanModal.millCity) && (
+                          <div style={{ fontSize: '0.62rem', color: '#334155', marginTop: 1 }}>
+                            {showPrintChallanModal.millAddress ? `${showPrintChallanModal.millAddress}, ` : ''}{showPrintChallanModal.millCity || ''}
+                          </div>
+                        )}
+                        {showPrintChallanModal.millPhone && (
+                          <div style={{ fontSize: '0.61rem', color: '#475569', marginTop: 1 }}>
+                            Phone: {showPrintChallanModal.millPhone} {showPrintChallanModal.millContact ? `(${showPrintChallanModal.millContact})` : ''}
+                          </div>
+                        )}
+                        <div style={{ marginTop: 2, fontSize: '0.66rem' }}><strong>Process Required:</strong> {showPrintChallanModal.processRequired}</div>
+                      </div>
+
+                      <div style={{ textAlign: 'right', fontSize: '0.68rem', lineHeight: 1.35 }}>
+                        <div><strong>Challan No:</strong> <span style={{ fontSize: '0.82rem', fontWeight: 900, color: '#059669' }}>{showPrintChallanModal.challanNo}</span></div>
+                        <div><strong>Date:</strong> {showPrintChallanModal.challanDate}</div>
+                        <div><strong>Vehicle No:</strong> {showPrintChallanModal.vehicleNo}</div>
+                        <div><strong>Quality:</strong> {showPrintChallanModal.fabricQuality}</div>
+                        <div><strong>Lot No:</strong> <span style={{ fontWeight: 800 }}>{lotDisplay}</span></div>
+                      </div>
                     </div>
-                  )}
-                  {showPrintChallanModal.millPhone && (
-                    <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: 1 }}>
-                      Phone: {showPrintChallanModal.millPhone} {showPrintChallanModal.millContact ? `(${showPrintChallanModal.millContact})` : ''}
+
+                    {/* TP Breakdown Table */}
+                    <div style={{ marginBottom: '5px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.66rem', border: '1px solid #0f172a' }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
+                            <th style={{ padding: '3px 6px', borderRight: '1px solid #0f172a', width: 48 }}>Sr. No</th>
+                            <th style={{ padding: '3px 6px', borderRight: '1px solid #0f172a' }}>TP No.</th>
+                            <th style={{ padding: '3px 6px' }}>TP Meter (Mtr)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(showPrintChallanModal.tps || []).map((tp, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
+                              <td style={{ padding: '2px 4px', borderRight: '1px solid #0f172a', fontWeight: 700 }}>{tp.srNo}</td>
+                              <td style={{ padding: '2px 4px', borderRight: '1px solid #0f172a', fontWeight: 800 }}>{tp.tpNo}</td>
+                              <td style={{ padding: '2px 4px', fontWeight: 800 }}>{Number(tp.tpMtr).toFixed(1)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ background: '#f8fafc', borderTop: '1.5px solid #0f172a', fontWeight: 900 }}>
+                            <td colSpan={2} style={{ padding: '3px 6px', borderRight: '1px solid #0f172a' }}>
+                              TOTAL TPs: {showPrintChallanModal.totalTps}
+                            </td>
+                            <td style={{ padding: '3px 6px', textAlign: 'right', fontSize: '0.72rem' }}>
+                              GRAND TOTAL METERS: {showPrintChallanModal.totalMeters.toFixed(1)} Mtr
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
                     </div>
-                  )}
-                  <div style={{ marginTop: 4 }}><strong>Process Required:</strong> {showPrintChallanModal.processRequired}</div>
-                </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <div><strong>Challan No:</strong> <span style={{ fontSize: '0.95rem', fontWeight: 800 }}>{showPrintChallanModal.challanNo}</span></div>
-                  <div><strong>Date:</strong> {showPrintChallanModal.challanDate}</div>
-                  <div><strong>Vehicle No:</strong> {showPrintChallanModal.vehicleNo}</div>
-                  <div><strong>Quality:</strong> {showPrintChallanModal.fabricQuality}</div>
-                  <div><strong>Lot No:</strong> <span style={{ fontWeight: 800 }}>{showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A'}</span></div>
-                </div>
-              </div>
+                    {/* Notes if any */}
+                    {showPrintChallanModal.notes && (
+                      <div style={{ fontSize: '0.62rem', marginBottom: '5px', background: '#f8fafc', padding: '2px 6px', border: '1px solid #e2e8f0' }}>
+                        <strong>Notes:</strong> {showPrintChallanModal.notes}
+                      </div>
+                    )}
 
-              {/* TP Breakdown Table */}
-              <div style={{ marginBottom: '1rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', border: '1px solid #0f172a' }}>
-                  <thead>
-                    <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
-                      <th style={{ padding: '6px', borderRight: '1px solid #0f172a', width: 60 }}>Sr. No</th>
-                      <th style={{ padding: '6px', borderRight: '1px solid #0f172a' }}>TP No.</th>
-                      <th style={{ padding: '6px' }}>TP Meter (Mtr)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(showPrintChallanModal.tps || []).map((tp, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
-                        <td style={{ padding: '5px', borderRight: '1px solid #0f172a', fontWeight: 700 }}>{tp.srNo}</td>
-                        <td style={{ padding: '5px', borderRight: '1px solid #0f172a', fontWeight: 800 }}>{tp.tpNo}</td>
-                        <td style={{ padding: '5px', fontWeight: 800 }}>{Number(tp.tpMtr).toFixed(1)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: '#f8fafc', borderTop: '2px solid #0f172a', fontWeight: 900 }}>
-                      <td colSpan={2} style={{ padding: '8px', borderRight: '1px solid #0f172a' }}>
-                        TOTAL TPs: {showPrintChallanModal.totalTps}
-                      </td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '0.95rem' }}>
-                        GRAND TOTAL METERS: {showPrintChallanModal.totalMeters.toFixed(1)} Mtr
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    {/* Signatures */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '8px', paddingTop: '3px', fontSize: '0.65rem' }}>
+                      <div>
+                        <div style={{ height: '16px' }}></div>
+                        <div style={{ borderTop: '1px solid #0f172a', width: '140px', fontWeight: 700 }}>
+                          Receiver's Signature (Mill)
+                        </div>
+                      </div>
 
-              {/* Remarks & Signatures */}
-              {showPrintChallanModal.notes && (
-                <div style={{ fontSize: '0.75rem', marginBottom: '1.5rem', background: '#f8fafc', padding: '6px 10px', border: '1px solid #e2e8f0' }}>
-                  <strong>Notes:</strong> {showPrintChallanModal.notes}
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '2.5rem', paddingTop: '1rem', borderTop: '1px dashed #cbd5e1', fontSize: '0.78rem' }}>
-                <div>
-                  <div style={{ height: '35px' }}></div>
-                  <div style={{ borderTop: '1px solid #0f172a', width: '180px', fontWeight: 700 }}>
-                    Receiver's Signature (Mill)
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ height: '16px' }}></div>
+                        <div style={{ borderTop: '1px solid #0f172a', width: '140px', marginLeft: 'auto', fontWeight: 700 }}>
+                          For YAMUNAJI (Authorized)
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                );
+              };
 
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ height: '35px' }}></div>
-                  <div style={{ borderTop: '1px solid #0f172a', width: '180px', marginLeft: 'auto', fontWeight: 700 }}>
-                    For YAMUNAJI (Authorized)
+              return (
+                <div id="printable-mill-challan-a4" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {renderCopy('ORIGINAL - MILL COPY', '#0284c7')}
+
+                  {/* Perforated Cut Line */}
+                  <div style={{ borderTop: '1.5px dashed #64748b', margin: '6px 0', position: 'relative', textAlign: 'center' }}>
+                    <span style={{ position: 'relative', top: '-8px', background: '#ffffff', padding: '0 10px', fontSize: '0.62rem', color: '#475569', fontWeight: 800, letterSpacing: '0.06em' }}>
+                      ✂ CUT HERE — 2 COPIES ON A4 (ORIGINAL ABOVE • DUPLICATE BELOW) ✂
+                    </span>
                   </div>
+
+                  {renderCopy('DUPLICATE - SENDER / OFFICE COPY', '#7c3aed')}
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}
