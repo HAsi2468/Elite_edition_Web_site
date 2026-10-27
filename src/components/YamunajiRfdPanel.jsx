@@ -3853,6 +3853,12 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
                 }
+                .single-page-print .challan-copy-block {
+                  page-break-before: auto !important;
+                  break-before: auto !important;
+                  page-break-after: auto !important;
+                  break-after: auto !important;
+                }
                 .multi-page-print .challan-copy-block:first-of-type {
                   page-break-after: always !important;
                   break-after: page !important;
@@ -4051,7 +4057,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   )}
 
                   {renderCopy('DUPLICATE - SENDER / OFFICE COPY', '#7c3aed', {
-                    className: 'page-break-always',
+                    className: isMultiPage ? 'page-break-always' : '',
                     style: isMultiPage ? { pageBreakBefore: 'always', breakBefore: 'page' } : {}
                   })}
                 </div>
