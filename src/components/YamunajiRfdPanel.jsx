@@ -345,6 +345,29 @@ const SEED_GRAY_LOTS = [
       status: 'In Stock',
       millChallanNo: null
     }))
+  },
+  {
+    id: 'GRAY-LOT-2026-004',
+    lotNumber: 'GRAY-2026-004',
+    inwardDate: '2026-10-27',
+    weaverParty: 'Harikrishna Textiles',
+    weaverChallanNo: 'HKT-5099',
+    fabricQuality: 'Pure Modal Satin 60s',
+    panna: '44"',
+    totalTps: 50,
+    totalMeters: 5110.0,
+    sentToMillMeters: 0,
+    ratePerMeter: 82.0,
+    status: 'In Stock',
+    rackLocation: 'Gray Rack G-04',
+    remarks: 'Bulk 50 TP fresh inward from Harikrishna looms. Ready for RFD processing.',
+    tps: Array.from({ length: 50 }, (_, i) => ({
+      srNo: i + 1,
+      tpNo: `50${String(i + 1).padStart(2, '0')}`,
+      tpMtr: parseFloat((101.0 + ((i * 7) % 25) * 0.1).toFixed(1)),
+      status: 'In Stock',
+      millChallanNo: null
+    }))
   }
 ];
 
@@ -449,7 +472,13 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
       const saved = localStorage.getItem(STORAGE_GRAY_KEY);
       if (saved) {
         const p = JSON.parse(saved);
-        if (Array.isArray(p) && p.length > 0) return p;
+        if (Array.isArray(p) && p.length > 0) {
+          if (!p.some(l => l.lotNumber === 'GRAY-2026-004' || l.totalTps === 50)) {
+            const lot50 = SEED_GRAY_LOTS.find(l => l.lotNumber === 'GRAY-2026-004');
+            if (lot50) return [lot50, ...p];
+          }
+          return p;
+        }
       }
     } catch (e) {}
     return SEED_GRAY_LOTS;
@@ -782,6 +811,52 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
       const reIndexed = filtered.map((item, idx) => ({ ...item, srNo: idx + 1 }));
       return { ...prev, tps: reIndexed };
     });
+  };
+
+  const handleQuickGenerate50Tps = () => {
+    setWeaverForm(prev => {
+      const generated = Array.from({ length: 50 }, (_, i) => {
+        const srNo = i + 1;
+        const tpMtr = (101.0 + ((i * 7) % 25) * 0.1).toFixed(1);
+        return {
+          srNo,
+          tpNo: `50${String(srNo).padStart(2, '0')}`,
+          tpMtr: String(tpMtr)
+        };
+      });
+      return {
+        ...prev,
+        tps: generated
+      };
+    });
+    triggerEliteAlert('Generated 50 TP rows with sequential numbers and realistic meters!', '50 TPs Generated');
+  };
+
+  const handlePreFill50TpInward = () => {
+    const nextLot = `GRAY-2026-${String(grayLots.length + 1).padStart(3, '0')}`;
+    const generated = Array.from({ length: 50 }, (_, i) => {
+      const srNo = i + 1;
+      const tpMtr = (101.0 + ((i * 7) % 25) * 0.1).toFixed(1);
+      return {
+        srNo,
+        tpNo: `50${String(srNo).padStart(2, '0')}`,
+        tpMtr: String(tpMtr)
+      };
+    });
+    setWeaverForm(prev => ({
+      ...prev,
+      lotNumber: nextLot,
+      inwardDate: new Date().toISOString().split('T')[0],
+      weaverParty: getPartyName(configs.weavers[0]) || 'Harikrishna Textiles',
+      weaverChallanNo: 'HKT-5099',
+      fabricQuality: configs.qualities[0] || 'Pure Modal Satin 60s',
+      panna: configs.pannas[0] || '44"',
+      ratePerMeter: 82,
+      rackLocation: 'Gray Rack G-04',
+      remarks: 'Bulk 50 TP inward received from weaver loom. Quality verified.',
+      tps: generated
+    }));
+    triggerEliteAlert('Populated complete 50 TP Inward entry! Review and click Save.', '50 TPs Ready');
   };
 
   const handleTpKeyDown = (e, index) => {
@@ -2648,9 +2723,19 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   <Boxes size={22} color="#0284c7" />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>
-                    + Inward Gray Fabric from Weaver
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>
+                      + Inward Gray Fabric from Weaver
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handlePreFill50TpInward}
+                      style={{ padding: '3px 10px', fontSize: '0.72rem', background: '#eff6ff', color: '#0284c7', border: '1px solid #bfdbfe', borderRadius: '6px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      title="Click to automatically fill all fields with 50 TPs sample entry"
+                    >
+                      ⚡ Quick 50 TP Preset
+                    </button>
+                  </div>
                   <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
                     Select weaver & quality from masters. Enter individual TP Numbers & TP Meters. Press Enter to add next row.
                   </span>
@@ -2856,6 +2941,15 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   </div>
 
                   <div style={{ display: 'flex', gap: '5px' }}>
+                    <button
+                      type="button"
+                      onClick={handleQuickGenerate50Tps}
+                      className="btn-secondary"
+                      style={{ padding: '3px 8px', fontSize: '0.72rem', height: '26px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', fontWeight: 800 }}
+                      title="Add 50 sequential TP rows with valid meters"
+                    >
+                      ⚡ + 50 TPs (Bulk)
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleAddMultipleTpRows(5)}
