@@ -3819,6 +3819,9 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 body * {
                   visibility: hidden !important;
                 }
+                .no-print {
+                  display: none !important;
+                }
                 #printable-mill-challan-a4, #printable-mill-challan-a4 * {
                   visibility: visible !important;
                 }
@@ -3830,10 +3833,22 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   margin: 0 !important;
                   padding: 0 !important;
                   background: #ffffff !important;
+                  display: block !important;
                 }
                 .challan-copy-block {
+                  display: block !important;
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
+                }
+                .multi-page-print .challan-copy-block:first-of-type {
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  margin-bottom: 0 !important;
+                }
+                .multi-page-print .challan-copy-block:last-of-type {
+                  page-break-before: always !important;
+                  break-before: page !important;
+                  margin-top: 0 !important;
                 }
               }
             `}</style>
@@ -3993,16 +4008,31 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 );
               };
 
+              const tpsCount = (showPrintChallanModal.tps || []).length;
+              const isMultiPage = Math.ceil(tpsCount / 4) > 13; // > 13 rows per copy means each copy needs full A4 page
+
               return (
-                <div id="printable-mill-challan-a4" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div
+                  id="printable-mill-challan-a4"
+                  className={isMultiPage ? 'multi-page-print' : 'single-page-print'}
+                  style={{ display: 'flex', flexDirection: 'column', gap: isMultiPage ? '16px' : '6px' }}
+                >
                   {renderCopy('ORIGINAL - MILL COPY', '#0284c7')}
 
-                  {/* Perforated Cut Line */}
-                  <div style={{ borderTop: '1.5px dashed #64748b', margin: '6px 0', position: 'relative', textAlign: 'center' }}>
-                    <span style={{ position: 'relative', top: '-8px', background: '#ffffff', padding: '0 10px', fontSize: '0.62rem', color: '#475569', fontWeight: 800, letterSpacing: '0.06em' }}>
-                      ✂ CUT HERE — 2 COPIES ON A4 (ORIGINAL ABOVE • DUPLICATE BELOW) ✂
-                    </span>
-                  </div>
+                  {/* Cut Line for 1-Page (<= 50 TPs) or Page Break Banner for 2-Pages (> 50 TPs) */}
+                  {!isMultiPage ? (
+                    <div style={{ borderTop: '1.5px dashed #64748b', margin: '6px 0', position: 'relative', textAlign: 'center' }}>
+                      <span style={{ position: 'relative', top: '-8px', background: '#ffffff', padding: '0 10px', fontSize: '0.62rem', color: '#475569', fontWeight: 800, letterSpacing: '0.06em' }}>
+                        ✂ CUT HERE — 2 COPIES ON A4 (ORIGINAL ABOVE • DUPLICATE BELOW) ✂
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="no-print" style={{ borderTop: '2px dashed #9333ea', margin: '10px 0', position: 'relative', textAlign: 'center' }}>
+                      <span style={{ position: 'relative', top: '-9px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 4, padding: '2px 12px', fontSize: '0.64rem', color: '#7c3aed', fontWeight: 900, letterSpacing: '0.05em' }}>
+                        📄 PAGE BREAK — COPY 2 (DUPLICATE) PRINTS FULLY ON PAGE 2 OF PDF
+                      </span>
+                    </div>
+                  )}
 
                   {renderCopy('DUPLICATE - SENDER / OFFICE COPY', '#7c3aed')}
                 </div>
