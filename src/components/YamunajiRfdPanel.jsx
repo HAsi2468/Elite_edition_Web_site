@@ -1341,11 +1341,24 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
               background: #ffffff;
               font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
               color: #0f172a;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             table {
               border-collapse: collapse;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .challan-copy-block {
+              display: block !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .page-break-always {
+              page-break-before: always !important;
+              break-before: page !important;
+              margin-top: 0 !important;
             }
           </style>
         </head>
@@ -3855,7 +3868,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
 
             {/* Helper to render each Challan copy */}
             {(() => {
-              const renderCopy = (copyLabel, copyColor) => {
+              const renderCopy = (copyLabel, copyColor, extraProps = {}) => {
                 const lotDisplay = showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A';
                 const tpsList = showPrintChallanModal.tps || [];
                 const numCols = 4;
@@ -3868,7 +3881,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 });
                 return (
                   <div
-                    className="challan-copy-block"
+                    className={`challan-copy-block ${extraProps.className || ''}`}
                     style={{
                       border: '1.5px solid #0f172a',
                       padding: '8px 12px',
@@ -3876,7 +3889,8 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       background: '#ffffff',
                       fontFamily: 'system-ui, -apple-system, sans-serif',
                       color: '#0f172a',
-                      boxSizing: 'border-box'
+                      boxSizing: 'border-box',
+                      ...(extraProps.style || {})
                     }}
                   >
                     {/* Company Header */}
@@ -4015,9 +4029,11 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 <div
                   id="printable-mill-challan-a4"
                   className={isMultiPage ? 'multi-page-print' : 'single-page-print'}
-                  style={{ display: 'flex', flexDirection: 'column', gap: isMultiPage ? '16px' : '6px' }}
+                  style={isMultiPage ? { display: 'block' } : { display: 'flex', flexDirection: 'column', gap: '6px' }}
                 >
-                  {renderCopy('ORIGINAL - MILL COPY', '#0284c7')}
+                  {renderCopy('ORIGINAL - MILL COPY', '#0284c7', {
+                    style: isMultiPage ? { pageBreakAfter: 'always', breakAfter: 'page', marginBottom: '24px' } : { marginBottom: '6px' }
+                  })}
 
                   {/* Cut Line for 1-Page (<= 50 TPs) or Page Break Banner for 2-Pages (> 50 TPs) */}
                   {!isMultiPage ? (
@@ -4027,14 +4043,17 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       </span>
                     </div>
                   ) : (
-                    <div className="no-print" style={{ borderTop: '2px dashed #9333ea', margin: '10px 0', position: 'relative', textAlign: 'center' }}>
-                      <span style={{ position: 'relative', top: '-9px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 4, padding: '2px 12px', fontSize: '0.64rem', color: '#7c3aed', fontWeight: 900, letterSpacing: '0.05em' }}>
-                        📄 PAGE BREAK — COPY 2 (DUPLICATE) PRINTS FULLY ON PAGE 2 OF PDF
+                    <div className="no-print" style={{ borderTop: '2px dashed #9333ea', margin: '14px 0', position: 'relative', textAlign: 'center' }}>
+                      <span style={{ position: 'relative', top: '-9px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 4, padding: '3px 14px', fontSize: '0.64rem', color: '#7c3aed', fontWeight: 900, letterSpacing: '0.05em' }}>
+                        📄 PAGE BREAK — DUPLICATE COPY PRINTS COMPLETELY ON PAGE 2 OF PDF
                       </span>
                     </div>
                   )}
 
-                  {renderCopy('DUPLICATE - SENDER / OFFICE COPY', '#7c3aed')}
+                  {renderCopy('DUPLICATE - SENDER / OFFICE COPY', '#7c3aed', {
+                    className: 'page-break-always',
+                    style: isMultiPage ? { pageBreakBefore: 'always', breakBefore: 'page' } : {}
+                  })}
                 </div>
               );
             })()}
