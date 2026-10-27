@@ -1330,14 +1330,15 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
           <style>
             @page {
               size: A4 portrait;
-              margin: 5mm 8mm;
+              margin: 5mm 7mm;
             }
             * {
               box-sizing: border-box;
             }
-            body {
+            html, body {
               margin: 0;
               padding: 0;
+              height: 100%;
               background: #ffffff;
               font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
               color: #0f172a;
@@ -1350,10 +1351,66 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
             .no-print {
               display: none !important;
             }
-            .challan-copy-block {
-              display: block !important;
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
+            .single-page-print {
+              width: 100%;
+              height: 285mm;
+              max-height: 285mm;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              box-sizing: border-box;
+              overflow: hidden;
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            .single-page-print .challan-copy-block {
+              height: 138mm;
+              max-height: 138mm;
+              box-sizing: border-box;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              overflow: hidden;
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            .single-page-print .challan-cut-line {
+              height: 7mm;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin: 0;
+            }
+            .single-page-print .challan-table-wrapper {
+              flex: 1 1 auto;
+              display: flex;
+              flex-direction: column;
+              min-height: 0;
+            }
+            .single-page-print .challan-table-wrapper table {
+              height: 100%;
+              flex: 1;
+            }
+            .multi-page-print {
+              display: block;
+              width: 100%;
+            }
+            .multi-page-print .challan-copy-block {
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              min-height: 280mm;
+              box-sizing: border-box;
+            }
+            .multi-page-print .challan-copy-block:first-of-type {
+              page-break-after: always !important;
+              break-after: page !important;
+              margin-bottom: 0 !important;
+            }
+            .multi-page-print .challan-copy-block:last-of-type {
+              page-break-before: always !important;
+              break-before: page !important;
+              margin-top: 0 !important;
             }
             .page-break-always {
               page-break-before: always !important;
@@ -1363,7 +1420,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
           </style>
         </head>
         <body>
-          ${el.innerHTML}
+          ${el.outerHTML}
           <script>
             window.onload = function() {
               window.focus();
@@ -3825,6 +3882,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 html, body {
                   margin: 0 !important;
                   padding: 0 !important;
+                  height: 100% !important;
                   background: #ffffff !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
@@ -3846,18 +3904,57 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   margin: 0 !important;
                   padding: 0 !important;
                   background: #ffffff !important;
-                  display: block !important;
                 }
-                .challan-copy-block {
-                  display: block !important;
+                .single-page-print {
+                  width: 100% !important;
+                  height: 285mm !important;
+                  max-height: 285mm !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                  box-sizing: border-box !important;
+                  overflow: hidden !important;
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
                 }
                 .single-page-print .challan-copy-block {
-                  page-break-before: auto !important;
-                  break-before: auto !important;
-                  page-break-after: auto !important;
-                  break-after: auto !important;
+                  height: 138mm !important;
+                  max-height: 138mm !important;
+                  box-sizing: border-box !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                  overflow: hidden !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+                .single-page-print .challan-cut-line {
+                  height: 7mm !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  justify-content: center !important;
+                  margin: 0 !important;
+                }
+                .single-page-print .challan-table-wrapper {
+                  flex: 1 1 auto !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  min-height: 0 !important;
+                }
+                .single-page-print .challan-table-wrapper table {
+                  height: 100% !important;
+                  flex: 1 !important;
+                }
+                .multi-page-print {
+                  display: block !important;
+                  width: 100% !important;
+                }
+                .multi-page-print .challan-copy-block {
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                  min-height: 280mm !important;
+                  box-sizing: border-box !important;
                 }
                 .multi-page-print .challan-copy-block:first-of-type {
                   page-break-after: always !important;
@@ -3869,16 +3966,78 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                   break-before: page !important;
                   margin-top: 0 !important;
                 }
+                .page-break-always {
+                  page-break-before: always !important;
+                  break-before: page !important;
+                  margin-top: 0 !important;
+                }
               }
             `}</style>
 
             {/* Helper to render each Challan copy */}
             {(() => {
+              const tpsList = showPrintChallanModal.tps || [];
+              const numCols = 4;
+              const numRows = Math.ceil(tpsList.length / numCols);
+              const isMultiPage = numRows > 13; // > 13 rows per copy means each copy needs full A4 page
+
+              // Dynamic sizing for fit-to-paper without dead whitespace at the bottom
+              let rowPaddingY = '1.5px';
+              let tableFontSize = '0.60rem';
+              let headerFontSize = '0.62rem';
+              let tableSrFontSize = '0.58rem';
+              let cellPaddingX = '2px';
+              let metaGridMarginBottom = '4px';
+              let metaGridPaddingBottom = '4px';
+              let headerMarginBottom = '4px';
+              let signatureLineHeight = '14px';
+
+              if (!isMultiPage) {
+                if (numRows <= 4) {
+                  rowPaddingY = '6px';
+                  tableFontSize = '0.68rem';
+                  headerFontSize = '0.68rem';
+                  tableSrFontSize = '0.64rem';
+                  cellPaddingX = '3px';
+                  metaGridMarginBottom = '6px';
+                  metaGridPaddingBottom = '5px';
+                  headerMarginBottom = '5px';
+                  signatureLineHeight = '22px';
+                } else if (numRows <= 7) {
+                  rowPaddingY = '4.5px';
+                  tableFontSize = '0.64rem';
+                  headerFontSize = '0.64rem';
+                  tableSrFontSize = '0.60rem';
+                  cellPaddingX = '3px';
+                  metaGridMarginBottom = '5px';
+                  metaGridPaddingBottom = '4px';
+                  headerMarginBottom = '4px';
+                  signatureLineHeight = '18px';
+                } else if (numRows <= 10) {
+                  rowPaddingY = '3px';
+                  tableFontSize = '0.62rem';
+                  headerFontSize = '0.62rem';
+                  tableSrFontSize = '0.58rem';
+                  cellPaddingX = '2px';
+                  metaGridMarginBottom = '4px';
+                  metaGridPaddingBottom = '4px';
+                  headerMarginBottom = '4px';
+                  signatureLineHeight = '16px';
+                } else {
+                  rowPaddingY = '1.5px';
+                  tableFontSize = '0.60rem';
+                  headerFontSize = '0.60rem';
+                  tableSrFontSize = '0.56rem';
+                  cellPaddingX = '2px';
+                  metaGridMarginBottom = '3px';
+                  metaGridPaddingBottom = '3px';
+                  headerMarginBottom = '3px';
+                  signatureLineHeight = '13px';
+                }
+              }
+
               const renderCopy = (copyLabel, copyColor, extraProps = {}) => {
                 const lotDisplay = showPrintChallanModal.lotNumber || Array.from(new Set((showPrintChallanModal.tps || []).map(tp => tp.lotNumber).filter(Boolean))).join(', ') || 'N/A';
-                const tpsList = showPrintChallanModal.tps || [];
-                const numCols = 4;
-                const numRows = Math.ceil(tpsList.length / numCols);
                 const tableRows = Array.from({ length: numRows }, (_, rowIdx) => {
                   return Array.from({ length: numCols }, (_, colIdx) => {
                     const itemIdx = colIdx * numRows + rowIdx;
@@ -3890,81 +4049,86 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                     className={`challan-copy-block ${extraProps.className || ''}`}
                     style={{
                       border: '1.5px solid #0f172a',
-                      padding: '8px 12px',
+                      padding: '6px 12px',
                       borderRadius: 4,
                       background: '#ffffff',
                       fontFamily: 'system-ui, -apple-system, sans-serif',
                       color: '#0f172a',
                       boxSizing: 'border-box',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
                       ...(extraProps.style || {})
                     }}
                   >
-                    {/* Company Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px', marginBottom: '5px' }}>
-                      <div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 900, letterSpacing: '0.03em', lineHeight: 1.1, color: '#0f172a' }}>
-                          YAMUNAJI (YJ)
+                    <div>
+                      {/* Company Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '3px', marginBottom: headerMarginBottom }}>
+                        <div>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 900, letterSpacing: '0.03em', lineHeight: 1.1, color: '#0f172a' }}>
+                            YAMUNAJI (YJ)
+                          </div>
+                          <div style={{ fontSize: '0.66rem', fontWeight: 700, color: '#1e293b', marginTop: 1 }}>
+                            TEXTILE GRAY & RFD PROCESSING DIVISION — SURAT, GUJARAT
+                          </div>
+                          <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: 1 }}>
+                            GSTIN: <strong>24AAGFY0182C1ZP</strong> | Ring Road Textile Market, Surat - 395002 | Phone: +91 98250 12345
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.66rem', fontWeight: 700, color: '#1e293b', marginTop: 1 }}>
-                          TEXTILE GRAY & RFD PROCESSING DIVISION — SURAT, GUJARAT
-                        </div>
-                        <div style={{ fontSize: '0.6rem', color: '#475569', marginTop: 1 }}>
-                          GSTIN: <strong>24AAGFY0182C1ZP</strong> | Ring Road Textile Market, Surat - 395002 | Phone: +91 98250 12345
+
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ display: 'inline-block', border: `1.5px solid ${copyColor}`, background: `${copyColor}15`, color: copyColor, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 900, borderRadius: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            {copyLabel}
+                          </span>
+                          <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#0f172a', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                            DELIVERY CHALLAN (PROCESSING MILL)
+                          </div>
                         </div>
                       </div>
 
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ display: 'inline-block', border: `1.5px solid ${copyColor}`, background: `${copyColor}15`, color: copyColor, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 900, borderRadius: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                          {copyLabel}
-                        </span>
-                        <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#0f172a', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                          DELIVERY CHALLAN (PROCESSING MILL)
+                      {/* Meta Info Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '0.75rem', borderBottom: '1px solid #0f172a', paddingBottom: metaGridPaddingBottom, marginBottom: metaGridMarginBottom, fontSize: '0.68rem' }}>
+                        <div>
+                          <div style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 700 }}>TO (PROCESSING MILL):</div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 900, color: '#0f172a', marginTop: 1 }}>{showPrintChallanModal.millParty}</div>
+                          {showPrintChallanModal.millGst && (
+                            <div style={{ fontSize: '0.66rem', fontWeight: 800, color: '#0369a1', marginTop: 1 }}>
+                              GSTIN: {showPrintChallanModal.millGst}
+                            </div>
+                          )}
+                          {(showPrintChallanModal.millAddress || showPrintChallanModal.millCity) && (
+                            <div style={{ fontSize: '0.62rem', color: '#334155', marginTop: 1 }}>
+                              {showPrintChallanModal.millAddress ? `${showPrintChallanModal.millAddress}, ` : ''}{showPrintChallanModal.millCity || ''}
+                            </div>
+                          )}
+                          {showPrintChallanModal.millPhone && (
+                            <div style={{ fontSize: '0.61rem', color: '#475569', marginTop: 1 }}>
+                              Phone: {showPrintChallanModal.millPhone} {showPrintChallanModal.millContact ? `(${showPrintChallanModal.millContact})` : ''}
+                            </div>
+                          )}
+                          <div style={{ marginTop: 2, fontSize: '0.66rem' }}><strong>Process Required:</strong> {showPrintChallanModal.processRequired}</div>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Meta Info Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '0.75rem', borderBottom: '1px solid #0f172a', paddingBottom: '4px', marginBottom: '5px', fontSize: '0.68rem' }}>
-                      <div>
-                        <div style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 700 }}>TO (PROCESSING MILL):</div>
-                        <div style={{ fontSize: '0.84rem', fontWeight: 900, color: '#0f172a', marginTop: 1 }}>{showPrintChallanModal.millParty}</div>
-                        {showPrintChallanModal.millGst && (
-                          <div style={{ fontSize: '0.66rem', fontWeight: 800, color: '#0369a1', marginTop: 1 }}>
-                            GSTIN: {showPrintChallanModal.millGst}
-                          </div>
-                        )}
-                        {(showPrintChallanModal.millAddress || showPrintChallanModal.millCity) && (
-                          <div style={{ fontSize: '0.62rem', color: '#334155', marginTop: 1 }}>
-                            {showPrintChallanModal.millAddress ? `${showPrintChallanModal.millAddress}, ` : ''}{showPrintChallanModal.millCity || ''}
-                          </div>
-                        )}
-                        {showPrintChallanModal.millPhone && (
-                          <div style={{ fontSize: '0.61rem', color: '#475569', marginTop: 1 }}>
-                            Phone: {showPrintChallanModal.millPhone} {showPrintChallanModal.millContact ? `(${showPrintChallanModal.millContact})` : ''}
-                          </div>
-                        )}
-                        <div style={{ marginTop: 2, fontSize: '0.66rem' }}><strong>Process Required:</strong> {showPrintChallanModal.processRequired}</div>
-                      </div>
-
-                      <div style={{ textAlign: 'right', fontSize: '0.68rem', lineHeight: 1.35 }}>
-                        <div><strong>Challan No:</strong> <span style={{ fontSize: '0.82rem', fontWeight: 900, color: '#059669' }}>{showPrintChallanModal.challanNo}</span></div>
-                        <div><strong>Date:</strong> {showPrintChallanModal.challanDate}</div>
-                        <div><strong>Vehicle No:</strong> {showPrintChallanModal.vehicleNo}</div>
-                        <div><strong>Quality:</strong> {showPrintChallanModal.fabricQuality}</div>
-                        <div><strong>Lot No:</strong> <span style={{ fontWeight: 800 }}>{lotDisplay}</span></div>
+                        <div style={{ textAlign: 'right', fontSize: '0.68rem', lineHeight: 1.35 }}>
+                          <div><strong>Challan No:</strong> <span style={{ fontSize: '0.82rem', fontWeight: 900, color: '#059669' }}>{showPrintChallanModal.challanNo}</span></div>
+                          <div><strong>Date:</strong> {showPrintChallanModal.challanDate}</div>
+                          <div><strong>Vehicle No:</strong> {showPrintChallanModal.vehicleNo}</div>
+                          <div><strong>Quality:</strong> {showPrintChallanModal.fabricQuality}</div>
+                          <div><strong>Lot No:</strong> <span style={{ fontWeight: 800 }}>{lotDisplay}</span></div>
+                        </div>
                       </div>
                     </div>
 
                     {/* 4-Column TP Breakdown Table */}
-                    <div style={{ marginBottom: '4px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.60rem', border: '1.5px solid #0f172a' }}>
+                    <div className="challan-table-wrapper" style={{ flex: !isMultiPage ? '1 1 auto' : 'none', display: 'flex', flexDirection: 'column', minHeight: 0, marginBottom: '3px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', height: !isMultiPage ? '100%' : 'auto', fontSize: tableFontSize, border: '1.5px solid #0f172a' }}>
                         <thead>
                           <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid #0f172a', textAlign: 'center', fontWeight: 800 }}>
                             {[0, 1, 2, 3].map((cIdx) => (
                               <React.Fragment key={cIdx}>
-                                <th style={{ padding: '2px 2px', width: '4%', borderRight: '1px solid #cbd5e1' }}>Sr</th>
-                                <th style={{ padding: '2px 3px', width: '10%', borderRight: '1px solid #cbd5e1' }}>TP No.</th>
-                                <th style={{ padding: '2px 3px', width: '11%', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none' }}>Mtr</th>
+                                <th style={{ padding: `2px ${cellPaddingX}`, width: '4%', borderRight: '1px solid #cbd5e1', fontSize: headerFontSize }}>Sr</th>
+                                <th style={{ padding: `2px ${cellPaddingX}`, width: '10%', borderRight: '1px solid #cbd5e1', fontSize: headerFontSize }}>TP No.</th>
+                                <th style={{ padding: `2px ${cellPaddingX}`, width: '11%', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none', fontSize: headerFontSize }}>Mtr</th>
                               </React.Fragment>
                             ))}
                           </tr>
@@ -3974,13 +4138,13 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                             <tr key={rIdx} style={{ borderBottom: '1px solid #e2e8f0', textAlign: 'center', background: rIdx % 2 === 1 ? '#fafafa' : '#ffffff' }}>
                               {cols.map((item, cIdx) => (
                                 <React.Fragment key={cIdx}>
-                                  <td style={{ padding: '1px 2px', borderRight: '1px solid #cbd5e1', fontWeight: 700, color: item ? '#475569' : 'transparent', fontSize: '0.58rem' }}>
+                                  <td style={{ padding: `${rowPaddingY} ${cellPaddingX}`, borderRight: '1px solid #cbd5e1', fontWeight: 700, color: item ? '#475569' : 'transparent', fontSize: tableSrFontSize }}>
                                     {item ? item.srNo : '-'}
                                   </td>
-                                  <td style={{ padding: '1px 2px', borderRight: '1px solid #cbd5e1', fontWeight: 800, color: item ? '#0f172a' : 'transparent', fontSize: '0.61rem' }}>
+                                  <td style={{ padding: `${rowPaddingY} ${cellPaddingX}`, borderRight: '1px solid #cbd5e1', fontWeight: 800, color: item ? '#0f172a' : 'transparent', fontSize: tableFontSize }}>
                                     {item ? item.tpNo : '-'}
                                   </td>
-                                  <td style={{ padding: '1px 3px', fontWeight: 800, color: item ? '#0f172a' : 'transparent', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none', fontSize: '0.61rem' }}>
+                                  <td style={{ padding: `${rowPaddingY} ${cellPaddingX}`, fontWeight: 800, color: item ? '#0f172a' : 'transparent', borderRight: cIdx < 3 ? '1.5px solid #0f172a' : 'none', fontSize: tableFontSize }}>
                                     {item ? Number(item.tpMtr).toFixed(1) : '-'}
                                   </td>
                                 </React.Fragment>
@@ -4003,22 +4167,22 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
 
                     {/* Notes if any */}
                     {showPrintChallanModal.notes && (
-                      <div style={{ fontSize: '0.62rem', marginBottom: '5px', background: '#f8fafc', padding: '2px 6px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '0.62rem', marginBottom: '4px', background: '#f8fafc', padding: '2px 6px', border: '1px solid #e2e8f0' }}>
                         <strong>Notes:</strong> {showPrintChallanModal.notes}
                       </div>
                     )}
 
                     {/* Signatures */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '4px', paddingTop: '2px', fontSize: '0.64rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: 'auto', paddingTop: '4px', fontSize: '0.64rem' }}>
                       <div>
-                        <div style={{ height: '14px' }}></div>
+                        <div style={{ height: signatureLineHeight }}></div>
                         <div style={{ borderTop: '1px solid #0f172a', width: '135px', fontWeight: 700 }}>
                           Receiver's Signature (Mill)
                         </div>
                       </div>
 
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ height: '14px' }}></div>
+                        <div style={{ height: signatureLineHeight }}></div>
                         <div style={{ borderTop: '1px solid #0f172a', width: '135px', marginLeft: 'auto', fontWeight: 700 }}>
                           For YAMUNAJI (Authorized)
                         </div>
@@ -4028,23 +4192,32 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 );
               };
 
-              const tpsCount = (showPrintChallanModal.tps || []).length;
-              const isMultiPage = Math.ceil(tpsCount / 4) > 13; // > 13 rows per copy means each copy needs full A4 page
-
               return (
                 <div
                   id="printable-mill-challan-a4"
                   className={isMultiPage ? 'multi-page-print' : 'single-page-print'}
-                  style={isMultiPage ? { display: 'block' } : { display: 'flex', flexDirection: 'column', gap: '6px' }}
+                  style={isMultiPage ? { display: 'block' } : { display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '280mm', boxSizing: 'border-box' }}
                 >
                   {renderCopy('ORIGINAL - MILL COPY', '#0284c7', {
-                    style: isMultiPage ? { pageBreakAfter: 'always', breakAfter: 'page', marginBottom: '24px' } : { marginBottom: '6px' }
+                    style: isMultiPage ? { pageBreakAfter: 'always', breakAfter: 'page', marginBottom: '24px' } : {}
                   })}
 
                   {/* Cut Line for 1-Page (<= 50 TPs) or Page Break Banner for 2-Pages (> 50 TPs) */}
                   {!isMultiPage ? (
-                    <div style={{ borderTop: '1.5px dashed #64748b', margin: '6px 0', position: 'relative', textAlign: 'center' }}>
-                      <span style={{ position: 'relative', top: '-8px', background: '#ffffff', padding: '0 10px', fontSize: '0.62rem', color: '#475569', fontWeight: 800, letterSpacing: '0.06em' }}>
+                    <div
+                      className="challan-cut-line"
+                      style={{
+                        height: '7mm',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                        margin: '0',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', borderTop: '1.5px dashed #475569' }} />
+                      <span style={{ position: 'relative', background: '#ffffff', padding: '0 12px', fontSize: '0.62rem', color: '#475569', fontWeight: 800, letterSpacing: '0.06em' }}>
                         ✂ CUT HERE — 2 COPIES ON A4 (ORIGINAL ABOVE • DUPLICATE BELOW) ✂
                       </span>
                     </div>
