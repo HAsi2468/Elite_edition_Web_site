@@ -570,6 +570,16 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
   const [showPrintChallanModal, setShowPrintChallanModal] = useState(null);
   const [selectedGrayLotForView, setSelectedGrayLotForView] = useState(null);
 
+  // Edit states for Challans, Gray Lots, and RFD Lots
+  const [editingMillChallan, setEditingMillChallan] = useState(null);
+  const [editChallanForm, setEditChallanForm] = useState(null);
+
+  const [editingGrayLot, setEditingGrayLot] = useState(null);
+  const [editGrayLotForm, setEditGrayLotForm] = useState(null);
+
+  const [editingRfdLot, setEditingRfdLot] = useState(null);
+  const [editRfdLotForm, setEditRfdLotForm] = useState(null);
+
   // Form State for Weaver Inward with TP details
   const [weaverForm, setWeaverForm] = useState({
     lotNumber: '',
@@ -1311,6 +1321,257 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
     triggerEliteAlert(`Mill Outward Challan ${challanNo} (${primaryQuality}) created for ${selectedMillTps.length} TPs (${totalMtrs} Mtr)!`, 'Challan Created');
   };
 
+  // ==========================================
+  // ✏️ Edit & Delete Handlers: Mill Challans
+  // ==========================================
+  const handleOpenEditMillChallan = (ch) => {
+    setEditingMillChallan(ch);
+    setEditChallanForm({
+      challanNo: ch.challanNo || '',
+      challanDate: ch.challanDate || '',
+      millParty: ch.millParty || '',
+      fabricQuality: ch.fabricQuality || '',
+      processRequired: ch.processRequired || '',
+      vehicleNo: ch.vehicleNo || '',
+      driverName: ch.driverName || '',
+      status: ch.status || 'In Processing at Mill',
+      notes: ch.notes || ''
+    });
+  };
+
+  const handleSaveEditMillChallan = (e) => {
+    e.preventDefault();
+    if (!editingMillChallan || !editChallanForm) return;
+
+    const selectedMill = configs.mills.find(m => getPartyName(m) === editChallanForm.millParty);
+    const oldChallanNo = editingMillChallan.challanNo;
+    const newChallanNo = editChallanForm.challanNo.trim();
+
+    setMillChallans(prev => prev.map(ch => {
+      if (ch.id === editingMillChallan.id) {
+        return {
+          ...ch,
+          ...editChallanForm,
+          challanNo: newChallanNo,
+          millGst: selectedMill?.gstin || ch.millGst,
+          millAddress: selectedMill?.address || ch.millAddress,
+          millPhone: selectedMill?.phone || ch.millPhone,
+          millContact: selectedMill?.contactPerson || ch.millContact
+        };
+      }
+      return ch;
+    }));
+
+    // If Challan # was updated, synchronize TPs in grayLots
+    if (oldChallanNo && newChallanNo && oldChallanNo !== newChallanNo) {
+      setGrayLots(prev => prev.map(lot => ({
+        ...lot,
+        tps: (lot.tps || []).map(tp => {
+          if (tp.millChallanNo === oldChallanNo) {
+            return { ...tp, millChallanNo: newChallanNo };
+          }
+          return tp;
+        })
+      })));
+    }
+
+    triggerEliteAlert(`Challan ${newChallanNo} updated successfully!`, 'Challan Updated');
+    setEditingMillChallan(null);
+    setEditChallanForm(null);
+  };
+
+  const handleDeleteMillChallan = async (ch) => {
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Mill Challan',
+      message: `Are you sure you want to delete Mill Challan "${ch.challanNo}"? All ${ch.totalTps} TPs (${ch.totalMeters.toFixed(1)} Mtr) will be restored to warehouse In-Stock inventory.`,
+      confirmText: 'Delete Challan',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    // 1. Revert TPs in grayLots back to 'In Stock'
+    if (ch.tps && ch.tps.length > 0) {
+      const challanTpNos = new Set(ch.tps.map(t => String(t.tpNo)));
+      setGrayLots(prev => prev.map(lot => {
+        let lotChanged = false;
+        let restoredMtr = 0;
+        const updatedTps = (lot.tps || []).map(tp => {
+          if (challanTpNos.has(String(tp.tpNo)) && tp.status === 'Sent to Mill') {
+            lotChanged = true;
+            restoredMtr += Number(tp.tpMtr) || 0;
+            return { ...tp, status: 'In Stock', millChallanNo: null };
+          }
+          return tp;
+        });
+
+        if (lotChanged) {
+          const newSentMtr = Math.max(0, (lot.sentToMillMeters || 0) - restoredMtr);
+          const hasRemainingSent = updatedTps.some(t => t.status === 'Sent to Mill');
+          return {
+            ...lot,
+            sentToMillMeters: parseFloat(newSentMtr.toFixed(2)),
+            status: hasRemainingSent ? 'Partially at Mill' : 'In Stock',
+            tps: updatedTps
+          };
+        }
+        return lot;
+      }));
+    }
+
+    // 2. Remove challan from millChallans
+    setMillChallans(prev => prev.filter(c => c.id !== ch.id));
+    triggerEliteAlert(`Mill Challan ${ch.challanNo} deleted successfully. TPs returned to warehouse stock.`, 'Challan Deleted');
+  };
+
+  // ==========================================
+  // ✏️ Edit & Delete Handlers: Gray Fabric Lots
+  // ==========================================
+  const handleOpenEditGrayLot = (lot) => {
+    setEditingGrayLot(lot);
+    setEditGrayLotForm({
+      lotNumber: lot.lotNumber || '',
+      inwardDate: lot.inwardDate || '',
+      weaverParty: lot.weaverParty || '',
+      weaverChallanNo: lot.weaverChallanNo || '',
+      fabricQuality: lot.fabricQuality || '',
+      panna: lot.panna || '',
+      ratePerMeter: lot.ratePerMeter || 0,
+      notes: lot.notes || lot.remarks || '',
+      tps: (lot.tps || []).map(t => ({ ...t }))
+    });
+  };
+
+  const handleSaveEditGrayLot = (e) => {
+    e.preventDefault();
+    if (!editingGrayLot || !editGrayLotForm) return;
+
+    const validTps = (editGrayLotForm.tps || []).map((t, idx) => ({
+      ...t,
+      srNo: idx + 1,
+      tpNo: t.tpNo || String(idx + 1),
+      tpMtr: parseFloat(t.tpMtr) || 0
+    }));
+
+    const totalMeters = validTps.reduce((sum, t) => sum + t.tpMtr, 0);
+    const sentToMillMeters = validTps.filter(t => t.status === 'Sent to Mill').reduce((sum, t) => sum + t.tpMtr, 0);
+    const hasSent = sentToMillMeters > 0;
+    const hasRemainingInStock = validTps.some(t => t.status === 'In Stock');
+
+    let newStatus = 'In Stock';
+    if (hasSent && hasRemainingInStock) newStatus = 'Partially at Mill';
+    else if (hasSent && !hasRemainingInStock) newStatus = 'Fully at Mill';
+
+    setGrayLots(prev => prev.map(l => {
+      if (l.id === editingGrayLot.id) {
+        return {
+          ...l,
+          lotNumber: editGrayLotForm.lotNumber.trim(),
+          inwardDate: editGrayLotForm.inwardDate,
+          weaverParty: editGrayLotForm.weaverParty,
+          weaverChallanNo: editGrayLotForm.weaverChallanNo,
+          fabricQuality: editGrayLotForm.fabricQuality,
+          panna: editGrayLotForm.panna,
+          ratePerMeter: parseFloat(editGrayLotForm.ratePerMeter) || 0,
+          remarks: editGrayLotForm.notes,
+          notes: editGrayLotForm.notes,
+          tps: validTps,
+          totalTps: validTps.length,
+          totalMeters: parseFloat(totalMeters.toFixed(2)),
+          sentToMillMeters: parseFloat(sentToMillMeters.toFixed(2)),
+          status: newStatus
+        };
+      }
+      return l;
+    }));
+
+    triggerEliteAlert(`Gray Lot ${editGrayLotForm.lotNumber} updated successfully!`, 'Lot Updated');
+    setEditingGrayLot(null);
+    setEditGrayLotForm(null);
+  };
+
+  const handleDeleteGrayLot = async (lot) => {
+    if (lot.sentToMillMeters > 0 || (lot.tps || []).some(t => t.status === 'Sent to Mill')) {
+      triggerEliteAlert(
+        `Cannot delete Lot "${lot.lotNumber}". ${lot.sentToMillMeters.toFixed(1)} Mtr is currently dispatched to a mill in active Outward Challans. Please delete or modify the associated Challan first.`,
+        'Cannot Delete Lot In Use'
+      );
+      return;
+    }
+
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete Gray Fabric Lot',
+      message: `Are you sure you want to delete Lot "${lot.lotNumber}" (${lot.totalTps} TPs, ${lot.totalMeters.toFixed(1)} Mtr)? This will permanently remove it from inventory.`,
+      confirmText: 'Delete Lot',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    setGrayLots(prev => prev.filter(l => l.id !== lot.id));
+    triggerEliteAlert(`Gray Lot ${lot.lotNumber} deleted successfully.`, 'Lot Deleted');
+  };
+
+  // ==========================================
+  // ✏️ Edit & Delete Handlers: RFD Fabric Lots
+  // ==========================================
+  const handleOpenEditRfdLot = (lot) => {
+    setEditingRfdLot(lot);
+    setEditRfdLotForm({
+      lotNumber: lot.lotNumber || '',
+      inwardDate: lot.inwardDate || '',
+      millParty: lot.millParty || '',
+      millChallanNo: lot.millChallanNo || '',
+      fabricQuality: lot.fabricQuality || '',
+      panna: lot.panna || '',
+      graySentMeters: lot.graySentMeters || 0,
+      receivedRfdMeters: lot.receivedRfdMeters || 0,
+      status: lot.status || 'In Stock'
+    });
+  };
+
+  const handleSaveEditRfdLot = (e) => {
+    e.preventDefault();
+    if (!editingRfdLot || !editRfdLotForm) return;
+
+    setRfdLots(prev => prev.map(l => {
+      if (l.id === editingRfdLot.id) {
+        const receivedRfdMeters = parseFloat(editRfdLotForm.receivedRfdMeters) || 0;
+        const graySentMeters = parseFloat(editRfdLotForm.graySentMeters || l.graySentMeters) || 0;
+        const shrinkageLossMeters = graySentMeters > receivedRfdMeters ? parseFloat((graySentMeters - receivedRfdMeters).toFixed(2)) : 0;
+        const shrinkagePercent = graySentMeters > 0 ? parseFloat(((shrinkageLossMeters / graySentMeters) * 100).toFixed(1)) : 0;
+
+        return {
+          ...l,
+          ...editRfdLotForm,
+          graySentMeters,
+          receivedRfdMeters,
+          shrinkageLossMeters,
+          shrinkagePercent
+        };
+      }
+      return l;
+    }));
+
+    triggerEliteAlert(`RFD Lot ${editRfdLotForm.lotNumber} updated successfully!`, 'Lot Updated');
+    setEditingRfdLot(null);
+    setEditRfdLotForm(null);
+  };
+
+  const handleDeleteRfdLot = async (lot) => {
+    const confirmed = await triggerEliteConfirm({
+      title: 'Delete RFD Fabric Lot',
+      message: `Are you sure you want to delete RFD Lot "${lot.lotNumber}" (${lot.receivedRfdMeters} Mtr)? This will permanently remove it from RFD inventory.`,
+      confirmText: 'Delete RFD Lot',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    setRfdLots(prev => prev.filter(l => l.id !== lot.id));
+    triggerEliteAlert(`RFD Lot ${lot.lotNumber} deleted successfully.`, 'Lot Deleted');
+  };
+
   const handlePrintChallanA4 = () => {
     const el = document.getElementById('printable-mill-challan-a4');
     if (!el) {
@@ -1470,7 +1731,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
-                Yamunaji (YJ) — Fabric Operations & Challans
+                Yamunaji — Fabric Operations & Challans
               </h2>
               <span
                 style={{
@@ -1777,7 +2038,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       <th style={{ padding: '10px 12px' }}>At Mill Mtr</th>
                       <th style={{ padding: '10px 12px' }}>In Warehouse</th>
                       <th style={{ padding: '10px 12px' }}>Status</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center' }}>Actions</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', minWidth: '220px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1834,13 +2095,52 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                             </span>
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            <button
-                              onClick={() => setSelectedGrayLotForView(lot)}
-                              className="btn-secondary"
-                              style={{ padding: '3px 8px', fontSize: '0.74rem', height: '28px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Eye size={13} /> View TPs ({lot.tps?.length || 0})
-                            </button>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => setSelectedGrayLotForView(lot)}
+                                className="btn-secondary"
+                                style={{ padding: '3px 8px', fontSize: '0.74rem', height: '28px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="View TPs breakdown"
+                              >
+                                <Eye size={13} /> View ({lot.tps?.length || 0})
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditGrayLot(lot)}
+                                className="btn-secondary"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.74rem',
+                                  height: '28px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#f8fafc',
+                                  color: '#0f172a',
+                                  border: '1px solid #cbd5e1'
+                                }}
+                                title="Edit Gray Lot"
+                              >
+                                <Edit2 size={13} /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGrayLot(lot)}
+                                className="btn-secondary"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.74rem',
+                                  height: '28px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  border: '1px solid #fecaca'
+                                }}
+                                title="Delete Gray Lot"
+                              >
+                                <Trash2 size={13} /> Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1929,7 +2229,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       <th style={{ padding: '10px 12px' }}>Total TPs</th>
                       <th style={{ padding: '10px 12px' }}>Total Meters</th>
                       <th style={{ padding: '10px 12px' }}>Status</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center' }}>Print & Action</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', minWidth: '220px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1975,21 +2275,60 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                           </span>
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          <button
-                            onClick={() => setShowPrintChallanModal(ch)}
-                            className="btn-primary"
-                            style={{
-                              padding: '3px 10px',
-                              fontSize: '0.74rem',
-                              height: '28px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              background: '#0ea5e9'
-                            }}
-                          >
-                            <Printer size={13} /> Print Mill Challan
-                          </button>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => setShowPrintChallanModal(ch)}
+                              className="btn-primary"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                height: '28px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#0ea5e9'
+                              }}
+                              title="Print / Save PDF (2 Copies A4)"
+                            >
+                              <Printer size={13} /> Print
+                            </button>
+                            <button
+                              onClick={() => handleOpenEditMillChallan(ch)}
+                              className="btn-secondary"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                height: '28px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#f8fafc',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1'
+                              }}
+                              title="Edit Challan"
+                            >
+                              <Edit2 size={13} /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMillChallan(ch)}
+                              className="btn-secondary"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                height: '28px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1px solid #fecaca'
+                              }}
+                              title="Delete Challan"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2087,6 +2426,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                     <th style={{ padding: '10px 12px' }}>Shrinkage / Loss</th>
                     <th style={{ padding: '10px 12px' }}>Available Balance</th>
                     <th style={{ padding: '10px 12px' }}>Status</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', minWidth: '150px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2138,9 +2478,61 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                             {lot.status}
                           </span>
                         </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => handleOpenEditRfdLot(lot)}
+                              className="btn-secondary"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                height: '28px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#f8fafc',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1'
+                              }}
+                              title="Edit RFD Lot"
+                            >
+                              <Edit2 size={13} /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRfdLot(lot)}
+                              className="btn-secondary"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                height: '28px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1px solid #fecaca'
+                              }}
+                              title="Delete RFD Lot"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
+                  {rfdLots.length === 0 && (
+                    <tr>
+                      <td colSpan={12} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: '#64748b' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 4 }}>
+                          No Processed RFD Lots Found
+                        </div>
+                        <div style={{ fontSize: '0.78rem' }}>
+                          RFD fabric lots inwarded back from mills will appear here.
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2158,7 +2550,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
             inset: 0,
             background: 'rgba(15, 23, 42, 0.65)',
             backdropFilter: 'blur(4px)',
-            zIndex: 9999,
+            zIndex: 10500,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2625,7 +3017,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
             inset: 0,
             background: 'rgba(15, 23, 42, 0.7)',
             backdropFilter: 'blur(5px)',
-            zIndex: 10001,
+            zIndex: 10600,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -4066,7 +4458,7 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '3px', marginBottom: headerMarginBottom }}>
                         <div>
                           <div style={{ fontSize: '1.15rem', fontWeight: 900, letterSpacing: '0.03em', lineHeight: 1.1, color: '#0f172a' }}>
-                            YAMUNAJI (YJ)
+                            YAMUNAJI
                           </div>
                           <div style={{ fontSize: '0.66rem', fontWeight: 700, color: '#1e293b', marginTop: 1 }}>
                             TEXTILE GRAY & RFD PROCESSING DIVISION — SURAT, GUJARAT
@@ -4236,6 +4628,678 @@ export default function YamunajiRfdPanel({ companyEntity = 'Yamunaji', onNavigat
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* ✏️ MODAL: EDIT MILL OUTWARD CHALLAN                       */}
+      {/* ======================================================== */}
+      {editingMillChallan && editChallanForm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#ffffff',
+              borderRadius: 12,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <span style={{ fontSize: '0.95rem', fontWeight: 900, color: '#0f172a' }}>
+                  Edit Mill Outward Challan
+                </span>
+                <span style={{ marginLeft: 8, fontSize: '0.74rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>
+                  {editingMillChallan.challanNo}
+                </span>
+              </div>
+              <button
+                onClick={() => { setEditingMillChallan(null); setEditChallanForm(null); }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditMillChallan} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Challan Number
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editChallanForm.challanNo}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, challanNo: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Challan Date
+                  </label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={editChallanForm.challanDate}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, challanDate: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Processing Mill
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editChallanForm.millParty}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, millParty: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.mills.map((m, idx) => (
+                      <option key={idx} value={getPartyName(m)}>
+                        {getPartyName(m)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Fabric Quality
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editChallanForm.fabricQuality}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, fabricQuality: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.qualities.map((q, idx) => (
+                      <option key={idx} value={q}>{q}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Process Required
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editChallanForm.processRequired}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, processRequired: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.processes.map((p, idx) => (
+                      <option key={idx} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Status
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editChallanForm.status}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, status: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    <option value="In Processing at Mill">In Processing at Mill</option>
+                    <option value="Ready for Pickup">Ready for Pickup</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Vehicle / Transport No.
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editChallanForm.vehicleNo}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, vehicleNo: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Driver / Contact Name
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editChallanForm.driverName}
+                    onChange={e => setEditChallanForm({ ...editChallanForm, driverName: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                  Notes / Instructions
+                </label>
+                <textarea
+                  className="input-field"
+                  value={editChallanForm.notes}
+                  onChange={e => setEditChallanForm({ ...editChallanForm, notes: e.target.value })}
+                  rows={2}
+                  style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                />
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: '0.75rem', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                <span><strong>Total TPs:</strong> {editingMillChallan.totalTps} TPs</span>
+                <span><strong>Total Meters:</strong> {editingMillChallan.totalMeters.toFixed(1)} Mtr</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditingMillChallan(null); setEditChallanForm(null); }}
+                  className="btn-secondary"
+                  style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ padding: '0.45rem 1.25rem', fontSize: '0.82rem', background: '#0284c7' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* ✏️ MODAL: EDIT GRAY FABRIC LOT                           */}
+      {/* ======================================================== */}
+      {editingGrayLot && editGrayLotForm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '600px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#ffffff',
+              borderRadius: 12,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <span style={{ fontSize: '0.95rem', fontWeight: 900, color: '#0f172a' }}>
+                  Edit Gray Fabric Inward Lot
+                </span>
+                <span style={{ marginLeft: 8, fontSize: '0.74rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>
+                  {editingGrayLot.lotNumber}
+                </span>
+              </div>
+              <button
+                onClick={() => { setEditingGrayLot(null); setEditGrayLotForm(null); }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditGrayLot} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Lot Number
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editGrayLotForm.lotNumber}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, lotNumber: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Inward Date
+                  </label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={editGrayLotForm.inwardDate}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, inwardDate: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Weaver / Loom Owner
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editGrayLotForm.weaverParty}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, weaverParty: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.weavers.map((w, idx) => (
+                      <option key={idx} value={getPartyName(w)}>{getPartyName(w)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Weaver Challan #
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editGrayLotForm.weaverChallanNo}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, weaverChallanNo: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Fabric Quality
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editGrayLotForm.fabricQuality}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, fabricQuality: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.qualities.map((q, idx) => (
+                      <option key={idx} value={q}>{q}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Panna
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editGrayLotForm.panna}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, panna: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.pannas.map((p, idx) => (
+                      <option key={idx} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Rate per Meter (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="input-field"
+                    value={editGrayLotForm.ratePerMeter}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, ratePerMeter: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Notes / Remarks
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editGrayLotForm.notes}
+                    onChange={e => setEditGrayLotForm({ ...editGrayLotForm, notes: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              {/* TP Breakdown in Edit Gray Lot */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                  TP Breakdown ({(editGrayLotForm.tps || []).length} TPs)
+                </label>
+                <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.7rem', textAlign: 'left' }}>
+                        <th style={{ padding: '5px 8px', width: 45 }}>Sr</th>
+                        <th style={{ padding: '5px 8px' }}>TP No.</th>
+                        <th style={{ padding: '5px 8px' }}>TP Meter (Mtr)</th>
+                        <th style={{ padding: '5px 8px', width: 100 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(editGrayLotForm.tps || []).map((tp, idx) => {
+                        const isSent = tp.status === 'Sent to Mill';
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '4px 8px', color: '#64748b', fontWeight: 700 }}>{tp.srNo || idx + 1}</td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <input
+                                type="text"
+                                value={tp.tpNo}
+                                disabled={isSent}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditGrayLotForm(prev => {
+                                    const nextTps = [...(prev.tps || [])];
+                                    nextTps[idx] = { ...nextTps[idx], tpNo: val };
+                                    return { ...prev, tps: nextTps };
+                                  });
+                                }}
+                                className="input-field"
+                                style={{ height: '26px', fontSize: '0.78rem', padding: '2px 6px', width: '100%' }}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={tp.tpMtr}
+                                disabled={isSent}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setEditGrayLotForm(prev => {
+                                    const nextTps = [...(prev.tps || [])];
+                                    nextTps[idx] = { ...nextTps[idx], tpMtr: val };
+                                    return { ...prev, tps: nextTps };
+                                  });
+                                }}
+                                className="input-field"
+                                style={{ height: '26px', fontSize: '0.78rem', padding: '2px 6px', width: '100%', fontWeight: 700 }}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <span style={{
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: isSent ? '#fef3c7' : '#dcfce7',
+                                color: isSent ? '#b45309' : '#15803d'
+                              }}>
+                                {tp.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: '0.75rem', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                <span><strong>Total TPs:</strong> {(editGrayLotForm.tps || []).length} TPs</span>
+                <span>
+                  <strong>Total Meters:</strong>{' '}
+                  {(editGrayLotForm.tps || []).reduce((sum, t) => sum + (parseFloat(t.tpMtr) || 0), 0).toFixed(1)} Mtr
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditingGrayLot(null); setEditGrayLotForm(null); }}
+                  className="btn-secondary"
+                  style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ padding: '0.45rem 1.25rem', fontSize: '0.82rem', background: '#0284c7' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* ✏️ MODAL: EDIT RFD FABRIC LOT                           */}
+      {/* ======================================================== */}
+      {editingRfdLot && editRfdLotForm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem'
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '600px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#ffffff',
+              borderRadius: 12,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <span style={{ fontSize: '0.95rem', fontWeight: 900, color: '#0f172a' }}>
+                  Edit RFD Fabric Lot
+                </span>
+                <span style={{ marginLeft: 8, fontSize: '0.74rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>
+                  {editingRfdLot.lotNumber}
+                </span>
+              </div>
+              <button
+                onClick={() => { setEditingRfdLot(null); setEditRfdLotForm(null); }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditRfdLot} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Lot Number
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editRfdLotForm.lotNumber}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, lotNumber: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Inward Date
+                  </label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={editRfdLotForm.inwardDate}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, inwardDate: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Processing Mill
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editRfdLotForm.millParty}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, millParty: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.mills.map((m, idx) => (
+                      <option key={idx} value={getPartyName(m)}>{getPartyName(m)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Mill Challan #
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={editRfdLotForm.millChallanNo}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, millChallanNo: e.target.value })}
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Fabric Quality
+                  </label>
+                  <select
+                    className="input-field"
+                    value={editRfdLotForm.fabricQuality}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, fabricQuality: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  >
+                    {configs.qualities.map((q, idx) => (
+                      <option key={idx} value={q}>{q}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: 3 }}>
+                    Received RFD Meters
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="input-field"
+                    value={editRfdLotForm.receivedRfdMeters}
+                    onChange={e => setEditRfdLotForm({ ...editRfdLotForm, receivedRfdMeters: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '0.45rem 0.6rem', fontSize: '0.82rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditingRfdLot(null); setEditRfdLotForm(null); }}
+                  className="btn-secondary"
+                  style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ padding: '0.45rem 1.25rem', fontSize: '0.82rem', background: '#0284c7' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
