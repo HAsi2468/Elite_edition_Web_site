@@ -98,7 +98,8 @@ import {
   Lock,
   Unlock,
   Scale,
-  Plus
+  Plus,
+  HelpCircle
 } from 'lucide-react';
 
 import NotificationToastContainer, { triggerPushNotification, triggerGlobalDataRefresh, requestNotificationPermission, NotificationHistoryDrawer, getNotificationHistory } from './components/NotificationToast';
@@ -215,6 +216,41 @@ export const ROUTE_ALIASES = {
   'admin': { tab: 'admin', dept: null }
 };
 
+export const ALL_KNOWN_ERP_TABS = new Set([
+  'dashboard', 'workspace', 'communication', 'chat', 'task_management', 'tasks', 'task', 'task-manager',
+  'elite_online', 'inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'admin',
+  'ee_dashboard', 'ee_invoices', 'ee_settings', 'ee_complaints', 'ee_expenses', 'ee_raw_materials',
+  'ef_dashboard', 'ef_invoices', 'ef_settings', 'ef_complaints', 'ef_expenses', 'ef_raw_materials',
+  'so_dashboard', 'so_invoices', 'so_settings', 'so_complaints', 'so_expenses', 'so_raw_materials',
+  'ew_dashboard', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
+  'yj_dashboard', 'yj_invoices', 'yj_settings', 'yj_complaints', 'yj_expenses', 'yj_raw_materials', 'yj_rfd',
+  'es_dashboard', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials',
+  'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'eo_invoices',
+  'raw_materials', 'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master',
+  'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings', 'jobcards_stitching_challan',
+  'jobcards_stitching_settings', 'jobcards_printing_log', 'jobcards_fusing_log', 'jobcards_print_entry',
+  'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_split_view', 'jobcards_challan',
+  'jobcards_complain', 'jobcards_complaints', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard',
+  'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard', 'jobcards_crm', 'crm_department', 'crm',
+  'crm_profiles', 'crm_leads', 'jobcards_master_ai', 'master_ai_agent', 'jobcards_business_connection',
+  'business_connection', 'complaint_dashboard', 'complaint_create', 'designer_screen', 'designer_module',
+  'designer', 'reconciliation', 'ledger-reconciliation', 'voucher', 'voucher_entry', 'stitching_jobcards',
+  'stitching_design', 'stitching_fabric', 'stitching_settings', 'stitching'
+]);
+
+export function getDepartmentForTab(tab) {
+  if (!tab) return null;
+  if (tab.startsWith('jobcards') || tab === 'raw_materials') return 'digital_print';
+  if (tab.startsWith('es_') || tab.startsWith('stitching')) return 'stitching';
+  if (tab.startsWith('eo_') || ['inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'elite_online'].includes(tab)) return 'elite_online';
+  if (tab.startsWith('ee_')) return 'elite_edition';
+  if (tab.startsWith('ef_')) return 'elite_fabtex';
+  if (tab.startsWith('so_')) return 'sobise';
+  if (tab.startsWith('ew_')) return 'ethno_wear';
+  if (tab.startsWith('yj_')) return 'yamunaji';
+  return null;
+}
+
 export function parseHashRoute(hashStr = '') {
   const clean = (hashStr || '').replace(/^#\/?/, '').trim();
   if (!clean) return { path: '', query: {}, queryString: '' };
@@ -247,9 +283,17 @@ export function resolveActiveRoute(hashStr = '') {
     return { tab: 'raw_materials', dept: 'digital_print', query, queryString, path };
   }
 
-  const alias = ROUTE_ALIASES[path];
+  const alias = ROUTE_ALIASES[path] || ROUTE_ALIASES[path.replace(/-/g, '_')] || ROUTE_ALIASES[path.replace(/_/g, '-')];
   if (alias) {
     return { tab: alias.tab, dept: alias.dept, query, queryString, path };
+  }
+
+  // Check if it is a known system tab directly
+  const normalizedUnder = path.replace(/-/g, '_');
+  if (ALL_KNOWN_ERP_TABS.has(path) || ALL_KNOWN_ERP_TABS.has(normalizedUnder) || path.startsWith('jobcards_') || path.startsWith('jobcards-')) {
+    const tabName = ALL_KNOWN_ERP_TABS.has(normalizedUnder) ? normalizedUnder : (ALL_KNOWN_ERP_TABS.has(path) ? path : normalizedUnder);
+    const dept = getDepartmentForTab(tabName);
+    return { tab: tabName, dept, query, queryString, path };
   }
 
   // Check if valid screen or return 404 not-found
