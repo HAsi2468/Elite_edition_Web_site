@@ -2225,6 +2225,30 @@ export const api = {
     return request(`/scan-pack/history${qs ? `?${qs}` : ''}`);
   },
 
+  async exportScanPackHistory({ mode, search, startDate, endDate, courier, channel, status } = {}) {
+    const params = new URLSearchParams();
+    params.append('export', 'true');
+    if (mode && mode !== 'ALL') params.append('mode', mode);
+    if (search) params.append('search', search);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    if (courier && courier !== 'ALL') params.append('courier', courier);
+    if (channel && channel !== 'ALL') params.append('channel', channel);
+    if (status && status !== 'ALL') params.append('status', status);
+    const qs = params.toString();
+    const res = await authFetch(`${getBaseUrl()}/scan-pack/history?${qs}`);
+    if (!res.ok) throw new Error('Failed to download full dispatch history');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ScanPack_Dispatch_History_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   async logScan(data) {
     return request('/scan-pack/log-scan', {
       method: 'POST',

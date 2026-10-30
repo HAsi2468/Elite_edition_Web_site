@@ -860,9 +860,16 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
     }
   };
 
-  const validateItem = (tabName, qty, metersPerRoll, canSize) => {
-    if (!qty || Number(qty) <= 0) {
-      return 'Please enter a valid quantity.';
+  const validateItem = (tabName, qty, metersPerRoll, canSize, matName) => {
+    const num = Number(qty);
+    if (!qty || isNaN(num) || num <= 0) {
+      return 'Please enter a valid quantity greater than 0.';
+    }
+    if (num > 1000000) {
+      return 'Quantity cannot exceed 1,000,000.';
+    }
+    if (matName && matName.length > 120) {
+      return 'Material name cannot exceed 120 characters.';
     }
     const isGrando = (tabName || '').toLowerCase().includes('grando');
     const isPrintdot = (tabName || '').toLowerCase().includes('printdot');
@@ -949,10 +956,18 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       alert('Please enter a valid raw material name');
       return;
     }
+    const matName = newMaterialForm.materialName.trim();
+    if (matName.length > 120) {
+      alert('Material name cannot exceed 120 characters.');
+      return;
+    }
+    const initQty = parseFloat(newMaterialForm.initialQty) || 0;
+    if (initQty < 0 || initQty > 1000000) {
+      alert('Quantity must be between 0 and 1,000,000.');
+      return;
+    }
     setNewMaterialSubmitting(true);
     try {
-      const matName = newMaterialForm.materialName.trim();
-      const initQty = parseFloat(newMaterialForm.initialQty) || 0;
       const rate = parseFloat(newMaterialForm.unitRate) || 0;
       const reorder = parseFloat(newMaterialForm.reorderLevel) || 10;
 
@@ -1769,14 +1784,14 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
               const isGrandoItem = (item) => String(item.materialName || '').toLowerCase().includes('grando');
               const isPrintdotItem = (item) => String(item.materialName || '').toLowerCase().includes('printdot');
 
-              const paperItems = stock.filter(item => isPaperItem(item)).sort((a, b) => {
+              const paperItems = filteredStock.filter(item => isPaperItem(item)).sort((a, b) => {
                 if (a.materialName !== b.materialName) return a.materialName.localeCompare(b.materialName);
                 return (b.panna || '').localeCompare(a.panna || '');
               });
 
-              const grandoItems = stock.filter(item => isGrandoItem(item));
-              const printdotItems = stock.filter(item => isPrintdotItem(item));
-              const otherItems = stock.filter(item => !isPaperItem(item) && !isGrandoItem(item) && !isPrintdotItem(item));
+              const grandoItems = filteredStock.filter(item => isGrandoItem(item));
+              const printdotItems = filteredStock.filter(item => isPrintdotItem(item));
+              const otherItems = filteredStock.filter(item => !isPaperItem(item) && !isGrandoItem(item) && !isPrintdotItem(item));
 
               const showPaper = isDigitalPrint && (stockMaterialType === 'All' || matchesMaterialType('Sublimation Paper', stockMaterialType) || matchesMaterialType('Butter Paper', stockMaterialType));
               const showGrando = isDigitalPrint && (stockMaterialType === 'All' || stockMaterialType === 'Ink' || stockMaterialType === 'All Inks' || stockMaterialType === 'Grando Ink');
@@ -2369,9 +2384,9 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                         {catBadge.label}
                                       </span>
                                     </td>
-                                    <td style={tdStyle}>
+                                    <td style={{ ...tdStyle, maxWidth: '280px', overflow: 'hidden' }}>
                                       <div>
-                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{item.materialName}</strong>
+                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.materialName}</strong>
                                         <div style={{ display: 'flex', gap: '8px', fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '2px', flexWrap: 'wrap' }}>
                                           {item.shade && <span>Shade: <strong style={{ color: 'var(--text-light)' }}>{item.shade}</strong></span>}
                                           {item.panna && <span>Width: <strong style={{ color: 'var(--text-light)' }}>{item.panna}</strong></span>}
@@ -4138,6 +4153,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   style={{ ...inputStyle, fontWeight: 600 }}
                   placeholder="e.g. Viscose Rayon 14kg, 40/2 Thread, 18L Resin Button..."
                   value={newMaterialForm.materialName}
+                  maxLength={120}
                   onChange={e => setNewMaterialForm(p => ({ ...p, materialName: e.target.value }))}
                   required
                 />
@@ -4195,6 +4211,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     type="number"
                     step="any"
                     min="0"
+                    max="1000000"
                     style={inputStyle}
                     placeholder="0"
                     value={newMaterialForm.initialQty}
