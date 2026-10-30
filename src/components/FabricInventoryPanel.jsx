@@ -1015,6 +1015,10 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
       alert('Please enter a valid positive quantity (> 0 meters).');
       return;
     }
+    if (numQty > 1000000) {
+      alert('Inward quantity cannot exceed 1,000,000 meters.');
+      return;
+    }
     if (!inwardForm.fabricQuality || !String(inwardForm.fabricQuality).trim()) {
       alert('Please select or specify Fabric Quality.');
       return;
@@ -6816,6 +6820,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                   placeholder="0.00"
                   required
                   min={0.01}
+                  max={1000000}
                   value={inwardForm.qty}
                   onChange={e => setInwardForm({ ...inwardForm, qty: e.target.value })}
                   style={inputStyle}

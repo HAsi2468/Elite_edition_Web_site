@@ -3438,12 +3438,10 @@ export default function EliteBillingDepartment({
     let tdsAmount = 0;
     if (invoiceForm.enableTds) {
       if (invoiceForm.manualTdsAmount !== undefined && invoiceForm.manualTdsAmount !== '') {
-        tdsAmount = Math.round(parseFloat(invoiceForm.manualTdsAmount) || 0);
+        tdsAmount = parseFloat((parseFloat(invoiceForm.manualTdsAmount) || 0).toFixed(2));
       } else {
         const rate = parseFloat(invoiceForm.tdsRate) || 0;
-        // In India, TDS is standardly computed on taxable subtotal (excluding GST)
-        // Rounded off to nearest rupee: >= 0.50 rounds up by 1, < 0.50 removes decimal (Sec 288B)
-        tdsAmount = Math.round((netSubtotal * rate) / 100);
+        tdsAmount = parseFloat(((netSubtotal * rate) / 100).toFixed(2));
       }
     }
 
