@@ -327,7 +327,8 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
     });
 
     map.forEach(item => {
-      item.currentStock = item.totalInward - item.totalOutward;
+      const baseStockItem = Array.isArray(stock) ? stock.find(s => String(s.fabricQuality || '').trim().toUpperCase() === item.fabricQuality) : null;
+      item.currentStock = baseStockItem ? Math.max(0, Number(baseStockItem.currentStock) || 0) : Math.max(0, item.totalInward - item.totalOutward);
     });
 
     const result = Array.from(map.values());
@@ -707,6 +708,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
   // Modals
   const [isInwardOpen, setIsInwardOpen] = useState(false);
+  const [inwardError, setInwardError] = useState('');
   const [isOutwardOpen, setIsOutwardOpen] = useState(false);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
 
@@ -1008,24 +1010,25 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
   const handleInwardSubmit = async (e) => {
     e.preventDefault();
+    setInwardError('');
     if (loading) return; // Prevent double submissions
 
     const numQty = parseFloat(inwardForm.qty);
     if (isNaN(numQty) || numQty <= 0) {
-      alert('Please enter a valid positive quantity (> 0 meters).');
+      setInwardError('Please enter a valid positive quantity (> 0 meters).');
       return;
     }
     if (numQty > 1000000) {
-      alert('Inward quantity cannot exceed 1,000,000 meters.');
+      setInwardError('Inward quantity cannot exceed 1,000,000 meters.');
       return;
     }
     if (!inwardForm.fabricQuality || !String(inwardForm.fabricQuality).trim()) {
-      alert('Please select or specify Fabric Quality.');
+      setInwardError('Please select or specify Fabric Quality.');
       return;
     }
 
     if (duplicateInwardMatch) {
-      alert(`⚠️ Duplicate Inward Blocked: Lot #${duplicateInwardMatch.lotNo} already exists for Vendor "${duplicateInwardMatch.vendorName}", Challan #${duplicateInwardMatch.challanNo || 'N/A'}, Fabric "${duplicateInwardMatch.fabricQuality}" (${duplicateInwardMatch.panna || 'Standard'}" - ${duplicateInwardMatch.qty}m on ${duplicateInwardMatch.date ? new Date(duplicateInwardMatch.date).toLocaleDateString('en-GB') : 'N/A'}). Duplicate entries are not permitted.`);
+      setInwardError(`⚠️ Duplicate Inward Blocked: Lot #${duplicateInwardMatch.lotNo} already exists for Vendor "${duplicateInwardMatch.vendorName}", Challan #${duplicateInwardMatch.challanNo || 'N/A'}, Fabric "${duplicateInwardMatch.fabricQuality}" (${duplicateInwardMatch.panna || 'Standard'}" - ${duplicateInwardMatch.qty}m on ${duplicateInwardMatch.date ? new Date(duplicateInwardMatch.date).toLocaleDateString('en-GB') : 'N/A'}). Duplicate entries are not permitted.`);
       return;
     }
     setLoading(true);
@@ -1041,11 +1044,14 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
       }
       setIsInwardOpen(false);
       setEditingTransaction(null);
+      setInwardError('');
       setInwardForm({ challanNo: '', vendorName: '', fabricQuality: '', panna: '', qty: '', shortagePct: '', date: new Date().toISOString().split('T')[0], notes: '' });
       triggerGlobalDataRefresh('fabric');
       fetchData();
     } catch (err) {
-      alert(err.message);
+      setInwardError(err.message || 'Failed to record fabric inward. Please check your inputs.');
+      triggerPushNotification('Inward Failed', err.message || 'Failed to record fabric inward.', 'danger');
+    } finally {
       setLoading(false);
     }
   };
@@ -1252,6 +1258,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   const closeInwardModal = () => {
     setIsInwardOpen(false);
     setEditingTransaction(null);
+    setInwardError('');
     setInwardForm({ challanNo: '', vendorName: '', fabricQuality: '', panna: '', qty: '', shortagePct: '', shortageMtr: '', shortageMode: 'pct', date: new Date().toISOString().split('T')[0], notes: '' });
   };
 
@@ -6874,6 +6881,24 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
                   <div style={{ fontSize: '0.75rem', color: '#fca5a5' }}>
                     ⚠️ Saving is blocked to prevent double-counting inventory.
                   </div>
+                </div>
+              )}
+
+              {inwardError && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  color: '#ef4444',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <AlertTriangle size={16} />
+                  <span>{inwardError}</span>
                 </div>
               )}
 

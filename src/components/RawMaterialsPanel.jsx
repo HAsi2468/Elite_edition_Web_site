@@ -1396,23 +1396,34 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
         if (!itemCat.includes('label') && !itemCat.includes('tag')) return false;
       } else if (filterCat === 'packing material') {
         if (!itemCat.includes('pack')) return false;
+      } else if (filterCat === 'paper') {
+        if (!itemCat.includes('paper')) return false;
+      } else if (filterCat === 'inks & consumables' || filterCat === 'ink') {
+        if (!itemCat.includes('ink') && !itemCat.includes('consumable')) return false;
+      } else if (filterCat === 'other') {
+        if (itemCat.includes('paper') || itemCat.includes('ink') || itemCat.includes('fabric')) return false;
       } else if (itemCat !== filterCat) {
         return false;
       }
     }
-    // 3. Search query filter
+    // 3. Search query filter: tokenized multi-word search across all metadata fields
     if (stockSearchQuery && stockSearchQuery.trim()) {
-      const q = stockSearchQuery.toLowerCase().trim();
-      const matchesName = String(item.materialName || '').toLowerCase().includes(q);
-      const matchesCat = String(item.category || '').toLowerCase().includes(q);
-      const matchesShade = String(item.shade || '').toLowerCase().includes(q);
-      const matchesLoc = String(item.location || '').toLowerCase().includes(q);
-      const matchesHsn = String(item.hsnCode || '').toLowerCase().includes(q);
-      const matchesColor = String(item.color || '').toLowerCase().includes(q);
-      const matchesPanna = String(item.panna || '').toLowerCase().includes(q);
-      const matchesQual = String(item.paperQuality || '').toLowerCase().includes(q);
-      const matchesNotes = String(item.notes || '').toLowerCase().includes(q);
-      if (!matchesName && !matchesCat && !matchesShade && !matchesLoc && !matchesHsn && !matchesColor && !matchesPanna && !matchesQual && !matchesNotes) return false;
+      const tokens = stockSearchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      const haystack = [
+        item.materialName,
+        item.category,
+        item.shade,
+        item.location,
+        item.hsnCode,
+        item.color,
+        item.panna,
+        item.paperQuality,
+        item.notes,
+        item.unit
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      const allTokensMatch = tokens.every(token => haystack.includes(token));
+      if (!allTokensMatch) return false;
     }
     return true;
   });
