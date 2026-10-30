@@ -1008,6 +1008,17 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
   const handleInwardSubmit = async (e) => {
     e.preventDefault();
     if (loading) return; // Prevent double submissions
+
+    const numQty = parseFloat(inwardForm.qty);
+    if (isNaN(numQty) || numQty <= 0) {
+      alert('Please enter a valid positive quantity (> 0 meters).');
+      return;
+    }
+    if (!inwardForm.fabricQuality || !String(inwardForm.fabricQuality).trim()) {
+      alert('Please select or specify Fabric Quality.');
+      return;
+    }
+
     if (duplicateInwardMatch) {
       alert(`⚠️ Duplicate Inward Blocked: Lot #${duplicateInwardMatch.lotNo} already exists for Vendor "${duplicateInwardMatch.vendorName}", Challan #${duplicateInwardMatch.challanNo || 'N/A'}, Fabric "${duplicateInwardMatch.fabricQuality}" (${duplicateInwardMatch.panna || 'Standard'}" - ${duplicateInwardMatch.qty}m on ${duplicateInwardMatch.date ? new Date(duplicateInwardMatch.date).toLocaleDateString('en-GB') : 'N/A'}). Duplicate entries are not permitted.`);
       return;
@@ -1036,6 +1047,18 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
   const handleOutwardSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
+    const numOutQty = parseFloat(outwardForm.qty);
+    if (isNaN(numOutQty) || numOutQty <= 0) {
+      alert('Please enter a valid positive quantity (> 0 meters).');
+      return;
+    }
+    if (!outwardForm.fabricQuality || !String(outwardForm.fabricQuality).trim()) {
+      alert('Please select or specify Fabric Quality.');
+      return;
+    }
+
     setLoading(true);
     const cleanFabric = normalizeFabricName(outwardForm.fabricQuality, outwardForm.panna);
     const payload = { ...outwardForm, fabricQuality: cleanFabric || outwardForm.fabricQuality, department: department || 'digital_print' };

@@ -212,11 +212,23 @@ export default function QADepartment({ department = 'digital_print' }) {
     }
 
     const totMtr = parseFloat(whiteForm.totalMtr) || 0;
+    if (totMtr <= 0) {
+      triggerEliteAlert('Total roll meters must be greater than 0.');
+      return;
+    }
     const wF = parseFloat(whiteForm.weavingFaultMtr) || 0;
     const sF = parseFloat(whiteForm.stainFaultMtr) || 0;
     const shF = parseFloat(whiteForm.shadingFaultMtr) || 0;
     const wdF = parseFloat(whiteForm.widthShortageMtr) || 0;
+    if (wF < 0 || sF < 0 || shF < 0 || wdF < 0) {
+      triggerEliteAlert('Defect meters cannot be negative.');
+      return;
+    }
     const totDefect = wF + sF + shF + wdF;
+    if (totDefect > totMtr) {
+      triggerEliteAlert(`Total defect meters (${totDefect}m) cannot exceed total roll meters (${totMtr}m).`);
+      return;
+    }
     const usableFresh = Math.max(0, totMtr - totDefect);
 
     const logPayload = {

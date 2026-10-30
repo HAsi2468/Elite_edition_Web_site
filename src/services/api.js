@@ -1705,6 +1705,11 @@ export const api = {
     return request(`/raw-materials/${id}`, { method: 'DELETE' });
   },
 
+  async deleteRawMaterial(materialName, companyEntity) {
+    const qs = new URLSearchParams({ materialName, companyEntity: companyEntity || '' }).toString();
+    return request(`/raw-materials/material?${qs}`, { method: 'DELETE' });
+  },
+
   async updateRawMaterialTransaction(id, payload) {
     return request(`/raw-materials/${id}`, {
       method: 'PUT',

@@ -177,6 +177,8 @@ export const ROUTE_ALIASES = {
   'jobcards_list': { tab: 'jobcards_list', dept: 'digital_print' },
   'jobcards_crm': { tab: 'jobcards_crm', dept: 'digital_print' },
   'crm': { tab: 'jobcards_crm', dept: 'digital_print' },
+  'jobcards_billing': { tab: 'jobcards_billing', dept: 'digital_print' },
+  'jobcards-billing': { tab: 'jobcards_billing', dept: 'digital_print' },
   'design': { tab: 'jobcards_catalogue', dept: 'digital_print' },
   'designs': { tab: 'jobcards_catalogue', dept: 'digital_print' },
   'catalogue': { tab: 'jobcards_catalogue', dept: 'digital_print' },
@@ -280,7 +282,7 @@ export function resolveActiveRoute(hashStr = '') {
     if (activeDept === 'ethno_wear') return { tab: 'ew_raw_materials', dept: 'ethno_wear', query, queryString, path };
     if (activeDept === 'yamunaji') return { tab: 'yj_raw_materials', dept: 'yamunaji', query, queryString, path };
     if (activeDept === 'stitching') return { tab: 'es_raw_materials', dept: 'stitching', query, queryString, path };
-    return { tab: 'raw_materials', dept: 'digital_print', query, queryString, path };
+    return { tab: 'raw_materials', dept: activeDept || null, query, queryString, path };
   }
 
   const alias = ROUTE_ALIASES[path] || ROUTE_ALIASES[path.replace(/-/g, '_')] || ROUTE_ALIASES[path.replace(/_/g, '-')];
@@ -303,6 +305,7 @@ export function resolveActiveRoute(hashStr = '') {
 export function getCanonicalHashForTab(tab, queryString = '') {
   let alias = tab;
   if (tab === 'task_management') alias = 'tasks';
+  else if (tab === 'jobcards_billing') alias = 'jobcards_billing';
   else if (tab === 'ee_invoices') alias = 'finance';
   else if (tab === 'jobcards_printing_log') alias = 'printing';
   else if (tab === 'jobcards_fusing_log') alias = 'fusing';

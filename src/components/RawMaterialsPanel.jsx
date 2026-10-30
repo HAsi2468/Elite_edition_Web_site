@@ -881,7 +881,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
   };
 
   const addInwardItemToList = () => {
-    const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize);
+    const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize, inwardForm.materialName);
     if (err) {
       alert(err);
       return;
@@ -916,7 +916,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
   };
 
   const addOutwardItemToList = () => {
-    const err = validateItem(outwardTab, outwardForm.qty, outwardForm.metersPerRoll, outwardForm.canSize);
+    const err = validateItem(outwardTab, outwardForm.qty, outwardForm.metersPerRoll, outwardForm.canSize, outwardForm.materialName);
     if (err) {
       alert(err);
       return;
@@ -1035,7 +1035,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
         ...item
       }));
       if (payload.length === 0) {
-        const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize);
+        const err = validateItem(inwardTab, inwardForm.qty, inwardForm.metersPerRoll, inwardForm.canSize, inwardForm.materialName);
         if (err) {
           alert(err);
           setLoading(false);
@@ -1096,7 +1096,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
         ...item
       }));
       if (payload.length === 0) {
-        const err = validateItem(outwardTab, outwardForm.qty, outwardForm.metersPerRoll, outwardForm.canSize);
+        const err = validateItem(outwardTab, outwardForm.qty, outwardForm.metersPerRoll, outwardForm.canSize, outwardForm.materialName);
         if (err) {
           alert(err);
           setLoading(false);
@@ -1126,6 +1126,22 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
           date: outwardForm.date,
           notes: outwardForm.notes,
         }];
+      }
+
+      // Check available stock in current stock list to prevent negative stock
+      for (const item of payload) {
+        const matchingStock = stock.find(s => {
+          const mMatch = String(s.materialName || '').toLowerCase() === String(item.materialName || '').toLowerCase();
+          const cMatch = !item.color || String(s.color || '').toLowerCase() === String(item.color || '').toLowerCase();
+          const pMatch = !item.panna || String(s.panna || '').trim() === String(item.panna || '').trim();
+          return mMatch && cMatch && pMatch;
+        });
+        const currentAvail = matchingStock ? (matchingStock.currentStock || 0) : 0;
+        if (Number(item.qty) > currentAvail) {
+          alert(`Insufficient stock for "${item.materialName}". Available: ${currentAvail} ${item.unit || ''}, Requested: ${item.qty} ${item.unit || ''}. Outward transaction cancelled.`);
+          setLoading(false);
+          return;
+        }
       }
       await api.createRawMaterialOutward(payload);
       setIsOutwardOpen(false);
@@ -1181,6 +1197,21 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       fetchData();
     } catch (err) {
       alert('Failed to delete: ' + err.message);
+    }
+  };
+
+  const handleDeleteMaterial = async (item) => {
+    if (!item || !item.materialName) return;
+    const confirmMsg = `Are you sure you want to completely delete "${item.materialName}" and its entire inventory/transaction records from ${companyEntity}?`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      setLoading(true);
+      await api.deleteRawMaterial(item.materialName, companyEntity);
+      fetchData();
+    } catch (err) {
+      alert('Failed to delete raw material: ' + (err.message || 'Server error'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1377,7 +1408,11 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
       const matchesShade = String(item.shade || '').toLowerCase().includes(q);
       const matchesLoc = String(item.location || '').toLowerCase().includes(q);
       const matchesHsn = String(item.hsnCode || '').toLowerCase().includes(q);
-      if (!matchesName && !matchesCat && !matchesShade && !matchesLoc && !matchesHsn) return false;
+      const matchesColor = String(item.color || '').toLowerCase().includes(q);
+      const matchesPanna = String(item.panna || '').toLowerCase().includes(q);
+      const matchesQual = String(item.paperQuality || '').toLowerCase().includes(q);
+      const matchesNotes = String(item.notes || '').toLowerCase().includes(q);
+      if (!matchesName && !matchesCat && !matchesShade && !matchesLoc && !matchesHsn && !matchesColor && !matchesPanna && !matchesQual && !matchesNotes) return false;
     }
     return true;
   });
@@ -1793,10 +1828,10 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
               const printdotItems = filteredStock.filter(item => isPrintdotItem(item));
               const otherItems = filteredStock.filter(item => !isPaperItem(item) && !isGrandoItem(item) && !isPrintdotItem(item));
 
-              const showPaper = isDigitalPrint && (stockMaterialType === 'All' || matchesMaterialType('Sublimation Paper', stockMaterialType) || matchesMaterialType('Butter Paper', stockMaterialType));
-              const showGrando = isDigitalPrint && (stockMaterialType === 'All' || stockMaterialType === 'Ink' || stockMaterialType === 'All Inks' || stockMaterialType === 'Grando Ink');
-              const showPrintdot = isDigitalPrint && (stockMaterialType === 'All' || stockMaterialType === 'Ink' || stockMaterialType === 'All Inks' || stockMaterialType === 'Printdot Ink');
-              const showOther = !isDigitalPrint || stockMaterialType === 'All' || (!showPaper && !showGrando && !showPrintdot);
+              const showPaper = isDigitalPrint && (stockMaterialType === 'All' || matchesMaterialType('Sublimation Paper', stockMaterialType) || matchesMaterialType('Butter Paper', stockMaterialType)) && (!stockSearchQuery || paperItems.length > 0);
+              const showGrando = isDigitalPrint && (stockMaterialType === 'All' || stockMaterialType === 'Ink' || stockMaterialType === 'All Inks' || stockMaterialType === 'Grando Ink') && (!stockSearchQuery || grandoItems.length > 0);
+              const showPrintdot = isDigitalPrint && (stockMaterialType === 'All' || stockMaterialType === 'Ink' || stockMaterialType === 'All Inks' || stockMaterialType === 'Printdot Ink') && (!stockSearchQuery || printdotItems.length > 0);
+              const showOther = (!isDigitalPrint || stockMaterialType === 'All' || (!showPaper && !showGrando && !showPrintdot)) && (!stockSearchQuery || otherItems.length > 0);
 
               const CMYK_SPECS = [
                 { key: 'Cyan', code: 'C', name: 'Cyan (C)', colorVal: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)', border: 'rgba(6, 182, 212, 0.35)' },
@@ -2011,6 +2046,24 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                           style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px' }}
                                         >
                                           <ArrowUpFromLine size={14} />
+                                        </button>
+                                        <button 
+                                          onClick={() => handleDeleteMaterial(item)}
+                                          style={{
+                                            padding: '6px 10px',
+                                            fontSize: '0.75rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            borderRadius: '6px',
+                                            background: 'rgba(239, 68, 68, 0.1)',
+                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                            color: 'var(--danger)',
+                                            cursor: 'pointer'
+                                          }}
+                                          title={`Delete profile "${item.materialName}"`}
+                                        >
+                                          <Trash2 size={14} />
                                         </button>
                                       </div>
                                     </td>
@@ -2435,6 +2488,24 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                         >
                                           <ArrowUpFromLine size={14} />
                                         </button>
+                                        <button 
+                                          onClick={() => handleDeleteMaterial(item)}
+                                          style={{
+                                            padding: '6px 10px',
+                                            fontSize: '0.75rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            borderRadius: '6px',
+                                            background: 'rgba(239, 68, 68, 0.1)',
+                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                            color: 'var(--danger)',
+                                            cursor: 'pointer'
+                                          }}
+                                          title={`Delete material "${item.materialName}"`}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
@@ -2475,6 +2546,25 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                         </div>
                       )
                     )
+                  )}
+
+                  {(!showPaper && !showGrando && !showPrintdot && !showOther) && (
+                    <div style={{ ...tableCardStyle, padding: '3.5rem 1.5rem', textAlign: 'center' }}>
+                      <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                        <Search size={28} />
+                      </div>
+                      <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 800 }}>
+                        {stockSearchQuery ? `No materials found matching "${stockSearchQuery}"` : `No materials found`}
+                      </h3>
+                      <p style={{ margin: '0 auto 1.5rem', color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '520px', lineHeight: 1.5 }}>
+                        {stockSearchQuery ? 'Try adjusting your search terms or clearing the search filter.' : `Add items using "+ Add Material" above.`}
+                      </p>
+                      {stockSearchQuery && (
+                        <button type="button" onClick={() => setStockSearchQuery('')} className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
+                          Clear Search
+                        </button>
+                      )}
+                    </div>
                   )}
 
                 </div>
