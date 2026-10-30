@@ -175,9 +175,10 @@ const request = async (path, options = {}) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+    let cleanPath = typeof path === 'string' ? path.replace(/[\uD800-\uDFFF]/g, '') : path;
     let response;
     try {
-      response = await fetch(`${baseUrl}${path}`, {
+      response = await fetch(`${baseUrl}${cleanPath}`, {
         ...options,
         credentials: options.credentials || 'include',
         cache: 'no-store',
@@ -295,10 +296,16 @@ const request = async (path, options = {}) => {
 
 export const api = {
   // Auth
-  async login(email, password) {
+  async login(emailOrCredentials, password) {
+    let emailVal = emailOrCredentials;
+    let passwordVal = password;
+    if (emailOrCredentials && typeof emailOrCredentials === 'object') {
+      emailVal = emailOrCredentials.email || emailOrCredentials.username;
+      passwordVal = emailOrCredentials.password;
+    }
     const data = await request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: emailVal, password: passwordVal }),
     });
     if (data.tokens) {
       if (data.tokens.access && data.tokens.access.token) {
@@ -319,7 +326,7 @@ export const api = {
   async register(name, email, password) {
     return request('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name, email, password, role: 'admin' }),
+      body: JSON.stringify({ name, email, password, role: 'user' }),
     });
   },
 

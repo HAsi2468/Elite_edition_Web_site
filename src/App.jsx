@@ -242,7 +242,11 @@ export const ALL_KNOWN_ERP_TABS = new Set([
 
 export function getDepartmentForTab(tab) {
   if (!tab) return null;
-  if (tab.startsWith('jobcards') || tab === 'raw_materials') return 'digital_print';
+  if (tab.startsWith('jobcards')) return 'digital_print';
+  if (tab === 'raw_materials') {
+    const saved = typeof localStorage !== 'undefined' ? (localStorage.getItem('elite_active_dept') || localStorage.getItem('elite_active_department')) : '';
+    return saved || 'digital_print';
+  }
   if (tab.startsWith('es_') || tab.startsWith('stitching')) return 'stitching';
   if (tab.startsWith('eo_') || ['inventory', 'catalog', 'returns', 'sales', 'reports', 'unicommerce', 'myntra', 'elite_online'].includes(tab)) return 'elite_online';
   if (tab.startsWith('ee_')) return 'elite_edition';

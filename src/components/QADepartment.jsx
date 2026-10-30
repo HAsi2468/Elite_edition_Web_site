@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
 import {
   Layers, Zap, CheckCircle2, X, Save, Trash2, ShieldCheck, RefreshCw, Search
@@ -36,6 +36,8 @@ export default function QADepartment({ department = 'digital_print' }) {
   const [error, setError] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [isWhiteSubmitting, setIsWhiteSubmitting] = useState(false);
+  const isWhiteSubmittingRef = useRef(false);
 
   // User details
   const [accountFullName] = useState(() => {
@@ -206,6 +208,7 @@ export default function QADepartment({ department = 'digital_print' }) {
   // Submit White Fabric Inspection Log
   const handleWhiteFormSubmit = async (e) => {
     e.preventDefault();
+    if (isWhiteSubmittingRef.current) return;
     if (!whiteForm.fabricQuality || !whiteForm.totalMtr) {
       triggerEliteAlert('Please fill in Fabric Quality and Total Roll Meters.');
       return;
@@ -251,40 +254,45 @@ export default function QADepartment({ department = 'digital_print' }) {
       notes: whiteForm.notes || ''
     };
 
+    isWhiteSubmittingRef.current = true;
+    setIsWhiteSubmitting(true);
     try {
       const res = await api.createWhiteFabricLog(logPayload);
       const savedDoc = res?.data || { ...logPayload, _id: `WF-${Date.now()}` };
       const updatedLogs = [savedDoc, ...whiteFabricLogs];
       setWhiteFabricLogs(updatedLogs);
       localStorage.setItem(`qa_white_fabric_logs_${department}`, JSON.stringify(updatedLogs));
+
+      triggerPushNotification('🥼 White Fabric Inspected', `Lot #${whiteForm.lotNo || 'N/A'}: ${usableFresh.toFixed(2)}m Usable | ${totDefect.toFixed(2)}m Defect`, 'success');
+      setSelectedInwardBadge('');
+      
+      // Reset form
+      setWhiteForm({
+        date: toLocalYMD(),
+        challanNo: '',
+        vendorName: '',
+        fabricQuality: '',
+        panna: '58"',
+        lotNo: '',
+        totalMtr: '',
+        weavingFaultMtr: '0',
+        stainFaultMtr: '0',
+        shadingFaultMtr: '0',
+        widthShortageMtr: '0',
+        status: 'Passed',
+        inspectorName: accountFullName,
+        notes: ''
+      });
     } catch (err) {
       console.warn('API save failed, falling back to local storage:', err);
       const fallbackDoc = { ...logPayload, _id: `WF-${Date.now()}` };
       const updatedLogs = [fallbackDoc, ...whiteFabricLogs];
       setWhiteFabricLogs(updatedLogs);
       localStorage.setItem(`qa_white_fabric_logs_${department}`, JSON.stringify(updatedLogs));
+    } finally {
+      setIsWhiteSubmitting(false);
+      isWhiteSubmittingRef.current = false;
     }
-
-    triggerPushNotification('🥼 White Fabric Inspected', `Lot #${whiteForm.lotNo || 'N/A'}: ${usableFresh.toFixed(2)}m Usable | ${totDefect.toFixed(2)}m Defect`, 'success');
-    setSelectedInwardBadge('');
-    
-    // Reset form
-    setWhiteForm({
-      date: toLocalYMD(),
-      challanNo: '',
-      vendorName: '',
-      fabricQuality: '',
-      panna: '58"',
-      lotNo: '',
-      totalMtr: '',
-      weavingFaultMtr: '0',
-      stainFaultMtr: '0',
-      shadingFaultMtr: '0',
-      widthShortageMtr: '0',
-      status: 'Passed',
-      inspectorName: accountFullName,
-      notes: ''
-    });
   };
 
   // Delete White Fabric Log
@@ -565,8 +573,24 @@ export default function QADepartment({ department = 'digital_print' }) {
 
             {/* Action Button */}
             <div>
-              <button type="submit" style={{ background: '#4f46e5', color: '#ffffff', border: 'none', padding: '0.65rem 1.6rem', borderRadius: '8px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)' }}>
-                <Save size={16} /> Save White Fabric QA Entry
+              <button
+                type="submit"
+                disabled={isWhiteSubmitting}
+                style={{
+                  background: isWhiteSubmitting ? '#94a3b8' : '#4f46e5',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.65rem 1.6rem',
+                  borderRadius: '8px',
+                  fontWeight: 900,
+                  cursor: isWhiteSubmitting ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+                }}
+              >
+                <Save size={16} /> {isWhiteSubmitting ? 'Saving QA Entry...' : 'Save White Fabric QA Entry'}
               </button>
             </div>
           </form>

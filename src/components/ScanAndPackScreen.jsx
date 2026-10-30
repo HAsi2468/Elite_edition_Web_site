@@ -970,7 +970,7 @@ export default function ScanAndPackScreen({ currentUser }) {
     if (trimmed.length > 80 || /<[a-z][\s\S]*>/i.test(trimmed)) {
       playAudioCue('error');
       setErrorMsg('Invalid barcode format or excessive length.');
-      setAwbInput('');
+      setScanInput('');
       return;
     }
 
@@ -3252,11 +3252,11 @@ export default function ScanAndPackScreen({ currentUser }) {
                   await api.exportScanPackHistory({
                     mode: scanMode,
                     search: historySearchQuery,
-                    startDate: historyDateRange?.startDate,
-                    endDate: historyDateRange?.endDate,
-                    courier: historyCourierFilter,
-                    channel: historyChannelFilter,
-                    status: historyStatusFilter
+                    startDate: historyStartDate,
+                    endDate: historyEndDate,
+                    courier: historyCourier,
+                    channel: historyChannel,
+                    status: historyOperationStatus
                   });
                 } catch (err) {
                   if (!displayedHistory.length) return alert('No history records to export.');

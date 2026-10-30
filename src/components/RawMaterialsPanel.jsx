@@ -2154,6 +2154,8 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                               const canSize = matched?.canSize || (isCleaning ? 1 : 5);
                               const containerLabel = isCleaning ? `${canSize} Liter Bottle` : `${canSize} Liter Can`;
 
+                              if (stockSearchQuery && matching.length === 0) return null;
+
                               return (
                                 <tr key={spec.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
                                   <td style={tdStyle}>
@@ -2282,6 +2284,8 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                               const currentStock = matching.reduce((sum, it) => sum + (it.currentStock || 0), 0);
                               const canSize = matched?.canSize || 10;
 
+                              if (stockSearchQuery && matching.length === 0) return null;
+
                               return (
                                 <tr key={spec.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
                                   <td style={tdStyle}>
@@ -2391,7 +2395,17 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                         </div>
 
                         <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '850px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '850px', tableLayout: 'fixed' }}>
+                            <colgroup>
+                              <col style={{ width: '120px' }} />
+                              <col style={{ width: '280px' }} />
+                              <col style={{ width: '90px' }} />
+                              <col style={{ width: '110px' }} />
+                              <col style={{ width: '110px' }} />
+                              <col style={{ width: '120px' }} />
+                              <col style={{ width: '100px' }} />
+                              <col style={{ width: '120px' }} />
+                            </colgroup>
                             <thead>
                               <tr>
                                 <th style={thStyle}>Category</th>
@@ -2439,7 +2453,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                                     </td>
                                     <td style={{ ...tdStyle, maxWidth: '280px', overflow: 'hidden' }}>
                                       <div>
-                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.materialName}</strong>
+                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem', wordBreak: 'break-all', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.materialName}</strong>
                                         <div style={{ display: 'flex', gap: '8px', fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '2px', flexWrap: 'wrap' }}>
                                           {item.shade && <span>Shade: <strong style={{ color: 'var(--text-light)' }}>{item.shade}</strong></span>}
                                           {item.panna && <span>Width: <strong style={{ color: 'var(--text-light)' }}>{item.panna}</strong></span>}
@@ -3256,7 +3270,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty (Rolls)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={inwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={inwardItems.length === 0} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Meters per Roll</label>
@@ -3278,7 +3292,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty (Rolls)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={inwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={inwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3308,7 +3322,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty ({inwardForm.unit || 'Liters'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3349,7 +3363,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty ({inwardForm.unit || 'Liters'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={inwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3379,7 +3393,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <div style={{ flex: 2 }}>
                     <label style={labelStyle}>Qty</label>
-                    <input type="number" min="0" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} required={inwardItems.length === 0} />
+                    <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={inwardForm.qty} onChange={e => setInwardForm(p => ({ ...p, qty: e.target.value }))} required={inwardItems.length === 0} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>Unit</label>
@@ -3618,7 +3632,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty (Rolls)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={outwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={outwardItems.length === 0} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Meters per Roll</label>
@@ -3640,7 +3654,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty (Rolls)</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={outwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 5" required={outwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3670,7 +3684,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty ({outwardForm.unit || 'Liters'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3711,7 +3725,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Qty ({outwardForm.unit || 'Liters'})</label>
-                      <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
+                      <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} placeholder="e.g. 10" required={outwardItems.length === 0} />
                     </div>
                   </div>
                   <div>
@@ -3741,7 +3755,7 @@ export default function RawMaterialsPanel({ companyEntity = 'Elite Digital Print
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <div style={{ flex: 2 }}>
                     <label style={labelStyle}>Qty</label>
-                    <input type="number" min="0" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} required={outwardItems.length === 0} />
+                    <input type="number" min="0" max="1000000" step="any" style={inputStyle} value={outwardForm.qty} onChange={e => setOutwardForm(p => ({ ...p, qty: e.target.value }))} required={outwardItems.length === 0} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>Unit</label>
