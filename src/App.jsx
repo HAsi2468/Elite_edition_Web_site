@@ -1238,6 +1238,12 @@ export default function App() {
   const handleNavClick = (tab) => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
+    if (typeof window !== 'undefined') {
+      const canonical = getCanonicalHashForTab(tab);
+      if (canonical) {
+        window.location.hash = canonical;
+      }
+    }
   };
 
   const handleSwitchDepartment = (dept) => {
