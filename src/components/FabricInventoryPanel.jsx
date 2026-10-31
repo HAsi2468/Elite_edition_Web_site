@@ -1015,20 +1015,28 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
     const numQty = parseFloat(inwardForm.qty);
     if (isNaN(numQty) || numQty <= 0) {
-      setInwardError('Please enter a valid positive quantity (> 0 meters).');
+      const msg = 'Please enter a valid positive quantity (> 0 meters).';
+      setInwardError(msg);
+      triggerEliteAlert('Validation Error', msg, 'warning');
       return;
     }
     if (numQty > 1000000) {
-      setInwardError('Inward quantity cannot exceed 1,000,000 meters.');
+      const msg = 'Inward quantity cannot exceed 1,000,000 meters.';
+      setInwardError(msg);
+      triggerEliteAlert('Validation Error', msg, 'warning');
       return;
     }
     if (!inwardForm.fabricQuality || !String(inwardForm.fabricQuality).trim()) {
-      setInwardError('Please select or specify Fabric Quality.');
+      const msg = 'Please select or specify Fabric Quality.';
+      setInwardError(msg);
+      triggerEliteAlert('Validation Error', msg, 'warning');
       return;
     }
 
     if (duplicateInwardMatch) {
-      setInwardError(`⚠️ Duplicate Inward Blocked: Lot #${duplicateInwardMatch.lotNo} already exists for Vendor "${duplicateInwardMatch.vendorName}", Challan #${duplicateInwardMatch.challanNo || 'N/A'}, Fabric "${duplicateInwardMatch.fabricQuality}" (${duplicateInwardMatch.panna || 'Standard'}" - ${duplicateInwardMatch.qty}m on ${duplicateInwardMatch.date ? new Date(duplicateInwardMatch.date).toLocaleDateString('en-GB') : 'N/A'}). Duplicate entries are not permitted.`);
+      const msg = `⚠️ Duplicate Inward Blocked: Lot #${duplicateInwardMatch.lotNo} already exists for Vendor "${duplicateInwardMatch.vendorName}", Challan #${duplicateInwardMatch.challanNo || 'N/A'}, Fabric "${duplicateInwardMatch.fabricQuality}" (${duplicateInwardMatch.panna || 'Standard'}" - ${duplicateInwardMatch.qty}m on ${duplicateInwardMatch.date ? new Date(duplicateInwardMatch.date).toLocaleDateString('en-GB') : 'N/A'}). Duplicate entries are not permitted.`;
+      setInwardError(msg);
+      triggerEliteAlert('Duplicate Inward Blocked', msg, 'warning');
       return;
     }
     setLoading(true);
@@ -1049,8 +1057,10 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
       triggerGlobalDataRefresh('fabric');
       fetchData();
     } catch (err) {
-      setInwardError(err.message || 'Failed to record fabric inward. Please check your inputs.');
-      triggerPushNotification('Inward Failed', err.message || 'Failed to record fabric inward.', 'danger');
+      const errMsg = err.message || 'Failed to record fabric inward. Please check your inputs.';
+      setInwardError(errMsg);
+      triggerEliteAlert('Inward Error', errMsg, 'danger');
+      triggerPushNotification('Inward Failed', errMsg, 'danger');
     } finally {
       setLoading(false);
     }
@@ -1062,11 +1072,11 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
 
     const numOutQty = parseFloat(outwardForm.qty);
     if (isNaN(numOutQty) || numOutQty <= 0) {
-      alert('Please enter a valid positive quantity (> 0 meters).');
+      triggerEliteAlert('Validation Error', 'Please enter a valid positive quantity (> 0 meters).', 'warning');
       return;
     }
     if (!outwardForm.fabricQuality || !String(outwardForm.fabricQuality).trim()) {
-      alert('Please select or specify Fabric Quality.');
+      triggerEliteAlert('Validation Error', 'Please select or specify Fabric Quality.', 'warning');
       return;
     }
 
@@ -1087,7 +1097,7 @@ export default function FabricInventoryPanel({ department, onNavigateToBilling, 
       triggerGlobalDataRefresh('fabric');
       fetchData();
     } catch (err) {
-      alert(err.message);
+      triggerEliteAlert('Outward Error', err.message || 'Failed to record fabric outward.', 'danger');
     } finally {
       setLoading(false);
       isSubmittingChallanRef.current = false;
