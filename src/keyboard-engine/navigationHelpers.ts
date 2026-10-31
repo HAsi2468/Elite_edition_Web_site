@@ -373,3 +373,95 @@ export function activateSidebarModule(index: number): boolean {
 
   return false;
 }
+
+/**
+ * Universal Wide Table Keyboard Horizontal Scroll Engine
+ * Allows users to scroll horizontally through large tables without touching the mouse.
+ */
+export function getActiveHorizontalScrollContainer(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+
+  const active = document.activeElement as HTMLElement | null;
+
+  // 1. If currently focused element is inside or is itself a scrollable container
+  if (active && active !== document.body && active !== document.documentElement) {
+    let curr: HTMLElement | null = active;
+    while (curr && curr !== document.body) {
+      if (curr.scrollWidth > curr.clientWidth + 5) {
+        const style = window.getComputedStyle(curr);
+        if (
+          style.overflowX === 'auto' ||
+          style.overflowX === 'scroll' ||
+          curr.classList.contains('overflow-x-auto') ||
+          curr.hasAttribute('data-keyboard-scroll')
+        ) {
+          return curr;
+        }
+      }
+      curr = curr.parentElement;
+    }
+  }
+
+  // 2. Look for any visible table container with horizontal overflow on the active screen
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-keyboard-scroll="true"], .table-responsive, .responsive-table-wrapper, .overflow-x-auto, [role="region"], table'
+    )
+  );
+
+  for (const el of candidates) {
+    const target = el.tagName.toLowerCase() === 'table' ? el.parentElement : el;
+    if (target && target.scrollWidth > target.clientWidth + 10) {
+      const rect = target.getBoundingClientRect();
+      if (rect.height > 0 && rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
+        return target;
+      }
+    }
+  }
+
+  // 3. Fallback: inspect elements inside main-content-area
+  const main = document.getElementById('main-content-area') || document.body;
+  const allContainers = Array.from(main.querySelectorAll<HTMLElement>('div, section, main'));
+  for (const div of allContainers) {
+    if (div.scrollWidth > div.clientWidth + 15) {
+      const style = window.getComputedStyle(div);
+      if (style.overflowX === 'auto' || style.overflowX === 'scroll') {
+        const rect = div.getBoundingClientRect();
+        if (rect.height > 40 && rect.top < window.innerHeight && rect.bottom > 80) {
+          return div;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Universally scroll the active wide table horizontally via keyboard
+ * @param direction 'left' | 'right' | 'home' | 'end'
+ * @param amount optional custom pixel amount
+ */
+export function scrollTableHorizontally(
+  direction: 'left' | 'right' | 'home' | 'end',
+  amount?: number
+): boolean {
+  const container = getActiveHorizontalScrollContainer();
+  if (!container) return false;
+
+  const clientW = container.clientWidth || 400;
+  const step = amount ?? Math.max(160, Math.floor(clientW * 0.25));
+
+  if (direction === 'home') {
+    container.scrollTo({ left: 0, behavior: 'smooth' });
+    return true;
+  }
+  if (direction === 'end') {
+    container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
+    return true;
+  }
+
+  const delta = direction === 'right' ? step : -step;
+  container.scrollBy({ left: delta, behavior: 'smooth' });
+  return true;
+}

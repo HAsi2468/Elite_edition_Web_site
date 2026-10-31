@@ -72,6 +72,15 @@ const SHORTCUT_DATABASE: ShortcutCategory[] = [
     ],
   },
   {
+    title: 'Wide Table Horizontal Scrolling',
+    items: [
+      { key: 'Shift + Arrow Left / Right', description: 'Scroll wide table horizontally left or right' },
+      { key: 'Shift + Home / End', description: 'Jump to first column / last action column in table' },
+      { key: 'Alt + PageUp / PageDown', description: 'Page scroll wide table horizontally' },
+      { key: 'Tab into Table Container', description: 'Focus table container to scroll with Arrow Left / Right' },
+    ],
+  },
+  {
     title: 'Data Grid Traversal (Roving TabIndex)',
     items: [
       { key: 'Arrow Keys (↑ ↓ ← →)', description: 'Traverse grid cells in all directions' },

@@ -13,6 +13,7 @@ import {
   focusSearchInput,
   cyclePanes,
   handleGlobalEnterAsTab,
+  scrollTableHorizontally,
 } from './navigationHelpers';
 
 interface HotkeyContextValue {
@@ -220,7 +221,37 @@ export const HotkeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
 
-      // 5. Universal Sub-Tab Switching (Alt + ArrowRight/Left or Ctrl + ]/[)
+      // 5. Wide Table Keyboard Horizontal Scrolling (Shift + ArrowLeft/Right, Shift + Home/End, Alt + PageUp/Down)
+      const isShiftArrow = e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+      const isShiftHomeEnd = e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'Home' || e.key === 'End');
+      const isAltPage = (e.altKey || e.shiftKey) && (e.key === 'PageUp' || e.key === 'PageDown');
+
+      const activeEl = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+      const isDirectlyOnTable = activeEl && (
+        activeEl.tagName?.toLowerCase() === 'table' ||
+        activeEl.hasAttribute('data-keyboard-scroll') ||
+        activeEl.classList?.contains('overflow-x-auto') ||
+        activeEl.getAttribute('role') === 'region' ||
+        activeEl.getAttribute('role') === 'grid'
+      );
+      const isBareArrowOnTable = isDirectlyOnTable && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+
+      if ((isShiftArrow && !inInput) || (isShiftHomeEnd && !inInput) || isAltPage || isBareArrowOnTable) {
+        let direction: 'left' | 'right' | 'home' | 'end' = 'right';
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') direction = 'left';
+        else if (e.key === 'ArrowRight' || e.key === 'PageDown') direction = 'right';
+        else if (e.key === 'Home') direction = 'home';
+        else if (e.key === 'End') direction = 'end';
+
+        const scrolled = scrollTableHorizontally(direction);
+        if (scrolled) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
+      // 6. Universal Sub-Tab Switching (Alt + ArrowRight/Left or Ctrl + ]/[)
       if ((e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) ||
           (isCtrlOrMeta && (e.key === ']' || e.key === '['))) {
         const direction = (e.key === 'ArrowRight' || e.key === ']') ? 'next' : 'prev';
