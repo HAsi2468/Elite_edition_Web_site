@@ -465,3 +465,198 @@ export function scrollTableHorizontally(
   container.scrollBy({ left: delta, behavior: 'smooth' });
   return true;
 }
+
+/**
+ * Table Row Keyboard Navigation (Roving Focus across table rows)
+ * Allows users to traverse rows with ArrowUp / ArrowDown, open row with Enter,
+ * and toggle row selection with Space.
+ */
+export function navigateTableRows(action: 'up' | 'down' | 'enter' | 'space'): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const container = getActiveHorizontalScrollContainer() || document.getElementById('main-content-area') || document.body;
+  const rows = Array.from(container.querySelectorAll<HTMLTableRowElement>('tbody tr')).filter(
+    (tr) => (tr.offsetWidth || tr.offsetHeight || tr.getClientRects().length) > 0
+  );
+
+  if (!rows.length) return false;
+
+  const activeEl = document.activeElement as HTMLElement | null;
+  let activeIndex = rows.findIndex(
+    (r) => r === activeEl || r.contains(activeEl) || r.getAttribute('data-erp-active-row') === 'true'
+  );
+
+  if (action === 'down') {
+    const nextIdx = activeIndex === -1 ? 0 : Math.min(rows.length - 1, activeIndex + 1);
+    const targetRow = rows[nextIdx];
+    rows.forEach((r) => r.removeAttribute('data-erp-active-row'));
+    targetRow.setAttribute('data-erp-active-row', 'true');
+    targetRow.tabIndex = 0;
+    targetRow.focus();
+    targetRow.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    return true;
+  }
+
+  if (action === 'up') {
+    const prevIdx = activeIndex === -1 ? 0 : Math.max(0, activeIndex - 1);
+    const targetRow = rows[prevIdx];
+    rows.forEach((r) => r.removeAttribute('data-erp-active-row'));
+    targetRow.setAttribute('data-erp-active-row', 'true');
+    targetRow.tabIndex = 0;
+    targetRow.focus();
+    targetRow.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    return true;
+  }
+
+  if (action === 'enter' && activeIndex !== -1) {
+    const targetRow = rows[activeIndex];
+    const clickTarget =
+      targetRow.querySelector<HTMLElement>('button:not([disabled]), a[href], [data-action="view"]') ||
+      targetRow;
+    clickTarget.click();
+    return true;
+  }
+
+  if (action === 'space' && activeIndex !== -1) {
+    const targetRow = rows[activeIndex];
+    const checkbox = targetRow.querySelector<HTMLInputElement>('input[type="checkbox"]:not([disabled])');
+    if (checkbox) {
+      checkbox.click();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Trigger Primary "New / Create" Button on active screen (Alt + N)
+ */
+export function triggerPrimaryNewAction(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const content = document.getElementById('main-content-area') || document.body;
+  const buttons = Array.from(content.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+
+  for (const btn of buttons) {
+    const text = (btn.textContent || '').trim();
+    const aria = btn.getAttribute('aria-label') || '';
+    const title = btn.getAttribute('title') || '';
+    const combined = `${text} ${aria} ${title}`.toLowerCase();
+
+    if (
+      btn.getAttribute('data-action') === 'create' ||
+      btn.getAttribute('data-action') === 'new' ||
+      /^\+\s*(new|add)/i.test(text) ||
+      combined.includes('new job card') ||
+      combined.includes('new invoice') ||
+      combined.includes('new purchase') ||
+      combined.includes('new inward') ||
+      combined.includes('new item') ||
+      combined.includes('add party') ||
+      combined.includes('add product') ||
+      combined.includes('new expense') ||
+      combined.includes('new complain')
+    ) {
+      if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+        btn.focus();
+        btn.click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Trigger Screen Refresh Button (F5 or Alt + R)
+ */
+export function triggerScreenRefresh(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const content = document.getElementById('main-content-area') || document.body;
+  const buttons = Array.from(content.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+
+  for (const btn of buttons) {
+    const text = (btn.textContent || '').trim();
+    const title = btn.getAttribute('title') || '';
+    const aria = btn.getAttribute('aria-label') || '';
+    const combined = `${text} ${title} ${aria}`.toLowerCase();
+
+    if (
+      btn.getAttribute('data-action') === 'refresh' ||
+      combined === 'refresh' ||
+      combined.includes('refresh data') ||
+      combined.includes('sync list') ||
+      btn.querySelector('svg.lucide-refresh-cw') !== null
+    ) {
+      if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+        btn.focus();
+        btn.click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Trigger Screen Excel Export Button (Alt + E)
+ */
+export function triggerExportExcel(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const content = document.getElementById('main-content-area') || document.body;
+  const buttons = Array.from(content.querySelectorAll<HTMLButtonElement>('button:not([disabled]), a.export-btn'));
+
+  for (const btn of buttons) {
+    const text = (btn.textContent || '').trim().toLowerCase();
+    const title = (btn.getAttribute('title') || '').toLowerCase();
+    const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+    const combined = `${text} ${title} ${aria}`;
+
+    if (
+      btn.getAttribute('data-action') === 'export' ||
+      combined.includes('export') ||
+      combined.includes('excel') ||
+      combined.includes('download xlsx') ||
+      combined.includes('download csv')
+    ) {
+      if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+        btn.focus();
+        btn.click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Focus Date Range Picker filter (Alt + D)
+ */
+export function focusDateRangeFilter(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  const content = document.getElementById('main-content-area') || document.body;
+  const dateBtn = content.querySelector<HTMLButtonElement>(
+    'button.date-preset-btn, button[data-filter="date"], button:has(svg.lucide-calendar)'
+  );
+
+  if (dateBtn && dateBtn.offsetWidth > 0) {
+    dateBtn.focus();
+    dateBtn.click();
+    return true;
+  }
+
+  const dateInput = content.querySelector<HTMLInputElement>('input[type="date"], input.date-range-input');
+  if (dateInput && dateInput.offsetWidth > 0) {
+    dateInput.focus();
+    return true;
+  }
+
+  return false;
+}

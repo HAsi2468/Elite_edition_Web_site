@@ -39,6 +39,19 @@ const SHORTCUT_DATABASE: ShortcutCategory[] = [
     ],
   },
   {
+    title: 'Quick Actions & Screen Operations',
+    items: [
+      { key: 'Alt + N', description: 'Quick New / Create (+ New Job Card, Invoice, Inward, Item)' },
+      { key: 'Alt + R / F5', description: 'Refresh active list data without full browser reload' },
+      { key: 'Alt + E', description: 'Export active screen data to Excel / XLSX' },
+      { key: 'Alt + D', description: 'Quick focus / open Date Range Filter' },
+      { key: 'Arrow Up / Down', description: 'Navigate through table rows smoothly' },
+      { key: 'Enter on Row', description: 'Open / drill-down into focused row details' },
+      { key: 'Space on Row', description: 'Toggle row multi-selection checkbox' },
+      { key: '[ and ]', description: 'Quick bracket scroll wide table horizontally' },
+    ],
+  },
+  {
     title: 'Voucher Entry & Actions',
     items: [
       { key: 'Ctrl + S / Ctrl + A', description: 'Save and Accept Active Form' },

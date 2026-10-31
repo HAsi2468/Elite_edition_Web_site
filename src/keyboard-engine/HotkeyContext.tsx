@@ -14,6 +14,11 @@ import {
   cyclePanes,
   handleGlobalEnterAsTab,
   scrollTableHorizontally,
+  navigateTableRows,
+  triggerPrimaryNewAction,
+  triggerScreenRefresh,
+  triggerExportExcel,
+  focusDateRangeFilter,
 } from './navigationHelpers';
 
 interface HotkeyContextValue {
@@ -329,6 +334,96 @@ export const HotkeyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const handledTab = handleGlobalEnterAsTab(e);
         if (handledTab) {
           return;
+        }
+      }
+
+      // 13. Primary Action Shortcuts: New (Alt+N), Refresh (F5 / Alt+R), Export (Alt+E), Date (Alt+D)
+      if (e.altKey && !isCtrlOrMeta) {
+        if (key === 'n' || e.code === 'KeyN') {
+          const handled = triggerPrimaryNewAction();
+          if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+        if (key === 'r' || e.code === 'KeyR') {
+          const handled = triggerScreenRefresh();
+          if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+        if (key === 'e' || e.code === 'KeyE') {
+          const handled = triggerExportExcel();
+          if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+        if (key === 'd' || e.code === 'KeyD') {
+          const handled = focusDateRangeFilter();
+          if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+      }
+
+      // Intercept F5 for seamless in-app table data refresh without full browser reload
+      if (upperKey === 'F5') {
+        const refreshed = triggerScreenRefresh();
+        if (refreshed) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
+      // 14. Quick Table Bracket Scrolling ([ / ] when not inside a text input)
+      if (!inInput && !e.altKey && !isCtrlOrMeta) {
+        if (e.key === '[' || e.key === ']') {
+          const scrolled = scrollTableHorizontally(e.key === ']' ? 'right' : 'left');
+          if (scrolled) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+      }
+
+      // 15. Table Row Roving Navigation (ArrowUp / ArrowDown / Enter / Space on table rows)
+      if (!inInput && !e.altKey && !isCtrlOrMeta) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          // If active element is a table row or body
+          const isRow = activeEl && (activeEl.tagName?.toLowerCase() === 'tr' || activeEl.hasAttribute('data-erp-active-row'));
+          if (isRow || isDirectlyOnTable) {
+            const moved = navigateTableRows(e.key === 'ArrowDown' ? 'down' : 'up');
+            if (moved) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
+        } else if (activeEl && (activeEl.tagName?.toLowerCase() === 'tr' || activeEl.hasAttribute('data-erp-active-row'))) {
+          if (e.key === 'Enter') {
+            const entered = navigateTableRows('enter');
+            if (entered) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          } else if (e.key === ' ') {
+            const toggled = navigateTableRows('space');
+            if (toggled) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
         }
       }
     };
