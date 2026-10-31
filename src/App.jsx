@@ -1985,8 +1985,9 @@ export default function App() {
       setLoading(true);
       try {
         await api.deleteProductCatalog(id);
-        setCatalogItems(prev => prev.filter(item => item._id !== id));
+        setCatalogItems(prev => prev.filter(item => item._id !== id && item.id !== id));
         triggerGlobalDataRefresh();
+        await fetchData();
       } catch (err) {
         triggerEliteAlert('Delete Error', err.message || 'Failed to delete product from catalog.', 'error');
       } finally {
