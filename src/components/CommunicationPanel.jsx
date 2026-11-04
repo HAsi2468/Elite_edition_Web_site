@@ -846,11 +846,13 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [viewportHeight, setViewportHeight] = useState(null);
   const [viewportTop, setViewportTop] = useState(0);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const isKeyboardOpen = Boolean(
     isMobileScreen &&
+    isInputFocused &&
     viewportHeight !== null &&
     typeof window !== 'undefined' &&
-    viewportHeight < (window.innerHeight - 60)
+    viewportHeight < (window.innerHeight - 150)
   );
 
   useEffect(() => {
@@ -869,6 +871,9 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
           const newH = vv ? Math.round(vv.height) : window.innerHeight;
           const newTop = vv ? Math.round(vv.offsetTop) : 0;
           setViewportTop(newTop);
+          if (window.scrollY > 0) {
+            window.scrollTo(0, 0);
+          }
           // Only trigger state re-render if height change is substantial (> 30px, e.g. software keyboard)
           if (lastHeight === null || Math.abs(newH - lastHeight) > 30) {
             lastHeight = newH;
@@ -5249,7 +5254,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         maxHeight: (isMobileScreen && isKeyboardOpen && viewportHeight) ? `${viewportHeight}px` : '100%',
         ...(isMobileScreen && isKeyboardOpen && viewportHeight ? {
           position: 'fixed',
-          top: `${viewportTop || 0}px`,
+          top: 0,
           left: 0,
           right: 0,
           zIndex: 1000,
@@ -8271,14 +8276,26 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                           }
                         }}
                         onFocus={() => {
+                          setIsInputFocused(true);
                           if (isMobileScreen && typeof window !== 'undefined') {
                             window.scrollTo(0, 0);
+                            if (document.body) document.body.scrollTop = 0;
+                            if (document.documentElement) document.documentElement.scrollTop = 0;
                           }
                           setTimeout(() => {
                             if (chatScrollRef.current) {
                               chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
                             }
-                          }, 100);
+                            if (typeof window !== 'undefined') {
+                              window.scrollTo(0, 0);
+                            }
+                          }, 150);
+                        }}
+                        onBlur={() => {
+                          setIsInputFocused(false);
+                          if (typeof window !== 'undefined') {
+                            window.scrollTo(0, 0);
+                          }
                         }}
                         onChange={handleInputChange}
                         className="phoenix-chat-textarea"
