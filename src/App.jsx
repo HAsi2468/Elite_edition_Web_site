@@ -2855,28 +2855,21 @@ export default function App() {
                 onClick={() => setShowGlobalSearch(true)}
                 className="btn-secondary"
                 title="Global Search (Ctrl/Cmd+K)"
+                aria-label="Global Search"
                 style={{
                   minHeight: '38px',
                   height: '38px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
+                  minWidth: '38px',
+                  width: '38px',
+                  padding: '0',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  justifyContent: 'center',
                   cursor: 'pointer',
                   borderRadius: '8px'
                 }}
               >
-                <Search size={15} style={{ flexShrink: 0 }} />
-                <span>Search</span>
-                <kbd style={{
-                  fontSize: '10px',
-                  background: '#f1f5f9',
-                  color: '#475569',
-                  padding: '2px 5px',
-                  borderRadius: '4px',
-                  border: '1px solid #cbd5e1'
-                }}>⌘K</kbd>
+                <Search size={16} style={{ flexShrink: 0 }} />
               </button>
 
               {deferredInstallPrompt && !isStandalone && (
@@ -2894,29 +2887,32 @@ export default function App() {
               <ChangelogDrawer />
 
               <button
+                type="button"
                 onClick={() => setShowNotificationDrawer(true)}
                 className="btn-secondary"
                 title="Notifications & Alerts"
+                aria-label="Notifications & Alerts"
                 style={{
                   minHeight: '38px',
                   height: '38px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
+                  minWidth: '38px',
+                  padding: unreadNotifCount > 0 ? '0 8px' : '0',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  borderRadius: '8px'
+                  justifyContent: 'center',
+                  gap: '4px',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
                 }}
               >
-                <Bell size={15} style={{ flexShrink: 0 }} />
-                <span>Alerts</span>
+                <Bell size={16} style={{ flexShrink: 0 }} />
                 {unreadNotifCount > 0 && (
                   <span style={{
                     background: '#ef4444',
                     color: '#ffffff',
-                    padding: '2px 6px',
+                    padding: '2px 5px',
                     borderRadius: '8px',
-                    fontSize: '0.7rem',
+                    fontSize: '0.68rem',
                     fontWeight: 800,
                     lineHeight: 1
                   }}>
@@ -2929,6 +2925,7 @@ export default function App() {
               <QuickTipPill activeTab={activeTab} />
 
               <button
+                type="button"
                 onClick={() => {
                   fetchData();
                   triggerGlobalDataRefresh();
@@ -2938,19 +2935,21 @@ export default function App() {
                 }}
                 className="btn-secondary"
                 title="Refresh data"
+                aria-label="Refresh data"
                 style={{
                   minHeight: '38px',
                   height: '38px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
+                  minWidth: '38px',
+                  width: '38px',
+                  padding: '0',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
                   borderRadius: '8px'
                 }}
               >
-                <RefreshCw size={14} className={loading ? 'spin-loader' : ''} style={{ flexShrink: 0 }} />
-                <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
+                <RefreshCw size={16} className={loading ? 'spin-loader' : ''} style={{ flexShrink: 0 }} />
               </button>
 
               {currentUser && (
@@ -2979,22 +2978,25 @@ export default function App() {
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={handleLogout}
                     className="btn-secondary"
                     title="Sign Out"
+                    aria-label="Sign Out"
                     style={{
                       minHeight: '38px',
                       height: '38px',
-                      padding: '6px 12px',
-                      fontSize: '0.8rem',
+                      minWidth: '38px',
+                      width: '38px',
+                      padding: '0',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '6px',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
                       borderRadius: '8px'
                     }}
                   >
-                    <LogOut size={14} style={{ flexShrink: 0 }} />
-                    <span>Sign Out</span>
+                    <LogOut size={16} style={{ flexShrink: 0 }} />
                   </button>
                 </div>
               )}
