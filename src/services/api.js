@@ -2066,9 +2066,27 @@ export const api = {
   },
 
   async downloadFabricChallanPdf(id, challanNo) {
+    if (!id) throw new Error('Invalid challan ID');
     const baseUrl = getBaseUrl();
     const response = await authFetch(`${baseUrl}/fabric-challan/${id}/pdf`);
-    if (!response.ok) throw new Error('Failed to generate challan PDF');
+    if (!response.ok) {
+      let errMsg = 'Failed to generate challan PDF';
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const j = JSON.parse(text);
+            errMsg = j.message || j.error || errMsg;
+          } catch (_) {
+            if (text.length < 200) errMsg = text;
+          }
+        }
+      } catch (_) {}
+      if (response.status === 401) {
+        errMsg = 'Session expired. Please refresh your browser or sign in again.';
+      }
+      throw new Error(errMsg);
+    }
     const blob = await response.blob();
     downloadOrPreviewPdf(blob, `Challan_${challanNo || 'preview'}.pdf`, { title: `Fabric Challan #${challanNo || id}` });
   },
@@ -2077,7 +2095,21 @@ export const api = {
     if (!ids || ids.length === 0) return;
     const baseUrl = getBaseUrl();
     const response = await authFetch(`${baseUrl}/fabric-challan/bulk-pdf?ids=${ids.join(',')}`);
-    if (!response.ok) throw new Error('Failed to generate combined Fabric Challans PDF');
+    if (!response.ok) {
+      let errMsg = 'Failed to generate combined Fabric Challans PDF';
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const j = JSON.parse(text);
+            errMsg = j.message || j.error || errMsg;
+          } catch (_) {
+            if (text.length < 200) errMsg = text;
+          }
+        }
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
     const blob = await response.blob();
     downloadOrPreviewPdf(blob, fileName, { title: 'Combined Fabric Challans' });
   },
