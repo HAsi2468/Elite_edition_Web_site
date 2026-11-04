@@ -1254,8 +1254,8 @@ export default function EliteBillingDepartment({
 
       const pNo = (contraForm.voucherNo && contraForm.voucherNo.trim()) || computeNextPurchaseNo(purchases, companyEntity, true);
       const narrationStr = contraForm.narration || (contraForm.contraMode === 'party_offset'
-        ? `Party Havala Offset: Dr. ${contraForm.debitParty} ⇄ Cr. ${contraForm.creditParty}${contraForm.referenceNo ? ` (Ref: ${contraForm.referenceNo})` : ''}`
-        : `Bank/Cash Contra Transfer: Dr. ${contraForm.debitParty} ⇄ Cr. ${contraForm.creditParty}`);
+        ? `Party Offset: Dr. ${contraForm.debitParty} ⇄ Cr. ${contraForm.creditParty}${contraForm.referenceNo ? ` (Ref: ${contraForm.referenceNo})` : ''}`
+        : `Internal Transfer: Dr. ${contraForm.debitParty} ⇄ Cr. ${contraForm.creditParty}`);
 
       const payload = {
         entryType: 'contra',
@@ -7434,9 +7434,9 @@ export default function EliteBillingDepartment({
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.45rem',
                   whiteSpace: 'nowrap'
                 }}
-                title="Create Contra Voucher / Party Havala Entry (Tally F4 / F7)"
+                title="Create Contra Entry"
               >
-                <ArrowLeftRight size={15} /> + Contra / Havala
+                <ArrowLeftRight size={15} /> + Contra Entry
               </button>
 
               <button
@@ -7618,14 +7618,14 @@ export default function EliteBillingDepartment({
                           {(p.entryType === 'contra' || p.purchaseType === 'contra') ? (
                             <div>
                               <div style={{ fontWeight: 800, color: '#7c3aed', fontSize: '0.82rem' }}>
-                                {p.contraDetails?.contraMode === 'party_offset' ? '🏢 Party-to-Party Offset / Havala' : '🏦 Bank / Cash Contra Transfer'}
+                                {p.contraDetails?.contraMode === 'party_offset' ? 'Party Settlement / Offset' : 'Internal Bank / Cash Transfer'}
                               </div>
                               <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '3px', fontStyle: 'italic' }}>
-                                "{p.contraDetails?.narration || p.notes || 'Mutual ledger balance adjustment'}"
+                                "{p.contraDetails?.narration || p.notes || 'Internal fund transfer / adjustment'}"
                               </div>
                               {(p.contraDetails?.referenceNo || (p.billNo && p.billNo !== 'CONTRA')) && (
                                 <div style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: 700, marginTop: '3px' }}>
-                                  Agst Ref: {p.contraDetails?.referenceNo || p.billNo}
+                                  Ref: {p.contraDetails?.referenceNo || p.billNo}
                                 </div>
                               )}
                             </div>
@@ -7788,20 +7788,20 @@ export default function EliteBillingDepartment({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
                     <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
                       {purchaseEntryType === 'contra'
-                        ? (editingPurchaseId ? `Edit Contra Voucher — ${contraForm.voucherNo || 'CNTR'}` : `New Contra / Party Havala Entry (${contraForm.voucherNo || computeNextPurchaseNo(purchases, companyEntity, true)})`)
-                        : (editingPurchaseId ? `Edit Vendor Purchase Bill — ${purchaseForm.purchaseNo}` : `New Vendor Purchase Inward Generator (${purchaseForm.purchaseNo || 'DP-01'})`)}
+                        ? (editingPurchaseId ? `Edit Contra Entry — ${contraForm.voucherNo || 'CNTR'}` : `New Contra Entry (${contraForm.voucherNo || computeNextPurchaseNo(purchases, companyEntity, true)})`)
+                        : (editingPurchaseId ? `Edit Purchase Bill — ${purchaseForm.purchaseNo}` : `New Purchase Bill (${purchaseForm.purchaseNo || 'DP-01'})`)}
                     </h3>
                     <EntityBrandBadge entityId={companyEntity} />
                   </div>
                   <div style={{ fontSize: '0.72rem', opacity: 0.9, marginTop: 2 }}>
-                    {purchaseEntryType === 'contra' ? 'Double-Entry Party Offset & Bank-Cash Contra Voucher System (Tally F4 / F7)' : 'Comprehensive GST Inward Bill Entry & Vendor Accounting System (Tally F9)'}
+                    {purchaseEntryType === 'contra' ? 'Internal bank transfers, cash movements, and party balance adjustments' : 'Inward bill entry for inventory, stock materials, and expenses'}
                   </div>
                 </div>
               </div>
               <button onClick={() => setShowPurchaseModal(false)} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
 
-            {/* Segmented Mode Switcher (Tally F9 General Purchase vs Tally F4/F7 Contra) */}
+            {/* Segmented Mode Switcher */}
             <div style={{
               display: 'flex',
               gap: '0.75rem',
@@ -7831,7 +7831,7 @@ export default function EliteBillingDepartment({
                 }}
               >
                 <FileSpreadsheet size={18} />
-                <span>📄 1. General Purchase Bill (Tally F9)</span>
+                <span>📄 General Purchase Bill</span>
               </button>
               <button
                 type="button"
@@ -7860,24 +7860,40 @@ export default function EliteBillingDepartment({
                 }}
               >
                 <ArrowLeftRight size={18} />
-                <span>⇄ 2. Contra / Party Havala Entry (Tally F4 / F7)</span>
+                <span>⇄ Contra Entry</span>
               </button>
             </div>
 
             <form onSubmit={handleCreatePurchase} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {purchaseEntryType === 'contra' ? (
-                /* ── CONTRA / PARTY SETTLEMENT FORM (TALLY F4 / F7) ── */
+                /* ── CONTRA ENTRY FORM ── */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {/* Mode Selector: Party Offset vs Bank/Cash */}
+                  {/* Mode Selector */}
                   <div style={{
                     display: 'flex',
-                    gap: '1rem',
+                    gap: '1.5rem',
                     background: 'rgba(124, 58, 237, 0.05)',
                     padding: '0.85rem 1.1rem',
                     borderRadius: '10px',
                     border: '1px solid rgba(124, 58, 237, 0.2)',
                     flexWrap: 'wrap'
                   }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.88rem', color: contraForm.contraMode === 'bank_cash' ? '#7c3aed' : '#475569' }}>
+                      <input
+                        type="radio"
+                        name="contraMode"
+                        checked={contraForm.contraMode === 'bank_cash'}
+                        onChange={() => setContraForm(c => ({
+                          ...c,
+                          contraMode: 'bank_cash',
+                          debitPartyType: 'bank',
+                          debitParty: c.debitParty && c.debitPartyType === 'bank' ? c.debitParty : 'Kotak Mahindra Bank',
+                          creditPartyType: 'bank',
+                          creditParty: c.creditParty && c.creditPartyType === 'bank' ? c.creditParty : 'HDFC Bank Current A/c'
+                        }))}
+                      />
+                      <span>Internal Bank / Cash Transfer</span>
+                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.88rem', color: contraForm.contraMode === 'party_offset' ? '#7c3aed' : '#475569' }}>
                       <input
                         type="radio"
@@ -7887,24 +7903,12 @@ export default function EliteBillingDepartment({
                           ...c,
                           contraMode: 'party_offset',
                           debitPartyType: 'vendor',
-                          creditPartyType: 'customer'
+                          debitParty: '',
+                          creditPartyType: 'customer',
+                          creditParty: ''
                         }))}
                       />
-                      <span>🏢 Party-to-Party Offset / Havala (Vendor ↔ Customer Knock-off)</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.88rem', color: contraForm.contraMode === 'bank_cash' ? '#7c3aed' : '#475569', marginLeft: '0.5rem' }}>
-                      <input
-                        type="radio"
-                        name="contraMode"
-                        checked={contraForm.contraMode === 'bank_cash'}
-                        onChange={() => setContraForm(c => ({
-                          ...c,
-                          contraMode: 'bank_cash',
-                          debitPartyType: 'bank',
-                          creditPartyType: 'cash'
-                        }))}
-                      />
-                      <span>🏦 Bank ↔ Cash Contra Transfer</span>
+                      <span>Party Settlement / Offset</span>
                     </label>
                   </div>
 
@@ -7940,7 +7944,7 @@ export default function EliteBillingDepartment({
                     </div>
                   </div>
 
-                  {/* Double-Entry Party Selection (Debit vs Credit) */}
+                  {/* Double-Entry Account Selection (Debit vs Credit) */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
                     {/* Debit Box */}
                     <div style={{
@@ -7951,10 +7955,10 @@ export default function EliteBillingDepartment({
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                         <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          📥 DEBIT (Dr.) ACCOUNT / PARTY
+                          Debit (Dr.) Account
                         </span>
                         <span style={{ fontSize: '0.68rem', color: '#059669', background: 'rgba(5, 150, 105, 0.1)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                          Liability Reduced / Inward
+                          Received In / To Account
                         </span>
                       </div>
 
@@ -7966,15 +7970,15 @@ export default function EliteBillingDepartment({
                             onChange={e => setContraForm(c => ({ ...c, debitPartyType: e.target.value, debitParty: '' }))}
                             style={{ ...inputStyle, padding: '0.45rem', fontSize: '0.82rem', fontWeight: 700 }}
                           >
-                            <option value="vendor">🏢 Vendor (Sundry Creditor)</option>
-                            <option value="customer">👤 Customer (Sundry Debtor)</option>
-                            <option value="bank">🏦 Bank Account</option>
-                            <option value="cash">💵 Cash Account</option>
+                            <option value="bank">Bank Account</option>
+                            <option value="cash">Cash Account</option>
+                            <option value="vendor">Vendor</option>
+                            <option value="customer">Customer</option>
                           </select>
                         </div>
 
                         <div>
-                          <label style={{ ...labelStyle, fontSize: '0.72rem' }}>Select / Type Account Name *</label>
+                          <label style={{ ...labelStyle, fontSize: '0.72rem' }}>Account Name *</label>
                           {contraForm.debitPartyType === 'vendor' ? (
                             <select
                               value={contraForm.debitParty}
@@ -8002,23 +8006,31 @@ export default function EliteBillingDepartment({
                               ))}
                             </select>
                           ) : contraForm.debitPartyType === 'bank' ? (
-                            <select
-                              value={contraForm.debitParty}
-                              onChange={e => setContraForm(c => ({ ...c, debitParty: e.target.value }))}
-                              style={{ ...inputStyle, fontWeight: 700 }}
-                            >
-                              <option value="">-- Select Bank Account --</option>
-                              <option value="HDFC Bank Current A/c">🏦 HDFC Bank Current A/c</option>
-                              <option value="State Bank of India (SBI)">🏦 State Bank of India (SBI)</option>
-                              <option value="ICICI Bank Current A/c">🏦 ICICI Bank Current A/c</option>
-                              <option value="Kotak Mahindra Bank">🏦 Kotak Mahindra Bank</option>
-                              <option value="Bank of Baroda (BOB)">🏦 Bank of Baroda (BOB)</option>
-                            </select>
+                            <div>
+                              <input
+                                list="debitBankList"
+                                type="text"
+                                value={contraForm.debitParty}
+                                onChange={e => setContraForm(c => ({ ...c, debitParty: e.target.value }))}
+                                placeholder="Select or type internal Bank Account..."
+                                style={{ ...inputStyle, fontWeight: 700 }}
+                              />
+                              <datalist id="debitBankList">
+                                <option value="Kotak Mahindra Bank" />
+                                <option value="HDFC Bank Current A/c" />
+                                <option value="ICICI Bank Current A/c" />
+                                <option value="State Bank of India (SBI)" />
+                                <option value="Bank of Baroda (BOB)" />
+                                <option value="Axis Bank" />
+                                <option value="Punjab National Bank (PNB)" />
+                              </datalist>
+                            </div>
                           ) : (
                             <input
                               type="text"
                               value={contraForm.debitParty || 'Cash in Hand'}
                               onChange={e => setContraForm(c => ({ ...c, debitParty: e.target.value }))}
+                              placeholder="Cash in Hand"
                               style={{ ...inputStyle, fontWeight: 700 }}
                             />
                           )}
@@ -8035,10 +8047,10 @@ export default function EliteBillingDepartment({
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                         <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          📤 CREDIT (Cr.) ACCOUNT / PARTY
+                          Credit (Cr.) Account
                         </span>
                         <span style={{ fontSize: '0.68rem', color: '#dc2626', background: 'rgba(220, 38, 38, 0.1)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                          Receivable Reduced / Outward
+                          Paid Out / From Account
                         </span>
                       </div>
 
@@ -8050,15 +8062,15 @@ export default function EliteBillingDepartment({
                             onChange={e => setContraForm(c => ({ ...c, creditPartyType: e.target.value, creditParty: '' }))}
                             style={{ ...inputStyle, padding: '0.45rem', fontSize: '0.82rem', fontWeight: 700 }}
                           >
-                            <option value="customer">👤 Customer (Sundry Debtor)</option>
-                            <option value="vendor">🏢 Vendor (Sundry Creditor)</option>
-                            <option value="bank">🏦 Bank Account</option>
-                            <option value="cash">💵 Cash Account</option>
+                            <option value="bank">Bank Account</option>
+                            <option value="cash">Cash Account</option>
+                            <option value="customer">Customer</option>
+                            <option value="vendor">Vendor</option>
                           </select>
                         </div>
 
                         <div>
-                          <label style={{ ...labelStyle, fontSize: '0.72rem' }}>Select / Type Account Name *</label>
+                          <label style={{ ...labelStyle, fontSize: '0.72rem' }}>Account Name *</label>
                           {contraForm.creditPartyType === 'customer' ? (
                             <select
                               value={contraForm.creditParty}
@@ -8086,23 +8098,31 @@ export default function EliteBillingDepartment({
                               ))}
                             </select>
                           ) : contraForm.creditPartyType === 'bank' ? (
-                            <select
-                              value={contraForm.creditParty}
-                              onChange={e => setContraForm(c => ({ ...c, creditParty: e.target.value }))}
-                              style={{ ...inputStyle, fontWeight: 700 }}
-                            >
-                              <option value="">-- Select Bank Account --</option>
-                              <option value="HDFC Bank Current A/c">🏦 HDFC Bank Current A/c</option>
-                              <option value="State Bank of India (SBI)">🏦 State Bank of India (SBI)</option>
-                              <option value="ICICI Bank Current A/c">🏦 ICICI Bank Current A/c</option>
-                              <option value="Kotak Mahindra Bank">🏦 Kotak Mahindra Bank</option>
-                              <option value="Bank of Baroda (BOB)">🏦 Bank of Baroda (BOB)</option>
-                            </select>
+                            <div>
+                              <input
+                                list="creditBankList"
+                                type="text"
+                                value={contraForm.creditParty}
+                                onChange={e => setContraForm(c => ({ ...c, creditParty: e.target.value }))}
+                                placeholder="Select or type internal Bank Account..."
+                                style={{ ...inputStyle, fontWeight: 700 }}
+                              />
+                              <datalist id="creditBankList">
+                                <option value="Kotak Mahindra Bank" />
+                                <option value="HDFC Bank Current A/c" />
+                                <option value="ICICI Bank Current A/c" />
+                                <option value="State Bank of India (SBI)" />
+                                <option value="Bank of Baroda (BOB)" />
+                                <option value="Axis Bank" />
+                                <option value="Punjab National Bank (PNB)" />
+                              </datalist>
+                            </div>
                           ) : (
                             <input
                               type="text"
                               value={contraForm.creditParty || 'Cash in Hand'}
                               onChange={e => setContraForm(c => ({ ...c, creditParty: e.target.value }))}
+                              placeholder="Cash in Hand"
                               style={{ ...inputStyle, fontWeight: 700 }}
                             />
                           )}
@@ -8115,7 +8135,7 @@ export default function EliteBillingDepartment({
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', background: '#f8fafc', padding: '1.1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                     <div>
                       <label style={{ ...labelStyle, fontSize: '0.85rem', color: '#0f172a' }}>
-                        Contra / Settlement Amount (₹) *
+                        Amount (₹) *
                       </label>
                       <div style={{ position: 'relative' }}>
                         <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 800, fontSize: '1.1rem', color: '#7c3aed' }}>₹</span>
@@ -8140,26 +8160,26 @@ export default function EliteBillingDepartment({
 
                     <div>
                       <label style={{ ...labelStyle, fontSize: '0.85rem', color: '#0f172a' }}>
-                        Reference Bill / Inv No. (Tally Agst Ref)
+                        Reference Bill / Invoice No.
                       </label>
                       <input
                         type="text"
                         value={contraForm.referenceNo}
                         onChange={e => setContraForm(c => ({ ...c, referenceNo: e.target.value }))}
-                        placeholder="e.g. Bill #2092 / Inv #401"
+                        placeholder="e.g. Bill #2092 / Inv #401 / Cheque #123456"
                         style={{ ...inputStyle, fontWeight: 700 }}
                       />
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
-                        Optionally link to an existing purchase bill or sales invoice being knocked off.
+                        Optional reference number for cheque, bill, or invoice.
                       </div>
                     </div>
                   </div>
 
-                  {/* Narration (Tally-Style) */}
+                  {/* Narration */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                       <label style={{ ...labelStyle, marginBottom: 0 }}>
-                        Narration / Remarks (હવાલા વિગત)
+                        Narration / Remarks
                       </label>
                       <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
                         Quick Templates:
@@ -8170,31 +8190,41 @@ export default function EliteBillingDepartment({
                         type="button"
                         onClick={() => setContraForm(c => ({
                           ...c,
-                          narration: `Being amount adjusted between Vendor ${c.debitParty || 'Party A'} and Customer ${c.creditParty || 'Party B'}${c.referenceNo ? ` against Ref: ${c.referenceNo}` : ''}.`
+                          narration: `Amount transferred from ${c.creditParty || 'Bank A'} to ${c.debitParty || 'Bank B'}${c.referenceNo ? ` (Ref: ${c.referenceNo})` : ''} for internal fund transfer.`
                         }))}
                         style={{ padding: '3px 8px', fontSize: '0.68rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}
                       >
-                        + Party Knock-Off Template
+                        + Bank Transfer
                       </button>
                       <button
                         type="button"
                         onClick={() => setContraForm(c => ({
                           ...c,
-                          narration: `Being cash deposited into ${c.debitParty || 'Bank Account'} from Cash in Hand.`
+                          narration: `Cash deposited into ${c.debitParty || 'Bank Account'} from Cash in Hand.`
                         }))}
                         style={{ padding: '3px 8px', fontSize: '0.68rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}
                       >
-                        + Cash Deposit Template
+                        + Cash Deposit
                       </button>
                       <button
                         type="button"
                         onClick={() => setContraForm(c => ({
                           ...c,
-                          narration: `Being grey fabric purchase bill adjusted against finished goods sales ledger balance.`
+                          narration: `Cash withdrawn from ${c.creditParty || 'Bank Account'} for office cash expenses.`
                         }))}
                         style={{ padding: '3px 8px', fontSize: '0.68rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}
                       >
-                        + Grey vs Finish Offset
+                        + Cash Withdrawal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContraForm(c => ({
+                          ...c,
+                          narration: `Amount adjusted between ${c.debitParty || 'Party A'} and ${c.creditParty || 'Party B'}${c.referenceNo ? ` against Ref: ${c.referenceNo}` : ''}.`
+                        }))}
+                        style={{ padding: '3px 8px', fontSize: '0.68rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}
+                      >
+                        + Party Settlement
                       </button>
                     </div>
                     <textarea
@@ -9140,7 +9170,7 @@ export default function EliteBillingDepartment({
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 {(viewPurchaseModal.entryType === 'contra' || viewPurchaseModal.purchaseType === 'contra') ? (
                   <>
-                    <ArrowLeftRight size={20} /> Contra / Party Settlement Voucher — {viewPurchaseModal.purchaseNo}
+                    <ArrowLeftRight size={20} /> Contra Entry — {viewPurchaseModal.purchaseNo}
                   </>
                 ) : (
                   <>
@@ -9156,20 +9186,20 @@ export default function EliteBillingDepartment({
                 {/* Contra Overview */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: '#f8fafc', padding: '1.1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                   <div>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#047857', textTransform: 'uppercase', marginBottom: 4 }}>📥 DEBITED PARTY / ACCOUNT (Dr.)</div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#047857', textTransform: 'uppercase', marginBottom: 4 }}>DEBIT (Dr.) ACCOUNT</div>
                     <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a' }}>{viewPurchaseModal.contraDetails?.debitParty || viewPurchaseModal.vendorName}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: 3 }}>Liability reduced / Balance cleared</div>
+                    <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: 3 }}>Received In / To Account</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', marginBottom: 4 }}>📤 CREDITED PARTY / ACCOUNT (Cr.)</div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', marginBottom: 4 }}>CREDIT (Cr.) ACCOUNT</div>
                     <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a' }}>{viewPurchaseModal.contraDetails?.creditParty || viewPurchaseModal.vendor?.businessName || '-'}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#b91c1c', marginTop: 3 }}>Receivable reduced / Source account</div>
+                    <div style={{ fontSize: '0.75rem', color: '#b91c1c', marginTop: 3 }}>Paid Out / From Account</div>
                   </div>
                 </div>
 
                 {/* Amount & Status Card */}
                 <div style={{ background: '#f5f3ff', border: '1.5px solid #c4b5fd', borderRadius: '10px', padding: '1.25rem', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#6d28d9', textTransform: 'uppercase' }}>SETTLED CONTRA AMOUNT</div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#6d28d9', textTransform: 'uppercase' }}>CONTRA AMOUNT</div>
                   <div style={{ fontSize: '2rem', fontWeight: 900, color: '#7c3aed', marginTop: '0.3rem' }}>
                     ₹ {Number(viewPurchaseModal.grandTotal || viewPurchaseModal.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
@@ -9185,7 +9215,7 @@ export default function EliteBillingDepartment({
                     <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>{viewPurchaseModal.date ? (typeof viewPurchaseModal.date === 'string' && viewPurchaseModal.date.includes('T') ? viewPurchaseModal.date.split('T')[0] : (viewPurchaseModal.date instanceof Date ? viewPurchaseModal.date.toISOString().split('T')[0] : viewPurchaseModal.date)) : ''}</div>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>AGST REF / BILL NO:</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>REF / BILL NO:</span>
                     <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#0284c7' }}>{viewPurchaseModal.contraDetails?.referenceNo || viewPurchaseModal.billNo || 'None'}</div>
                   </div>
                   <div style={{ gridColumn: '1 / -1' }}>
