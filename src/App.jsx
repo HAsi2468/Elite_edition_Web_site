@@ -252,6 +252,14 @@ export const ROUTE_ALIASES = {
   'yj_raw_materials': { tab: 'yj_raw_materials', dept: 'yamunaji' },
   'es-raw-materials': { tab: 'es_raw_materials', dept: 'stitching' },
   'es_raw_materials': { tab: 'es_raw_materials', dept: 'stitching' },
+  'es_invoices': { tab: 'es_invoices', dept: 'stitching' },
+  'es-invoices': { tab: 'es_invoices', dept: 'stitching' },
+  'es_finance': { tab: 'es_invoices', dept: 'stitching' },
+  'es-finance': { tab: 'es_invoices', dept: 'stitching' },
+  'stitching_invoices': { tab: 'es_invoices', dept: 'stitching' },
+  'stitching-invoices': { tab: 'es_invoices', dept: 'stitching' },
+  'stitching_finance': { tab: 'es_invoices', dept: 'stitching' },
+  'stitching-finance': { tab: 'es_invoices', dept: 'stitching' },
   'eo_invoices': { tab: 'eo_invoices', dept: 'elite_online' },
   'eo_expenses': { tab: 'eo_expenses', dept: 'elite_online' },
   'exedp_invoices': { tab: 'exedp_invoices', dept: 'exedp' },
@@ -271,7 +279,7 @@ export const ALL_KNOWN_ERP_TABS = new Set([
   'so_dashboard', 'so_rfd', 'so_invoices', 'so_settings', 'so_complaints', 'so_expenses', 'so_raw_materials',
   'ew_dashboard', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
   'yj_dashboard', 'yj_invoices', 'yj_settings', 'yj_complaints', 'yj_expenses', 'yj_raw_materials', 'yj_rfd',
-  'es_dashboard', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials',
+  'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials',
   'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'eo_invoices',
   'exedp_invoices', 'exedp_expenses',
   'raw_materials', 'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master',
@@ -1385,7 +1393,7 @@ export default function App() {
       'so_dashboard', 'so_rfd', 'so_invoices', 'so_settings', 'so_complaints', 'so_expenses', 'so_raw_materials',
       'ew_dashboard', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
       'yj_dashboard', 'yj_rfd', 'yj_invoices', 'yj_settings', 'yj_complaints', 'yj_expenses', 'yj_raw_materials',
-      'es_dashboard', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials', 'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'raw_materials',
+      'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials', 'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'raw_materials',
       'exedp_invoices', 'exedp_expenses',
       'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master', 'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings',
       'jobcards_stitching_challan', 'jobcards_stitching_settings',
@@ -4076,7 +4084,7 @@ export default function App() {
             <DigitalPrintExpenseModule companyEntity="Elite Stitching" />
           ) : activeTab === 'es_raw_materials' ? (
             <RawMaterialsPanel companyEntity="Elite Stitching" />
-          ) : activeTab === 'es_invoices' ? (
+          ) : (activeTab === 'es_invoices' || activeTab === 'stitching_invoices' || activeTab === 'es_finance') ? (
             <EliteBillingDepartment companyEntity="Elite Stitching" department="stitching" />
           ) : activeTab === 'eo_complaints' ? (
             <DigitalPrintComplainModule companyEntity="Elite Online" />
