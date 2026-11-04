@@ -2762,13 +2762,24 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         params.msgType = filter;
       }
 
-      // Safety timeout: prevent loading state from hanging indefinitely (>8s)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Network timeout loading stream history')), 8000)
-      );
+      // Safety timeout: generous 18s to prevent prematurely aborting on cellular/office latency
+      const executeFetch = () => {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Network timeout loading stream history')), 18000)
+        );
+        const fetchPromise = api.getCommunicationMessages(groupId, params);
+        return Promise.race([fetchPromise, timeoutPromise]);
+      };
 
-      const fetchPromise = api.getCommunicationMessages(groupId, params);
-      const res = await Promise.race([fetchPromise, timeoutPromise]);
+      let res;
+      try {
+        res = await executeFetch();
+      } catch (firstErr) {
+        // Quick 600ms automatic retry before giving up
+        console.warn('First attempt to load stream history timed out or failed, retrying once...', firstErr);
+        await new Promise((r) => setTimeout(r, 600));
+        res = await executeFetch();
+      }
 
       // If user navigated away to another room before response arrived, drop stale payload
       if (activeGroupIdRef.current && String(activeGroupIdRef.current) !== String(groupId)) {
@@ -2802,13 +2813,24 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
         );
       } else {
         if (!activeGroupIdRef.current || String(activeGroupIdRef.current) === String(groupId)) {
-          setStreamHistoryError(res?.message || 'Failed to load stream history');
+          const cached = messagesCacheRef.current[groupId];
+          if (cached && cached.length > 0) {
+            setMessages(cached);
+          } else {
+            setStreamHistoryError(res?.message || 'Failed to load stream history');
+          }
         }
       }
     } catch (err) {
       console.error('Failed to fetch group messages:', err);
       if (!activeGroupIdRef.current || String(activeGroupIdRef.current) === String(groupId)) {
-        setStreamHistoryError(err.message || 'Network timeout loading stream history');
+        const cached = messagesCacheRef.current[groupId];
+        if (cached && cached.length > 0) {
+          // Fall back gracefully to cached messages so user can continue viewing chat uninterrupted
+          setMessages(cached);
+        } else {
+          setStreamHistoryError(err.message || 'Network timeout loading stream history');
+        }
       }
     } finally {
       if (!activeGroupIdRef.current || String(activeGroupIdRef.current) === String(groupId)) {
@@ -6317,7 +6339,7 @@ export default function CommunicationPanel({ currentUser, onNavigateTab, initial
                     return <ChatStreamSkeleton count={5} />;
                   }
 
-                  if (streamHistoryError) {
+                  if (streamHistoryError && (!messages || messages.length === 0)) {
                     return (
                       <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '1.5rem' }}>
                         <AlertCircle size={28} color="#ef4444" style={{ marginBottom: '0.5rem' }} />
