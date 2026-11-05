@@ -4074,6 +4074,7 @@ export default function App() {
           ) : activeTab === 'ew_design' ? (
             <DesignCatalogue
               department="ethno_wear"
+              companyEntity="Ethno wear"
               currentUser={currentUser}
               initialSubTab="catalogue"
             />

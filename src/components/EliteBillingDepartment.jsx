@@ -23,6 +23,7 @@ import { SmartActionGroup } from './common/SmartActionGroup';
 import { ErpTh, MasterCheckboxTh, RowCheckboxTd, getRowHighlightStyle } from './common/ErpTableParts';
 import * as XLSX from 'xlsx';
 import { lookupPincode, lookupLocation, getStateCode, inferStateFromGstin } from '../utils/postalCodeHelper';
+import MasterInvoiceTemplate, { getCompanyTheme } from './MasterInvoiceTemplate';
 
 const R2_PUBLIC_BASE = 'https://pub-66cb4aaa7dca442893dd7569e70ff7bd.r2.dev';
 
@@ -341,13 +342,19 @@ export default function EliteBillingDepartment({
   const [itemSortState, setItemSortState] = useState({ columnKey: 'name', order: 'asc' });
   const [selectedItemMap, setSelectedItemMap] = useState({});
 
+  const [companyPrintConfig, setCompanyPrintConfig] = useState(null);
+  const [invoiceViewTab, setInvoiceViewTab] = useState('details'); // 'master' | 'details'
+
   useEffect(() => {
     let isMounted = true;
     const fetchPurchaseTypes = async () => {
       try {
         const res = await api.getCompanySettings(companyEntity);
-        if (isMounted && res?.data?.purchaseTypes && Array.isArray(res.data.purchaseTypes) && res.data.purchaseTypes.length > 0) {
-          setDynamicPurchaseTypes(res.data.purchaseTypes);
+        if (isMounted && res?.data) {
+          setCompanyPrintConfig(res.data);
+          if (Array.isArray(res.data.purchaseTypes) && res.data.purchaseTypes.length > 0) {
+            setDynamicPurchaseTypes(res.data.purchaseTypes);
+          }
         }
       } catch (err) { }
     };
@@ -9486,15 +9493,49 @@ export default function EliteBillingDepartment({
           onClick={(e) => { if (e.target === e.currentTarget) setViewInvoiceModal(null); }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}
         >
-          <div style={{ width: '100%', maxWidth: '780px', maxHeight: '92vh', overflowY: 'auto', padding: '1.75rem', background: '#ffffff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)' }}>
+          <div style={{ width: '100%', maxWidth: '860px', maxHeight: '94vh', overflowY: 'auto', padding: '1.5rem', background: '#ffffff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)' }}>
 
             {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.9rem', marginBottom: '1.1rem' }}>
               <div>
-                <h3 style={{ margin: 0, color: '#6d28d9', fontWeight: 900, fontSize: '1.25rem' }}>
-                  🧾 Tax Invoice — {viewInvoiceModal.invoiceNo}
-                </h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500, marginTop: 2, display: 'block' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <h3 style={{ margin: 0, color: '#1e3a8a', fontWeight: 900, fontSize: '1.25rem' }}>
+                    🧾 Tax Invoice — {viewInvoiceModal.invoiceNo}
+                  </h3>
+                  <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '3px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <button
+                      onClick={() => setInvoiceViewTab('master')}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: invoiceViewTab === 'master' ? '#1e3a8a' : 'transparent',
+                        color: invoiceViewTab === 'master' ? '#ffffff' : '#64748b'
+                      }}
+                    >
+                      📄 Master PDF View
+                    </button>
+                    <button
+                      onClick={() => setInvoiceViewTab('details')}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: invoiceViewTab === 'details' ? '#1e3a8a' : 'transparent',
+                        color: invoiceViewTab === 'details' ? '#ffffff' : '#64748b'
+                      }}
+                    >
+                      📋 Quick Summary
+                    </button>
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500, marginTop: 4, display: 'block' }}>
                   Invoice Date: <strong>{formatDateDDMMYYYY(viewInvoiceModal.invoiceDate)}</strong> {viewInvoiceModal.dueDate ? `| Due Date: ${formatDateDDMMYYYY(viewInvoiceModal.dueDate)}` : ''}
                   {(viewInvoiceModal.ourChallanNo || viewInvoiceModal.challanNo) ? ` | Challan No: ${viewInvoiceModal.ourChallanNo || viewInvoiceModal.challanNo}` : ''}
                 </span>
@@ -9504,6 +9545,15 @@ export default function EliteBillingDepartment({
               </button>
             </div>
 
+            {invoiceViewTab === 'master' ? (
+              <div style={{ marginBottom: '1.25rem', overflowX: 'auto' }}>
+                <MasterInvoiceTemplate
+                  invoice={viewInvoiceModal}
+                  printConfig={companyPrintConfig || {}}
+                />
+              </div>
+            ) : (
+              <>
             {/* Billed To & Status Box */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem', background: '#f8fafc', padding: '1.1rem', borderRadius: 10, border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
               <div>
@@ -9706,6 +9756,8 @@ export default function EliteBillingDepartment({
                 )}
               </div>
             </div>
+            </>
+            )}
 
             {/* Modal Actions */}
             <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end', flexWrap: 'wrap', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>

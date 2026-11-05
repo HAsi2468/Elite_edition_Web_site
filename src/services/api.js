@@ -2476,10 +2476,11 @@ export const api = {
     return request(`/scan-pack/analytics${qs ? `?${qs}` : ''}`);
   },
 
-  async downloadInvoicePdf(id, invoiceNo, duplicate = false) {
+  async downloadInvoicePdf(id, invoiceNo, duplicate = false, options = {}) {
     const t0 = performance.now();
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/billing/invoices/${id}/pdf?nocache=true&t=${Date.now()}${duplicate ? '&duplicate=true' : ''}`;
+    const templateParam = options.template ? `&template=${options.template}` : '';
+    const url = `${baseUrl}/billing/invoices/${id}/pdf?nocache=true&t=${Date.now()}${duplicate ? '&duplicate=true' : ''}${templateParam}`;
     const response = await authFetch(url);
     if (!response.ok) {
       let errMsg = 'Failed to generate Invoice PDF';
@@ -2500,6 +2501,11 @@ export const api = {
     const pdfName = `Tax_Invoice_${invoiceNo || 'Draft'}${duplicate ? '_with_Duplicate' : ''}.pdf`;
     downloadOrPreviewPdf(blob, pdfName, { title: `Tax Invoice #${invoiceNo || 'Draft'}` });
     console.log(`[PDF Download] Generated & downloaded in ${(performance.now() - t0).toFixed(0)}ms`);
+  },
+
+  getInvoiceHtmlUrl(id, copyType = 'ORIGINAL FOR RECIPIENT') {
+    const baseUrl = getBaseUrl();
+    return `${baseUrl}/billing/invoices/${id}/html?copyType=${encodeURIComponent(copyType)}&t=${Date.now()}`;
   },
 
   async downloadBulkInvoicesPdf(ids = [], fileName = 'Combined_Invoices.pdf') {

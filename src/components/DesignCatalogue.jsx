@@ -685,7 +685,8 @@ function DesignImageField({ label, name, value, onChange, placeholder }) {
   );
 }
 
-export default function DesignCatalogue({ department, initialSubTab = 'catalogue', currentUser }) {
+export default function DesignCatalogue({ department: rawDepartment, companyEntity, initialSubTab = 'catalogue', currentUser }) {
+  const department = (rawDepartment === 'ethno_wear' || companyEntity === 'Ethno wear') ? 'ethno_wear' : rawDepartment;
   const userPerms = currentUser?.permissions || [];
   const hasSampleOnly = currentUser &&
     currentUser.role !== 'admin' &&
@@ -749,7 +750,18 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
   const loadAllDesigns = useCallback(async () => {
     try {
       const res = await api.getDesigns({ department, limit: 2000 });
-      if (res && res.data) setAllDesignsList(res.data);
+      if (res && res.data) {
+        const cleanList = res.data.filter(d => {
+          if (department === 'ethno_wear') {
+            return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
+          }
+          if (department === 'stitching') {
+            return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
+          }
+          return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
+        });
+        setAllDesignsList(cleanList);
+      }
     } catch (e) {
       console.warn('Failed to load all designs for validation/filters', e);
     }
@@ -812,19 +824,19 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
       icon: Palette,
       options: availableColors
     },
-    {
+    ...(department !== 'ethno_wear' ? [{
       id: 'party',
       label: 'Party (Client)',
       icon: User,
       options: availableParties
-    },
+    }] : []),
     {
       id: 'status',
       label: 'Status',
       multi: false,
       options: ['Active', 'Inactive', 'All']
     }
-  ], [availableCategories, availableColors, availableParties]);
+  ], [availableCategories, availableColors, availableParties, department]);
 
   const catalogueFilterValues = useMemo(() => ({
     category: Array.isArray(categoryFilter) ? categoryFilter : (categoryFilter && categoryFilter !== 'All' ? [categoryFilter] : []),
@@ -952,8 +964,17 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
         limit: 24
       });
       if (res && res.data) {
-        setDesigns(res.data);
-        setTotal(res.total || 0);
+        const cleanData = res.data.filter(d => {
+          if (department === 'ethno_wear') {
+            return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
+          }
+          if (department === 'stitching') {
+            return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
+          }
+          return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
+        });
+        setDesigns(cleanData);
+        setTotal(department === 'ethno_wear' ? cleanData.length : (res.total || 0));
         setPages(res.pages || 1);
         setPage(targetPage);
         pageRef.current = targetPage;
@@ -986,16 +1007,25 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
         limit: 24
       });
       if (res && res.data && res.data.length > 0) {
+        const cleanMore = res.data.filter(d => {
+          if (department === 'ethno_wear') {
+            return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
+          }
+          if (department === 'stitching') {
+            return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
+          }
+          return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
+        });
         setDesigns(prev => {
           const map = new Map();
           prev.forEach(d => map.set(d._id || d.id, d));
-          res.data.forEach(d => map.set(d._id || d.id, d));
+          cleanMore.forEach(d => map.set(d._id || d.id, d));
           return Array.from(map.values());
         });
         setPage(nextPage);
         pageRef.current = nextPage;
         if (res.pages) setPages(res.pages);
-        if (res.total !== undefined) setTotal(res.total);
+        if (res.total !== undefined) setTotal(department === 'ethno_wear' ? designs.length + cleanMore.length : res.total);
       }
     } catch (err) {
       console.warn('Failed to load more designs:', err);
@@ -1138,8 +1168,11 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
     try {
       const sanitizedVal = {
         ...formVal,
-        parties: Array.isArray(formVal.parties) ? formVal.parties.filter(Boolean) : (formVal.parties ? [formVal.parties] : []),
+        parties: department === 'ethno_wear' ? [] : (Array.isArray(formVal.parties) ? formVal.parties.filter(Boolean) : (formVal.parties ? [formVal.parties] : [])),
+        party: department === 'ethno_wear' ? '' : (formVal.party || ''),
+        partySkuId: department === 'ethno_wear' ? '' : (formVal.partySkuId || ''),
         department: department || (formDesign?.department) || 'digital_print',
+        companyEntity: department === 'ethno_wear' ? 'Ethno wear' : (formVal.companyEntity || ''),
         category: formVal.category || '',
         top100: formVal.top100 === '' || formVal.top100 === null || formVal.top100 === undefined ? 0 : Number(formVal.top100),
         sleeve100: formVal.sleeve100 === '' || formVal.sleeve100 === null || formVal.sleeve100 === undefined ? 0 : Number(formVal.sleeve100),
@@ -1513,7 +1546,16 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
         </div>
       ) : (
         (() => {
-          const filteredDesigns = designs.filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']));
+          const deptFiltered = designs.filter(d => {
+            if (department === 'ethno_wear') {
+              return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
+            }
+            if (department === 'stitching') {
+              return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
+            }
+            return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
+          });
+          const filteredDesigns = deptFiltered.filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']));
           return (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: '1rem' }}>
@@ -1629,7 +1671,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                     </div>
 
                     {/* Assigned Parties */}
-                    {((Array.isArray(d.parties) && d.parties.length > 0) || d.party) && (
+                    {department !== 'ethno_wear' && ((Array.isArray(d.parties) && d.parties.length > 0) || d.party) && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
                         {(Array.isArray(d.parties) ? d.parties : [d.parties || d.party]).filter(Boolean).map((pName, pIdx) => (
                           <span
@@ -1654,8 +1696,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                       </div>
                     )}
 
-                    {/* STITCHING & ETHNO WEAR: Party SKU ID badge */}
-                    {(department === 'stitching' || department === 'ethno_wear') && d.partySkuId && (
+                    {/* STITCHING ONLY: Party SKU ID badge */}
+                    {department === 'stitching' && d.partySkuId && (
                       <div style={{ fontSize: '0.73rem', color: '#60a5fa', fontWeight: 800, background: 'rgba(59,130,246,0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)', width: 'fit-content' }}>
                         Party SKU: {d.partySkuId}
                       </div>
@@ -1854,14 +1896,16 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 placeholder={department === 'stitching' ? "PKD-1001" : department === 'ethno_wear' ? "EW-1" : "e.g. ED-709"}
               />
 
-              <PartyMultiSelect
-                label="Parties (Clients)"
-                selected={formVal.parties || []}
-                options={printConfig.parties || []}
-                onChange={(updated) => setFormVal(prev => ({ ...prev, parties: updated }))}
-              />
+              {department !== 'ethno_wear' && (
+                <PartyMultiSelect
+                  label="Parties (Clients)"
+                  selected={formVal.parties || []}
+                  options={printConfig.parties || []}
+                  onChange={(updated) => setFormVal(prev => ({ ...prev, parties: updated }))}
+                />
+              )}
 
-              {(department === 'stitching' || department === 'ethno_wear') && (
+              {department === 'stitching' && (
                 <FormField label="Party SKU ID" name="partySkuId" value={formVal.partySkuId} onChange={handleFormChange} placeholder="e.g. SKU-9042" />
               )}
 
