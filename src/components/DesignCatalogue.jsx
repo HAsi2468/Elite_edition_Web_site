@@ -885,7 +885,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
           api.getPrintConfig().catch(() => ({})),
           api.getStitchingConfig().catch(() => ({}))
         ]);
-        const activeCfg = department === 'stitching' ? stitchingCfg : printCfg;
+        const isGarment = department === 'stitching' || department === 'ethno_wear';
+        const activeCfg = isGarment ? stitchingCfg : printCfg;
         const combinedParties = Array.from(new Set([
           ...(printCfg?.parties || []),
           ...(stitchingCfg?.parties || []),
@@ -1200,8 +1201,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
     setBulkProgress({ current: 0, total: 0, updated: 0, skipped: 0, failed: 0, log: [] });
 
     try {
-      // Fetch ALL designs (no filter, large limit)
-      const res = await api.getDesigns({ status: 'All', limit: 9999 });
+      // Fetch ALL designs for current department (no filter, large limit)
+      const res = await api.getDesigns({ department, status: 'All', limit: 9999 });
       const allDesigns = res?.data || [];
       const totalCount = allDesigns.length;
       setBulkProgress(prev => ({ ...prev, total: totalCount }));
@@ -1340,7 +1341,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
         </div>
 
         {/* Sub-Tab Navigation Bar */}
-        {department !== 'stitching' && (
+        {department !== 'stitching' && department !== 'ethno_wear' && (
           <div className="ent-tab-bar" data-screen-subtabs="primary" role="tablist" aria-label="Design Room Primary Tabs">
             <button
               type="button"
@@ -1653,8 +1654,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                       </div>
                     )}
 
-                    {/* STITCHING ONLY: Party SKU ID badge */}
-                    {department === 'stitching' && d.partySkuId && (
+                    {/* STITCHING & ETHNO WEAR: Party SKU ID badge */}
+                    {(department === 'stitching' || department === 'ethno_wear') && d.partySkuId && (
                       <div style={{ fontSize: '0.73rem', color: '#60a5fa', fontWeight: 800, background: 'rgba(59,130,246,0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)', width: 'fit-content' }}>
                         Party SKU: {d.partySkuId}
                       </div>
@@ -1662,7 +1663,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
 
                     {/* Parameters grid: only show clean design-specific details */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem 0.5rem', fontSize: '0.78rem', borderTop: '1px dashed var(--border-light)', paddingTop: '0.5rem' }}>
-                      {(department === 'stitching' ? [
+                      {((department === 'stitching' || department === 'ethno_wear') ? [
                         ['Fabric', d.fabricName],
                         ['Category', d.category]
                       ] : [
@@ -1699,8 +1700,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                       ))}
                     </div>
 
-                    {/* STITCHING ONLY: Size Sales Rates display */}
-                    {department === 'stitching' && d.sizeSalesRates && Object.values(d.sizeSalesRates).some(v => Number(v) > 0) && (
+                    {/* STITCHING & ETHNO WEAR: Size Sales Rates display */}
+                    {(department === 'stitching' || department === 'ethno_wear') && d.sizeSalesRates && Object.values(d.sizeSalesRates).some(v => Number(v) > 0) && (
                       <div style={{ width: '100%', marginTop: '0.4rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.4rem' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>
                           💰 Size Sales Rates (₹):
@@ -1860,7 +1861,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 onChange={(updated) => setFormVal(prev => ({ ...prev, parties: updated }))}
               />
 
-              {department === 'stitching' && (
+              {(department === 'stitching' || department === 'ethno_wear') && (
                 <FormField label="Party SKU ID" name="partySkuId" value={formVal.partySkuId} onChange={handleFormChange} placeholder="e.g. SKU-9042" />
               )}
 
@@ -1870,7 +1871,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 </div>
               )}
 
-              {department !== 'stitching' && (
+              {department !== 'stitching' && department !== 'ethno_wear' && (
                 <FormField label="Colour Matching Name" name="colourMatching" value={formVal.colourMatching} onChange={handleFormChange} options={['', ...(printConfig.designers || [])]} placeholder="e.g. Green Matching" />
               )}
 
@@ -1894,8 +1895,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 options={department === 'stitching' || department === 'ethno_wear' ? ['', ...(printConfig.categories?.length ? printConfig.categories : ['SUIT', 'KURTI', 'DUPATTA', 'SAREE', 'LEHENGA', 'TOP', 'BOTTOM', 'ETHNIC', 'OTHER'])] : ['', ...(printConfig.categories || [])]}
               />
 
-              {/* STITCHING ONLY: Dynamic Size-Wise Sales Rates (Dropdown & Grid from Stitching Settings) */}
-              {department === 'stitching' && (
+              {/* STITCHING & ETHNO WEAR: Dynamic Size-Wise Sales Rates (Dropdown & Grid) */}
+              {(department === 'stitching' || department === 'ethno_wear') && (
                 <>
                   <div style={{
                     fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
@@ -1903,7 +1904,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                     borderBottom: '1px solid var(--border-light)', paddingBottom: '0.2rem',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'
                   }}>
-                    <span>💰 Size-Wise Sales Rates (₹) — Taken from Stitching Sizes</span>
+                    <span>💰 Size-Wise Sales Rates (₹)</span>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <select
                         id="select-size-rate-shortcut"
@@ -1968,7 +1969,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
               {/* Design Image Field */}
               <DesignImageField label="Primary Design Image (Upload File or Drive Link)" name="imageUrl" value={formVal.imageUrl} onChange={handleFormChange} placeholder="Paste Drive link or upload file..." />
 
-              {department !== 'stitching' && (
+              {department !== 'stitching' && department !== 'ethno_wear' && (
                 <DesignImageField label="Secondary Design Image URL (Optional)" name="imageUrl2" value={formVal.imageUrl2} onChange={handleFormChange} placeholder="Paste Drive link..." />
               )}
 
