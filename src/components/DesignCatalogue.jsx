@@ -1006,7 +1006,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
 
   const fetchCategories = async () => {
     try {
-      const cats = await api.getDesignCategories();
+      const cats = await api.getDesignCategories({ department });
       setCategories(cats || []);
     } catch (e) {
       console.error(e);
@@ -1276,8 +1276,8 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <h2 className="ent-header-title">
                 {activeSubTab === 'sample' || activeSubTab === 'sample_design'
-                  ? (department === 'stitching' ? 'Stitching Sample Designs' : 'Sample Designs')
-                  : (department === 'stitching' ? 'Stitching Design Room' : 'Design Catalog')}
+                  ? (department === 'stitching' ? 'Stitching Sample Designs' : department === 'ethno_wear' ? 'Ethno Wear Sample Designs' : 'Sample Designs')
+                  : (department === 'stitching' ? 'Stitching Design Room' : department === 'ethno_wear' ? 'Ethno Wear Design Room' : 'Design Catalog')}
               </h2>
               <span className="ent-badge" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
                 {loading && total === 0 ? (
@@ -1845,12 +1845,12 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
               )}
 
               <FormField
-                label={department === 'stitching' ? "Design Name (e.g. PKD-1001)" : "Design Name (e.g. ED-709, ED-710)"}
+                label={department === 'stitching' ? "Design Name (e.g. PKD-1001)" : department === 'ethno_wear' ? "Design Name (e.g. EW-1, EW-2)" : "Design Name (e.g. ED-709, ED-710)"}
                 name="designName"
                 value={formVal.designName}
                 onChange={handleFormChange}
                 required
-                placeholder={department === 'stitching' ? "PKD-1001" : "e.g. ED-709"}
+                placeholder={department === 'stitching' ? "PKD-1001" : department === 'ethno_wear' ? "EW-1" : "e.g. ED-709"}
               />
 
               <PartyMultiSelect
@@ -1879,10 +1879,10 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 name="fabricName" 
                 value={formVal.fabricName} 
                 onChange={handleFormChange} 
-                options={department === 'stitching' ? ['', ...(printConfig.fabrics?.length ? printConfig.fabrics : ['Cotton', 'Silk', 'Georgette', 'Chiffon', 'Organza', 'Velvet', 'Rayon', 'Crepe'])] : ['', ...(printConfig.fabrics || [])]} 
+                options={department === 'stitching' || department === 'ethno_wear' ? ['', ...(printConfig.fabrics?.length ? printConfig.fabrics : ['Cotton', 'Silk', 'Georgette', 'Chiffon', 'Organza', 'Velvet', 'Rayon', 'Crepe'])] : ['', ...(printConfig.fabrics || [])]} 
               />
 
-              {department !== 'stitching' && (
+              {department !== 'stitching' && department !== 'ethno_wear' && (
                 <FormField label="Paper Type" name="paperType" value={formVal.paperType} onChange={handleFormChange} options={['', ...(printConfig.paperTypes || [])]} />
               )}
 
@@ -1891,7 +1891,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
                 name="category"
                 value={formVal.category}
                 onChange={handleFormChange}
-                options={department === 'stitching' ? ['', ...(printConfig.categories?.length ? printConfig.categories : ['SUIT', 'KURTI', 'DUPATTA', 'TOP', 'BOTTOM', 'LEHENGA', 'STITCHING SET', 'KIDS', 'ETHNIC', 'OTHER'])] : ['', ...(printConfig.categories || [])]}
+                options={department === 'stitching' || department === 'ethno_wear' ? ['', ...(printConfig.categories?.length ? printConfig.categories : ['SUIT', 'KURTI', 'DUPATTA', 'SAREE', 'LEHENGA', 'TOP', 'BOTTOM', 'ETHNIC', 'OTHER'])] : ['', ...(printConfig.categories || [])]}
               />
 
               {/* STITCHING ONLY: Dynamic Size-Wise Sales Rates (Dropdown & Grid from Stitching Settings) */}
@@ -1973,7 +1973,7 @@ export default function DesignCatalogue({ department, initialSubTab = 'catalogue
               )}
 
               {/* DIGITAL PRINT ONLY SECTIONS */}
-              {department !== 'stitching' && (
+              {department !== 'stitching' && department !== 'ethno_wear' && (
                 <>
                   {/* Section: Fusing Configuration */}
                   <div style={{

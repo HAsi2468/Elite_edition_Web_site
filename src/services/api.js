@@ -1206,8 +1206,11 @@ export const api = {
   async deleteDesign(id) {
     return request(`/designs/${id}`, { method: 'DELETE' });
   },
-  async getDesignCategories() {
-    return request('/designs/categories');
+  async getDesignCategories(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') query.append(k, v); });
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request(`/designs/categories${qs}`);
   },
   async getNextDesignNumber(params = {}) {
     const query = new URLSearchParams();

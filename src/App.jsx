@@ -77,6 +77,7 @@ const ScanAndPackScreen = lazyWithRetry(() => import('./components/ScanAndPackSc
 const DesignerModule = lazyWithRetry(() => import('./components/DesignerModule'));
 const DesignerScreen = lazyWithRetry(() => import('./components/DesignerScreen'));
 const LedgerReconciliationPanel = lazyWithRetry(() => import('./components/LedgerReconciliationPanel'));
+const DesignCatalogue = lazyWithRetry(() => import('./components/DesignCatalogue'));
 
 import EliteModalDialog from './components/EliteModalDialog';
 import { triggerEliteAlert, triggerEliteConfirm } from './services/dialogService';
@@ -196,6 +197,12 @@ export const ROUTE_ALIASES = {
   'invoice': { tab: 'ee_invoices', dept: 'elite_edition' },
   'ee_invoices': { tab: 'ee_invoices', dept: 'elite_edition' },
   'ew_invoices': { tab: 'ew_invoices', dept: 'ethno_wear' },
+  'ew_design': { tab: 'ew_design', dept: 'ethno_wear' },
+  'ew-design': { tab: 'ew_design', dept: 'ethno_wear' },
+  'ew_catalogue': { tab: 'ew_design', dept: 'ethno_wear' },
+  'ew-catalogue': { tab: 'ew_design', dept: 'ethno_wear' },
+  'ew_design_room': { tab: 'ew_design', dept: 'ethno_wear' },
+  'ew-design-room': { tab: 'ew_design', dept: 'ethno_wear' },
   'ethno_wear': { tab: 'ew_invoices', dept: 'ethno_wear' },
   'yj_invoices': { tab: 'yj_invoices', dept: 'yamunaji' },
   'yamunaji': { tab: 'yj_invoices', dept: 'yamunaji' },
@@ -277,7 +284,7 @@ export const ALL_KNOWN_ERP_TABS = new Set([
   'ee_dashboard', 'ee_rfd', 'ee_invoices', 'ee_settings', 'ee_complaints', 'ee_expenses', 'ee_raw_materials',
   'ef_dashboard', 'ef_rfd', 'ef_invoices', 'ef_settings', 'ef_complaints', 'ef_expenses', 'ef_raw_materials',
   'so_dashboard', 'so_rfd', 'so_invoices', 'so_settings', 'so_complaints', 'so_expenses', 'so_raw_materials',
-  'ew_dashboard', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
+  'ew_dashboard', 'ew_design', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
   'yj_dashboard', 'yj_invoices', 'yj_settings', 'yj_complaints', 'yj_expenses', 'yj_raw_materials', 'yj_rfd',
   'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials',
   'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'eo_invoices',
@@ -389,6 +396,7 @@ export function getCanonicalHashForTab(tab, queryString = '') {
   else if (tab === 'ef_rfd') alias = 'ef-fabric-process';
   else if (tab === 'so_raw_materials') alias = 'so-raw-materials';
   else if (tab === 'ew_raw_materials') alias = 'ew-raw-materials';
+  else if (tab === 'ew_design') alias = 'ew-design';
   else if (tab === 'yj_raw_materials') alias = 'yj-raw-materials';
   else if (tab === 'yj_rfd') alias = 'fabric-process';
   else if (tab === 'es_raw_materials') alias = 'es-raw-materials';
@@ -1053,7 +1061,7 @@ export default function App() {
   const ELITE_EDITION_PERMISSIONS = ['ee_dashboard', 'ee_rfd', 'ee_invoices', 'ee_complaints', 'ee_settings', 'ee_expenses', 'ee_raw_materials'];
   const ELITE_FABTEX_PERMISSIONS = ['ef_dashboard', 'ef_rfd', 'ef_invoices', 'ef_complaints', 'ef_settings', 'ef_expenses', 'ef_raw_materials'];
   const SOBISE_PERMISSIONS = ['so_dashboard', 'so_rfd', 'so_invoices', 'so_complaints', 'so_settings', 'so_expenses', 'so_raw_materials'];
-  const ETHNO_WEAR_PERMISSIONS = ['ew_invoices', 'ew_dashboard', 'ew_rfd', 'ew_complaints', 'ew_settings', 'ew_expenses', 'ew_raw_materials'];
+  const ETHNO_WEAR_PERMISSIONS = ['ew_invoices', 'ew_dashboard', 'ew_design', 'ew_rfd', 'ew_complaints', 'ew_settings', 'ew_expenses', 'ew_raw_materials'];
   const YAMUNAJI_PERMISSIONS = ['yj_rfd', 'yj_invoices', 'yj_dashboard', 'yj_complaints', 'yj_settings', 'yj_expenses', 'yj_raw_materials'];
   const EDP_PERMISSIONS = ['jobcards', 'jobcards_status_dashboard', 'jobcards_status', 'jobcards_printing_log', 'jobcards_fabric', 'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_list', 'jobcards_tracking', 'jobcards_catalogue', 'jobcards_sample', 'jobcards_master', 'designer_screen', 'designer_module', 'jobcards_settings', 'jobcards_raw_materials', 'jobcards_complain', 'jobcards_complaints', 'complaint_dashboard', 'complaint_create', 'jobcards_expense', 'jobcards_expenses', 'expense_dashboard', 'expense_create', 'jobcards_crm', 'crm_department', 'crm', 'crm_profiles', 'crm_leads', 'jobcards_master_ai', 'master_ai_agent', 'jobcards_business_connection', 'business_connection'];
   const STITCHING_PERMISSIONS = [
@@ -1397,7 +1405,7 @@ export default function App() {
       'ee_dashboard', 'ee_rfd', 'ee_invoices', 'ee_settings', 'ee_complaints', 'ee_expenses', 'ee_raw_materials',
       'ef_dashboard', 'ef_rfd', 'ef_invoices', 'ef_settings', 'ef_complaints', 'ef_expenses', 'ef_raw_materials',
       'so_dashboard', 'so_rfd', 'so_invoices', 'so_settings', 'so_complaints', 'so_expenses', 'so_raw_materials',
-      'ew_dashboard', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
+      'ew_dashboard', 'ew_design', 'ew_rfd', 'ew_invoices', 'ew_settings', 'ew_complaints', 'ew_expenses', 'ew_raw_materials',
       'yj_dashboard', 'yj_rfd', 'yj_invoices', 'yj_settings', 'yj_complaints', 'yj_expenses', 'yj_raw_materials',
       'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials', 'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'raw_materials',
       'exedp_invoices', 'exedp_expenses',
@@ -3265,9 +3273,16 @@ export default function App() {
                       </button>
                     )}
                     {activeDepartment === 'ethno_wear' && (
-                      <button onClick={() => { setActiveTab('ew_raw_materials'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'ew_raw_materials' ? 'active' : ''}`}>
-                        Raw Materials
-                      </button>
+                      <>
+                        {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_design') || currentUser.permissions?.includes('jobcards_catalogue')) && (
+                          <button onClick={() => { setActiveTab('ew_design'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'ew_design' ? 'active' : ''}`}>
+                            Design Room
+                          </button>
+                        )}
+                        <button onClick={() => { setActiveTab('ew_raw_materials'); setMobileMenuOpen(false); }} className={`mobile-drawer-item ${activeTab === 'ew_raw_materials' ? 'active' : ''}`}>
+                          Raw Materials
+                        </button>
+                      </>
                     )}
                     {activeDepartment === 'yamunaji' && (
                       <>
@@ -3640,6 +3655,9 @@ export default function App() {
                   <>
                     {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_dashboard')) &&
                       renderNavItem('ew_dashboard', 'Dashboard', LayoutDashboard, null, 'Dashboard')
+                    }
+                    {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_design') || currentUser.permissions?.includes('jobcards_catalogue')) &&
+                      renderNavItem('ew_design', 'Design room', BookOpen, null, 'Design')
                     }
                     {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_rfd')) &&
                       renderNavItem('ew_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
@@ -4053,6 +4071,12 @@ export default function App() {
             <EliteBillingDepartment companyEntity="Sobise" />
           ) : activeTab === 'ew_dashboard' ? (
             <CompanyDedicatedDashboard companyEntity="Ethno wear" onNavigate={(tab) => setActiveTab(tab)} />
+          ) : activeTab === 'ew_design' ? (
+            <DesignCatalogue
+              department="ethno_wear"
+              currentUser={currentUser}
+              initialSubTab="catalogue"
+            />
           ) : activeTab === 'ew_rfd' ? (
             <YamunajiRfdPanel key="Ethno wear" companyEntity="Ethno wear" onNavigate={(tab) => setActiveTab(tab)} />
           ) : activeTab === 'ew_settings' ? (
@@ -4168,7 +4192,7 @@ export default function App() {
               </p>
             </div>
           ) : activeDepartment === 'ethno_wear' && hasEthnoWearAccess ? (
-            <EliteBillingDepartment companyEntity="Ethno wear" department="ethno_wear" />
+            <CompanyDedicatedDashboard companyEntity="Ethno wear" onNavigate={(tab) => setActiveTab(tab)} />
           ) : activeDepartment === 'yamunaji' && hasYamunajiAccess ? (
             <CompanyDedicatedDashboard companyEntity="Yamunaji" onNavigate={(tab) => setActiveTab(tab)} />
           ) : activeDepartment === 'elite_edition' && hasEliteEditionAccess ? (
