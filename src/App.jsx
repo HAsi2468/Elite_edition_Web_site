@@ -1061,18 +1061,24 @@ export default function App() {
     'jobcards_stitching_challan', 'jobcards_stitching_settings', 'stitching', 'es_complaints', 'es_expenses', 'es_raw_materials'
   ];
 
-  const isSuperOrAdmin = Boolean(
-    currentUser?.role === 'admin' || 
+  const MASTER_ADMIN_EMAIL = 'harshitsidapara2468@gmail.com';
+  const isMasterOrMainAdmin = Boolean(
     currentUser?.role === 'super_admin' || 
     currentUser?.role === 'main_admin' || 
-    currentUser?.isMainAdmin || 
-    currentUser?.isAdmin === true ||
+    currentUser?.isMainAdmin === true || 
+    (currentUser?.email || '').toLowerCase() === MASTER_ADMIN_EMAIL ||
     (currentUser?.username || '').toLowerCase() === 'admin'
+  );
+
+  const isSuperOrAdmin = Boolean(
+    isMasterOrMainAdmin ||
+    currentUser?.role === 'admin' || 
+    currentUser?.isAdmin === true
   );
 
   const isCompanyAllowed = (companyNameOrId) => {
     if (!currentUser) return false;
-    if (isSuperOrAdmin) return true;
+    if (isMasterOrMainAdmin) return true;
     if (Array.isArray(currentUser.allowedCompanies)) {
       if (currentUser.allowedCompanies.length === 0) return false;
       const target = String(companyNameOrId || '').toLowerCase().trim();
@@ -1144,15 +1150,15 @@ export default function App() {
     return false;
   };
 
-  const hasEliteOnlineAccess = isSuperOrAdmin || isCompanyAllowed('elite_online');
-  const hasDigitalPrintAccess = isSuperOrAdmin || isCompanyAllowed('digital_print');
-  const hasStitchingAccess = isSuperOrAdmin || isCompanyAllowed('stitching');
-  const hasEliteEditionAccess = isSuperOrAdmin || isCompanyAllowed('elite_edition');
-  const hasEliteFabtexAccess = isSuperOrAdmin || isCompanyAllowed('elite_fabtex');
-  const hasSobiseAccess = isSuperOrAdmin || isCompanyAllowed('sobise');
-  const hasEthnoWearAccess = isSuperOrAdmin || isCompanyAllowed('ethno_wear');
-  const hasYamunajiAccess = isSuperOrAdmin || isCompanyAllowed('yamunaji');
-  const hasExedpAccess = isSuperOrAdmin || isCompanyAllowed('exedp');
+  const hasEliteOnlineAccess = isMasterOrMainAdmin || isCompanyAllowed('elite_online');
+  const hasDigitalPrintAccess = isMasterOrMainAdmin || isCompanyAllowed('digital_print');
+  const hasStitchingAccess = isMasterOrMainAdmin || isCompanyAllowed('stitching');
+  const hasEliteEditionAccess = isMasterOrMainAdmin || isCompanyAllowed('elite_edition');
+  const hasEliteFabtexAccess = isMasterOrMainAdmin || isCompanyAllowed('elite_fabtex');
+  const hasSobiseAccess = isMasterOrMainAdmin || isCompanyAllowed('sobise');
+  const hasEthnoWearAccess = isMasterOrMainAdmin || isCompanyAllowed('ethno_wear');
+  const hasYamunajiAccess = isMasterOrMainAdmin || isCompanyAllowed('yamunaji');
+  const hasExedpAccess = isMasterOrMainAdmin || isCompanyAllowed('exedp');
 
   const hasCommunicationAccess = !currentUser || isSuperOrAdmin || 
     Boolean(currentUser?.canBroadcastChat) || 
@@ -1267,7 +1273,7 @@ export default function App() {
 
   // Auto-switch department if user lacks permission for current activeDepartment
   useEffect(() => {
-    if (!currentUser || isSuperOrAdmin) return;
+    if (!currentUser || isMasterOrMainAdmin) return;
     const allowedDepts = [];
     if (isCompanyAllowed('elite_online') && hasEliteOnlineAccess) allowedDepts.push('elite_online');
     if (isCompanyAllowed('digital_print') && hasDigitalPrintAccess) allowedDepts.push('digital_print');
@@ -1306,7 +1312,7 @@ export default function App() {
         }
       }
     }
-  }, [currentUser?.role, JSON.stringify(currentUser?.permissions || []), JSON.stringify(currentUser?.allowedCompanies || []), activeDepartment, hasEliteOnlineAccess, hasDigitalPrintAccess, hasStitchingAccess, hasEliteEditionAccess, hasEliteFabtexAccess, hasSobiseAccess, hasEthnoWearAccess, hasYamunajiAccess, hasExedpAccess, hasCommunicationAccess, hasTaskAccess, isSuperOrAdmin]);
+  }, [currentUser?.role, JSON.stringify(currentUser?.permissions || []), JSON.stringify(currentUser?.allowedCompanies || []), activeDepartment, hasEliteOnlineAccess, hasDigitalPrintAccess, hasStitchingAccess, hasEliteEditionAccess, hasEliteFabtexAccess, hasSobiseAccess, hasEthnoWearAccess, hasYamunajiAccess, hasExedpAccess, hasCommunicationAccess, hasTaskAccess, isMasterOrMainAdmin, isSuperOrAdmin]);
 
   const handleNavClick = (tab) => {
     setActiveTab(tab);
