@@ -85,6 +85,16 @@ export function InfrastructureBilling() {
   // Toast Notifications
   const [toast, setToast] = useState(null);
 
+  const currentMonthDisplayName = useMemo(() => {
+    return new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  }, []);
+
+  const nextAutoDebitDate = useMemo(() => {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 2);
+    return nextMonth.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }, []);
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -731,11 +741,27 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                   <Sliders size={18} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0f172a' }}>
-                    Monthly Cloud Budget Cap & Auto-Debit Alert
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0f172a' }}>
+                      Monthly Cloud Budget Cap & Auto-Debit Alert
+                    </div>
+                    <span style={{
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      color: '#059669',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: 12,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}>
+                      <CheckCircle2 size={11} /> Auto-Pay Active (Corporate Card)
+                    </span>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                    Next Auto-Debit on <strong>02 Nov 2026</strong> via Corporate Card • MoM Growth: <strong>+{momGrowthPercent}%</strong>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                    Next Auto-Debit on <strong>{nextAutoDebitDate}</strong> via Corporate Card • MoM Growth: <strong>+{momGrowthPercent}%</strong>
                   </div>
                 </div>
               </div>
@@ -986,6 +1012,21 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                               <span className="badge-paid">
                                 <CheckCircle2 size={11} /> PAID
                               </span>
+                            ) : row.month === currentMonthDisplayName ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '3px 8px',
+                                borderRadius: 12,
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1px solid #bfdbfe',
+                                fontSize: '0.7rem',
+                                fontWeight: 800
+                              }}>
+                                <RefreshCw size={10} className="animate-spin" /> ACCUMULATING
+                              </span>
                             ) : (
                               <button
                                 type="button"
@@ -1005,6 +1046,13 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                               <div>
                                 <div style={{ fontWeight: 700, color: '#0f172a' }}>Paid via {row.paymentMethod || 'Corporate Card'}</div>
                                 <div style={{ color: '#64748b', fontFamily: 'monospace', fontSize: '0.68rem' }}>Ref: {row.paymentRef || 'N/A'}</div>
+                              </div>
+                            ) : row.month === currentMonthDisplayName ? (
+                              <div>
+                                <div style={{ color: '#2563eb', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Sparkles size={12} /> Auto-Pay Scheduled
+                                </div>
+                                <div style={{ color: '#64748b', fontSize: '0.68rem' }}>Auto-Debit on {nextAutoDebitDate} via Corporate Card</div>
                               </div>
                             ) : (
                               <div style={{ color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
