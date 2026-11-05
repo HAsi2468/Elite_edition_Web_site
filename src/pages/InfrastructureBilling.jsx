@@ -208,12 +208,14 @@ export function InfrastructureBilling() {
     }
   };
 
-  // 5. Download Invoice PDF
-  const handleDownloadInvoice = async (bill) => {
-    setDownloadingPdfId(bill._id);
+  // 5. Download Invoice PDF (Provider-Specific: AWS, MongoDB Atlas, Cloudflare R2)
+  const handleDownloadInvoice = async (bill, platformKey = 'aws') => {
+    const downloadKey = `${bill._id}-${platformKey}`;
+    setDownloadingPdfId(downloadKey);
     try {
-      await infrastructureService.downloadInvoicePdf(bill._id, bill.month);
-      showToast(`Tax Invoice downloaded for ${bill.month}`);
+      await infrastructureService.downloadInvoicePdf(bill._id, bill.month, platformKey);
+      const provName = platformKey === 'aws' ? 'Amazon Web Services (AWS)' : platformKey === 'mongodb' ? 'MongoDB Atlas' : 'Cloudflare R2';
+      showToast(`${provName} Official Tax Invoice downloaded for ${bill.month}!`);
     } catch (err) {
       showToast('Invoice download failed: ' + err.message, 'error');
     } finally {
@@ -1106,8 +1108,8 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                               )}
                               <button
                                 type="button"
-                                onClick={() => handleDownloadInvoice(row.bill)}
-                                disabled={downloadingPdfId === row.bill._id}
+                                onClick={() => handleDownloadInvoice(row.bill, row.platformKey)}
+                                disabled={downloadingPdfId === `${row.bill._id}-${row.platformKey}`}
                                 style={{
                                   padding: '5px 8px',
                                   borderRadius: 6,
@@ -1116,9 +1118,9 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                                   color: '#334155',
                                   cursor: 'pointer',
                                 }}
-                                title="Download Tax Invoice PDF"
+                                title={`Download Official ${row.platformName} Tax Invoice PDF`}
                               >
-                                <Download size={13} className={downloadingPdfId === row.bill._id ? 'animate-bounce' : ''} />
+                                <Download size={13} className={downloadingPdfId === `${row.bill._id}-${row.platformKey}` ? 'animate-bounce' : ''} />
                               </button>
                             </div>
                           </td>
