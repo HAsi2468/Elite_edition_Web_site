@@ -18,10 +18,13 @@ async function main() {
 
   console.log('🔍 Auditing all React components for hook rules and undefined references...');
   const results = await eslint.lintFiles([
+    'src/*.{js,jsx}',
     'src/components/**/*.{js,jsx}',
     'src/pages/**/*.{js,jsx}',
     'src/hooks/**/*.{js,jsx}',
-    'src/contexts/**/*.{js,jsx}'
+    'src/contexts/**/*.{js,jsx}',
+    'src/services/**/*.{js,jsx}',
+    'src/utils/**/*.{js,jsx}'
   ]);
 
   const criticalIssues = [];
