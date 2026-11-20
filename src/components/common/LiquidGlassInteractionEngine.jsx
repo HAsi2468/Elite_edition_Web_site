@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { soundEffects } from '../../services/soundEffects';
 
 /**
  * LiquidGlassInteractionEngine
@@ -78,6 +79,9 @@ export function LiquidGlassInteractionEngine() {
       void btn.offsetWidth;
       btn.classList.add('erp-tactile-ripple-active');
 
+      // Trigger subtle tactile acoustic click & haptic vibration
+      soundEffects.playClick();
+
       // If this is a primary Save/Submit action button, trigger subtle emerald confirmation pulse
       const text = (btn.textContent || '').trim().toLowerCase();
       const isSaveAction =
@@ -91,6 +95,7 @@ export function LiquidGlassInteractionEngine() {
         btn.classList.remove('erp-btn-save-pulse');
         void btn.offsetWidth;
         btn.classList.add('erp-btn-save-pulse');
+        soundEffects.triggerHaptic(15);
       }
     };
 

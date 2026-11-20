@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Info, X, Bell, Trash2, CheckCheck, BellRing, ExternalLink } from 'lucide-react';
 import { webPushClient } from '../services/webPushClient';
+import { soundEffects } from '../services/soundEffects';
 
 export const triggerGlobalDataRefresh = (detail = 'all') => {
   const payload = typeof detail === 'string'
@@ -27,42 +28,16 @@ export const saveNotificationHistory = (history) => {
   }
 };
 
-// ── Audio Chime Synthesizer (Works 100% on HTTP & HTTPS without external files) ──
+// ── Audio Chime Synthesizer & Subtle Haptic Feedback ──
 const playNotificationSound = (type = 'info') => {
   try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    
     if (type === 'success') {
-      // High double chime (C5 -> E5 -> G5)
-      osc.frequency.setValueAtTime(523.25, now);
-      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1);
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.2);
+      soundEffects.playSuccess();
     } else if (type === 'warning' || type === 'error') {
-      // Gentle warning double beep
-      osc.frequency.setValueAtTime(440, now);
-      osc.frequency.setValueAtTime(349.23, now + 0.12);
+      soundEffects.playWarning();
     } else {
-      // Soft gentle chime (E5 -> A5)
-      osc.frequency.setValueAtTime(659.25, now);
-      osc.frequency.exponentialRampToValueAtTime(880.00, now + 0.15);
+      soundEffects.playClick();
     }
-
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.35);
   } catch (e) {
     // Audio Context un-muted on user interaction
   }

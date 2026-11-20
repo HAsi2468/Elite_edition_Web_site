@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, Sparkles, Type } from 'lucide-react';
+import { Eye, Sparkles, Type, Volume2, VolumeX } from 'lucide-react';
+import { soundEffects } from '../../services/soundEffects';
 
 const LS_EYE = 'elite_erp_eye_comfort';
 const LS_CALM = 'elite_erp_calm_mode';
@@ -19,7 +20,18 @@ export function EyeComfortControl({ compact = false }) {
   const [eyeComfort, setEyeComfort] = useState(() => readLs(LS_EYE, 'off') === 'on');
   const [calmMode, setCalmMode] = useState(() => readLs(LS_CALM, 'off') === 'on');
   const [textDensity, setTextDensity] = useState(() => readLs(LS_DENSITY, 'comfort'));
+  const [soundEnabled, setSoundEnabled] = useState(() => soundEffects.isEnabled());
+  const [soundVolume, setSoundVolume] = useState(() => soundEffects.getVolume());
   const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onSoundChange = (e) => {
+      if (e.detail?.enabled !== undefined) setSoundEnabled(e.detail.enabled);
+      if (typeof e.detail?.volume === 'number') setSoundVolume(e.detail.volume);
+    };
+    window.addEventListener('elite-sound-setting-change', onSoundChange);
+    return () => window.removeEventListener('elite-sound-setting-change', onSoundChange);
+  }, []);
 
   useEffect(() => {
     const handleSync = (ev) => {
@@ -228,6 +240,66 @@ export function EyeComfortControl({ compact = false }) {
                 );
               })}
             </div>
+          </div>
+
+          {/* 4. Subtle Audio & Haptic Feedback */}
+          <div style={{ borderTop: '1px solid var(--border-light, rgba(148,163,184,0.22))', paddingTop: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                soundEffects.setEnabled(next);
+                if (next) soundEffects.playSuccess();
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 10px',
+                borderRadius: '10px',
+                border: soundEnabled ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid var(--border-light, rgba(148,163,184,0.22))',
+                background: soundEnabled ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                color: 'var(--text-primary, #f8fafc)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  {soundEnabled ? <Volume2 size={13} color="#10b981" /> : <VolumeX size={13} color="var(--text-muted, #94a3b8)" />}
+                  Audio &amp; Haptics
+                </div>
+                <div style={{ fontSize: '0.67rem', color: 'var(--text-muted, #94a3b8)' }}>Gentle clicks &amp; chimes</div>
+              </div>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: soundEnabled ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
+                {soundEnabled ? 'ON' : 'MUTE'}
+              </span>
+            </button>
+
+            {soundEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', padding: '0 4px' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 600 }}>Vol</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  value={soundVolume}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setSoundVolume(val);
+                    soundEffects.setVolume(val);
+                  }}
+                  onMouseUp={() => soundEffects.playClick()}
+                  style={{ flex: 1, accentColor: '#10b981', cursor: 'pointer', height: '4px' }}
+                />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted, #94a3b8)', minWidth: '24px', textAlign: 'right' }}>
+                  {Math.round(soundVolume * 100)}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
