@@ -3787,48 +3787,24 @@ export default function App() {
                         aria-current={isActive ? 'page' : undefined}
                         onClick={() => handleNavClick(tabKey)}
                         title={`${label} ${itemShortcutNum ? `(Alt + ${itemShortcutNum})` : ''}`}
-                        className="sidebar-nav-collapsed-btn"
-                        style={{
-                          background: isActive ? '#eff6ff' : 'transparent',
-                          border: 'none',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                          width: '100%',
-                          padding: '8px 4px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px',
-                          borderRadius: '6px',
-                          color: isActive ? '#1d4ed8' : '#64748b',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.15s ease',
-                          borderLeft: isActive ? '3px solid #2563eb' : '3px solid transparent',
-                          position: 'relative'
-                        }}
-                        onMouseEnter={e => {
-                          if (!isActive) e.currentTarget.style.background = '#f8fafc';
-                        }}
-                        onMouseLeave={e => {
-                          if (!isActive) e.currentTarget.style.background = 'transparent';
-                        }}
+                        className={`sidebar-nav-collapsed-btn sidebar-liquid-tile ${isActive ? 'active' : ''}`}
+                        style={{ outline: 'none' }}
                       >
                         <NavIcon
                           size={20}
-                          color={customColor || (isActive ? '#2563eb' : '#64748b')}
+                          color={customColor || 'currentColor'}
                           style={{ flexShrink: 0 }}
                         />
                         <span
                           style={{
-                            fontSize: '0.66rem',
+                            fontSize: '0.64rem',
                             fontWeight: isActive ? 700 : 500,
-                            lineHeight: 1.15,
-                            color: isActive ? '#1d4ed8' : '#64748b',
+                            lineHeight: 1.1,
                             wordBreak: 'break-word',
-                            maxWidth: '64px',
-                            textAlign: 'center'
+                            maxWidth: '44px',
+                            textAlign: 'center',
+                            marginTop: '2px',
+                            opacity: isActive ? 1 : 0.85
                           }}
                         >
                           {displayShort}
@@ -3847,35 +3823,15 @@ export default function App() {
                       aria-current={isActive ? 'page' : undefined}
                       onClick={() => handleNavClick(tabKey)}
                       title={`${label} ${itemShortcutNum ? `(Alt + ${itemShortcutNum})` : ''}`}
+                      className={`sidebar-nav-item sidebar-liquid-item ${isActive ? 'active' : ''}`}
                       style={{
-                        background: isActive ? '#eff6ff' : 'transparent',
-                        border: 'none',
-                        width: '100%',
-                        padding: '8px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'flex-start',
-                        gap: '10px',
-                        borderRadius: '6px',
-                        color: isActive ? '#1d4ed8' : '#334155',
+                        outline: 'none',
                         fontSize: '0.86rem',
-                        fontWeight: isActive ? '700' : '500',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.15s ease',
-                        borderLeft: isActive ? '3px solid #2563eb' : '3px solid transparent',
                         whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        position: 'relative'
-                      }}
-                      onMouseEnter={e => {
-                        if (!isActive) e.currentTarget.style.background = '#f8fafc';
-                      }}
-                      onMouseLeave={e => {
-                        if (!isActive) e.currentTarget.style.background = 'transparent';
+                        overflow: 'hidden'
                       }}
                     >
-                      <NavIcon size={17} color={customColor || (isActive ? '#2563eb' : '#64748b')} style={{ flexShrink: 0 }} />
+                      <NavIcon size={18} color={customColor || 'currentColor'} style={{ flexShrink: 0 }} />
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{label}</span>
                     </button>
                   );
