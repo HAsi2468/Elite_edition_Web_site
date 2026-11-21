@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ToggleSwitch from './ToggleSwitch';
 import { Eye, Sparkles, Type, Volume2, VolumeX } from 'lucide-react';
 import { soundEffects } from '../../services/soundEffects';
 
@@ -174,9 +175,13 @@ export function EyeComfortControl({ compact = false }) {
               </div>
               <div style={{ fontSize: '0.67rem', color: 'var(--text-muted, #94a3b8)' }}>Reduces harsh blue light</div>
             </div>
-            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: eyeComfort ? '#f59e0b' : 'var(--text-muted, #94a3b8)' }}>
-              {eyeComfort ? 'ON' : 'OFF'}
-            </span>
+            <ToggleSwitch
+              checked={eyeComfort}
+              onChange={(next) => updateSettings({ eyeComfort: next })}
+              size="sm"
+              accent="amber"
+              ariaLabel="Toggle Warm Eye Care"
+            />
           </button>
 
           {/* 2. Calm / Low-Motion Mode */}
@@ -202,9 +207,13 @@ export function EyeComfortControl({ compact = false }) {
               </div>
               <div style={{ fontSize: '0.67rem', color: 'var(--text-muted, #94a3b8)' }}>No animations or heavy blur</div>
             </div>
-            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: calmMode ? '#38bdf8' : 'var(--text-muted, #94a3b8)' }}>
-              {calmMode ? 'ON' : 'OFF'}
-            </span>
+            <ToggleSwitch
+              checked={calmMode}
+              onChange={(next) => updateSettings({ calmMode: next })}
+              size="sm"
+              accent="sky"
+              ariaLabel="Toggle Calm Low Motion"
+            />
           </button>
 
           {/* 3. Text Size / Reading Density */}
@@ -273,9 +282,18 @@ export function EyeComfortControl({ compact = false }) {
                 </div>
                 <div style={{ fontSize: '0.67rem', color: 'var(--text-muted, #94a3b8)' }}>Gentle clicks &amp; chimes</div>
               </div>
-              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: soundEnabled ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
-                {soundEnabled ? 'ON' : 'MUTE'}
-              </span>
+              <ToggleSwitch
+                checked={soundEnabled}
+                onChange={(next) => {
+                  setSoundEnabled(next);
+                  soundEffects.setEnabled(next);
+                  if (next) soundEffects.playSuccess();
+                }}
+                size="sm"
+                accent="emerald"
+                offLabel="MUTE"
+                ariaLabel="Toggle Audio and Haptics"
+              />
             </button>
 
             {soundEnabled && (
