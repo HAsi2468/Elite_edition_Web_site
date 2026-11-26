@@ -129,15 +129,79 @@ export default function CorporateDeliveryChallanPanel({
 
   const fetchDependencies = async () => {
     try {
-      const [custRes, itemRes] = await Promise.all([
+      const [custRes, vendorRes, partyRes, itemRes, designRes, catalogRes] = await Promise.allSettled([
         api.getBillingCustomers(companyEntity),
-        api.getBillingItems(companyEntity)
+        api.getBillingVendors ? api.getBillingVendors(companyEntity) : Promise.resolve([]),
+        api.getParties ? api.getParties() : Promise.resolve([]),
+        api.getBillingItems(companyEntity),
+        api.getDesigns ? api.getDesigns({ limit: 200 }) : Promise.resolve([]),
+        api.getProductsCatalog ? api.getProductsCatalog() : Promise.resolve([]),
       ]);
-      if (Array.isArray(custRes)) setCustomers(custRes);
-      else if (custRes?.data) setCustomers(custRes.data);
 
-      if (Array.isArray(itemRes)) setItemsList(itemRes);
-      else if (itemRes?.data) setItemsList(itemRes.data);
+      // Merge & deduplicate Customers / Parties so dropdown is always populated
+      const mergedCustomers = [];
+      const seenCust = new Set();
+      const pushCust = (raw) => {
+        const arr = Array.isArray(raw) ? raw : raw?.data || raw?.customers || raw?.parties || raw?.vendors || [];
+        arr.forEach((c) => {
+          if (!c) return;
+          const name = String(c.name || c.businessName || c.partyName || '').trim();
+          if (name && !seenCust.has(name.toLowerCase())) {
+            seenCust.add(name.toLowerCase());
+            mergedCustomers.push({
+              ...c,
+              _id: c._id || c.id || `party_${name}`,
+              name,
+              businessName: c.businessName || '',
+              phone: c.phone || c.mobile || c.contactNo || '',
+              email: c.email || '',
+              gstin: c.gstin || c.gstNo || '',
+              billingAddress: c.billingAddress || c.address || '',
+              shippingAddress: c.shippingAddress || c.address || '',
+              state: c.state || 'Gujarat',
+              stateCode: c.stateCode || '24',
+            });
+          }
+        });
+      };
+      if (custRes.status === 'fulfilled') pushCust(custRes.value);
+      if (vendorRes.status === 'fulfilled') pushCust(vendorRes.value);
+      if (partyRes.status === 'fulfilled') pushCust(partyRes.value);
+      setCustomers(mergedCustomers);
+
+      // Merge & deduplicate Billing Items + Design Master + Catalog
+      const mergedItems = [];
+      const seenItem = new Set();
+      const pushItems = (raw, mode = 'billing') => {
+        const arr = Array.isArray(raw) ? raw : raw?.data || raw?.items || raw?.designs || [];
+        arr.forEach((it) => {
+          if (!it) return;
+          const itemName =
+            mode === 'design'
+              ? String(it.designName || it.designNo || '').trim()
+              : String(it.itemName || it.skuCode || it.description || it.name || '').trim();
+          if (itemName && !seenItem.has(itemName.toLowerCase())) {
+            seenItem.add(itemName.toLowerCase());
+            mergedItems.push({
+              ...it,
+              _id: it._id || it.id || `${mode}_${itemName}`,
+              itemName,
+              description:
+                mode === 'design'
+                  ? [it.category, it.fabricName, it.colors].filter(Boolean).join(' — ')
+                  : it.description || '',
+              hsnCode: it.hsnCode || it.hsn || '6204',
+              unit: it.unit || 'Pcs',
+              unitPrice: Number(it.unitPrice ?? it.salePrice ?? it.price ?? it.basePrice ?? 0),
+              taxRate: Number(it.taxRate ?? 5),
+            });
+          }
+        });
+      };
+      if (itemRes.status === 'fulfilled') pushItems(itemRes.value, 'billing');
+      if (designRes.status === 'fulfilled') pushItems(designRes.value, 'design');
+      if (catalogRes.status === 'fulfilled') pushItems(catalogRes.value, 'catalog');
+      setItemsList(mergedItems);
     } catch (e) {
       console.warn('Failed to load customers or items list:', e);
     }

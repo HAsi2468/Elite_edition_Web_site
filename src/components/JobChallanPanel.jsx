@@ -86,6 +86,10 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [partiesList, setPartiesList] = useState([]);
+  const [masterDesigns, setMasterDesigns] = useState([]);
+  const [processOptions, setProcessOptions] = useState(PROCESS_PRESETS);
+  const [showPartyDropdown, setShowPartyDropdown] = useState(false);
+  const [customProcessInput, setCustomProcessInput] = useState('');
 
   // Modals
   const [showFormModal, setShowFormModal] = useState(false);
@@ -145,43 +149,147 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
     fetchChallans();
   }, [fetchChallans]);
 
-  // Load known parties/vendors for quick autocomplete
+  // Load dynamic Parties/Vendors/Karigars, Process Types, and Master Designs for instant dropdowns
   useEffect(() => {
     let active = true;
-    const loadParties = async () => {
+    const loadDynamicMasters = async () => {
       try {
-        const [pRes, vRes] = await Promise.allSettled([
+        const [
+          billingVendorsRes,
+          billingCustomersRes,
+          fabricVendorsRes,
+          partiesRes,
+          vendorsRes,
+          stitchingCfgRes,
+          designsRes,
+          garmentCardsRes,
+        ] = await Promise.allSettled([
+          api.getBillingVendors ? api.getBillingVendors(company.name) : Promise.resolve([]),
+          api.getBillingCustomers ? api.getBillingCustomers(company.name) : Promise.resolve([]),
+          api.getFabricVendors ? api.getFabricVendors() : Promise.resolve([]),
           api.getParties ? api.getParties() : Promise.resolve([]),
           api.getVendors ? api.getVendors() : Promise.resolve([]),
+          api.getStitchingConfig ? api.getStitchingConfig() : Promise.resolve(null),
+          api.getDesigns ? api.getDesigns({ limit: 300 }) : Promise.resolve([]),
+          api.getGarmentJobCards ? api.getGarmentJobCards({ limit: 150 }) : Promise.resolve([]),
         ]);
         if (!active) return;
-        const merged = [];
-        const seen = new Set();
-        const pushList = (raw) => {
-          const arr = Array.isArray(raw) ? raw : raw?.data || raw?.parties || [];
+
+        // 1. Merge & deduplicate all Parties / Karigars / Vendors
+        const mergedParties = [];
+        const seenParties = new Set();
+        const pushParties = (raw, sourceTag) => {
+          const arr = Array.isArray(raw) ? raw : raw?.data || raw?.parties || raw?.vendors || raw?.customers || [];
           arr.forEach((p) => {
-            const name = String(p.businessName || p.name || p.partyName || '').trim();
-            if (name && !seen.has(name.toLowerCase())) {
-              seen.add(name.toLowerCase());
-              merged.push({
+            if (!p) return;
+            const name = typeof p === 'string'
+              ? p.trim()
+              : String(p.businessName || p.name || p.partyName || p.vendorName || '').trim();
+            if (name && !seenParties.has(name.toLowerCase())) {
+              seenParties.add(name.toLowerCase());
+              mergedParties.push({
                 name,
-                phone: p.phone || p.mobile || p.contactNo || '',
-                address: p.address || p.billingAddress || '',
-                gstin: p.gstin || p.gstNo || '',
+                phone: typeof p === 'object' ? (p.phone || p.mobile || p.contactNo || '') : '',
+                address: typeof p === 'object' ? (p.address || p.billingAddress || p.city || '') : '',
+                gstin: typeof p === 'object' ? (p.gstin || p.gstNo || '') : '',
+                source: sourceTag,
               });
             }
           });
         };
-        if (pRes.status === 'fulfilled') pushList(pRes.value);
-        if (vRes.status === 'fulfilled') pushList(vRes.value);
-        setPartiesList(merged);
+
+        if (billingVendorsRes.status === 'fulfilled') pushParties(billingVendorsRes.value, 'Vendor');
+        if (billingCustomersRes.status === 'fulfilled') pushParties(billingCustomersRes.value, 'Customer');
+        if (fabricVendorsRes.status === 'fulfilled') pushParties(fabricVendorsRes.value, 'Job/Fabric Vendor');
+        if (partiesRes.status === 'fulfilled') pushParties(partiesRes.value, 'Party');
+        if (vendorsRes.status === 'fulfilled') pushParties(vendorsRes.value, 'Vendor');
+
+        // 2. Dynamic Process Types & Karigars from Stitching Config
+        if (stitchingCfgRes.status === 'fulfilled' && stitchingCfgRes.value) {
+          const cfg = stitchingCfgRes.value?.data || stitchingCfgRes.value;
+          if (Array.isArray(cfg?.vendors)) pushParties(cfg.vendors, 'Stitching Karigar');
+          if (Array.isArray(cfg?.karigars)) pushParties(cfg.karigars, 'Karigar');
+          const cfgProcs = cfg?.processTypes || cfg?.processes || [];
+          if (Array.isArray(cfgProcs) && cfgProcs.length > 0) {
+            const combined = [...PROCESS_PRESETS];
+            cfgProcs.forEach((pr) => {
+              const label = typeof pr === 'string' ? pr.trim() : String(pr?.name || pr?.label || '').trim();
+              if (label && !combined.some((x) => x.toLowerCase() === label.toLowerCase())) {
+                combined.splice(combined.length - 1, 0, label);
+              }
+            });
+            setProcessOptions(combined);
+          }
+        }
+
+        mergedParties.sort((a, b) => a.name.localeCompare(b.name));
+        setPartiesList(mergedParties);
+
+        // 3. Pre-load Master Designs + Garment Job Card designs (with images & size ratios!)
+        const mergedDesigns = [];
+        const seenDesigns = new Set();
+
+        if (designsRes.status === 'fulfilled' && designsRes.value) {
+          const dArr = Array.isArray(designsRes.value)
+            ? designsRes.value
+            : designsRes.value?.data || designsRes.value?.designs || [];
+          dArr.forEach((d) => {
+            const code = String(d?.designName || d?.designNo || '').trim();
+            if (code && !seenDesigns.has(code.toLowerCase())) {
+              seenDesigns.add(code.toLowerCase());
+              mergedDesigns.push({
+                designNo: code,
+                imageUrl: d.imageUrl || d.imageUrl2 || '',
+                description: [d.category, d.fabricName, d.colors].filter(Boolean).join(' — '),
+                fabricName: d.fabricName || '',
+                sizeRatio: '',
+                source: 'Design Master',
+              });
+            }
+          });
+        }
+
+        if (garmentCardsRes.status === 'fulfilled' && garmentCardsRes.value) {
+          const gArr = Array.isArray(garmentCardsRes.value)
+            ? garmentCardsRes.value
+            : garmentCardsRes.value?.data || garmentCardsRes.value?.cards || [];
+          gArr.forEach((g) => {
+            const code = String(g?.design_number || g?.designNo || '').trim();
+            if (!code) return;
+            // Format size ratio string from Garment Job Card if available
+            let ratioStr = '';
+            if (g.size_ratios && typeof g.size_ratios === 'object') {
+              const parts = Object.entries(g.size_ratios)
+                .filter(([, v]) => Number(v) > 0)
+                .map(([k, v]) => `${k.replace(/_\d+$/, '').toUpperCase()}-${v}`);
+              ratioStr = parts.join(', ');
+            }
+            const existing = mergedDesigns.find((m) => m.designNo.toLowerCase() === code.toLowerCase());
+            if (existing) {
+              if (!existing.sizeRatio && ratioStr) existing.sizeRatio = ratioStr;
+              if (!existing.description && g.label) existing.description = g.label;
+            } else if (!seenDesigns.has(code.toLowerCase())) {
+              seenDesigns.add(code.toLowerCase());
+              mergedDesigns.push({
+                designNo: code,
+                imageUrl: g.imageUrl || g.design_image || '',
+                description: [g.label, g.finishing].filter(Boolean).join(' — '),
+                fabricName: '',
+                sizeRatio: ratioStr,
+                source: 'Job Card',
+              });
+            }
+          });
+        }
+
+        setMasterDesigns(mergedDesigns);
       } catch (_) {}
     };
-    loadParties();
+    loadDynamicMasters();
     return () => {
       active = false;
     };
-  }, [company.id]);
+  }, [company.id, company.name]);
 
   // Escape key closes modals cleanly
   useEffect(() => {
@@ -334,11 +442,46 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
         designNo: sug.designNo,
         designImageUrl: sug.imageUrl || updated[idx].designImageUrl,
         description: sug.description || updated[idx].description,
+        sizeRatio: sug.sizeRatio || updated[idx].sizeRatio,
       };
       return { ...prev, items: updated };
     });
     setActiveSuggestRow(null);
     setDesignSuggestions((prev) => ({ ...prev, [idx]: [] }));
+  };
+
+  // Filtered party options for live searchable dropdown
+  const filteredParties = useMemo(() => {
+    const q = String(form.party.name || '').trim().toLowerCase();
+    if (!q) return partiesList.slice(0, 30);
+    return partiesList
+      .filter((p) => p.name.toLowerCase().includes(q) || (p.phone && p.phone.includes(q)))
+      .slice(0, 30);
+  }, [partiesList, form.party.name]);
+
+  // Helper to get combined live + pre-loaded design suggestions for a row
+  const getRowDesignOptions = (idx, currentVal) => {
+    const serverSugs = designSuggestions[idx] || [];
+    const q = String(currentVal || '').trim().toLowerCase();
+    const localFiltered = q
+      ? masterDesigns.filter(
+          (d) =>
+            d.designNo.toLowerCase().includes(q) ||
+            (d.description && d.description.toLowerCase().includes(q)) ||
+            (d.fabricName && d.fabricName.toLowerCase().includes(q))
+        )
+      : masterDesigns;
+
+    const merged = [];
+    const seen = new Set();
+    [...serverSugs, ...localFiltered].forEach((item) => {
+      const key = String(item.designNo || '').toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    });
+    return merged.slice(0, 20);
   };
 
   const handleAddRow = () => {
@@ -1084,23 +1227,99 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
 
                 {/* Party & Process Row */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginTop: '0.75rem' }}>
-                  <div>
+                  <div style={{ position: 'relative' }}>
                     <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
-                      Party / Karigar / Vendor Name *
+                      Party / Karigar / Vendor Name *{' '}
+                      {partiesList.length > 0 && (
+                        <span style={{ color: brandColor, fontSize: '0.68rem' }}>({partiesList.length} saved)</span>
+                      )}
                     </label>
                     <input
                       type="text"
-                      list="job-challan-parties-datalist"
                       value={form.party.name}
-                      onChange={(e) => handlePartyNameChange(e.target.value)}
-                      placeholder="Select or type party / karigar name..."
+                      onFocus={() => setShowPartyDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowPartyDropdown(false), 200)}
+                      onChange={(e) => {
+                        handlePartyNameChange(e.target.value);
+                        setShowPartyDropdown(true);
+                      }}
+                      placeholder="Click to select or type party / karigar..."
                       style={{ width: '100%', padding: '0.5rem 0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.84rem', boxSizing: 'border-box' }}
                     />
-                    <datalist id="job-challan-parties-datalist">
-                      {partiesList.map((p) => (
-                        <option key={p.name} value={p.name} />
-                      ))}
-                    </datalist>
+                    {showPartyDropdown && filteredParties.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          marginTop: '4px',
+                          maxHeight: 220,
+                          overflowY: 'auto',
+                          background: '#ffffff',
+                          border: `1px solid ${brandColor}66`,
+                          borderRadius: '10px',
+                          boxShadow: '0 12px 28px rgba(15,23,42,0.22)',
+                          zIndex: 60,
+                        }}
+                      >
+                        {filteredParties.map((p) => (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onMouseDown={() => {
+                              setForm((prev) => ({
+                                ...prev,
+                                party: {
+                                  name: p.name,
+                                  phone: p.phone || prev.party.phone,
+                                  address: p.address || prev.party.address,
+                                  gstin: p.gstin || prev.party.gstin,
+                                },
+                              }));
+                              setShowPartyDropdown(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '0.5rem',
+                              padding: '0.5rem 0.7rem',
+                              border: 'none',
+                              borderBottom: '1px solid #f1f5f9',
+                              background: '#ffffff',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {p.name}
+                              </div>
+                              {(p.phone || p.address) && (
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {[p.phone, p.address].filter(Boolean).join(' • ')}
+                                </div>
+                              )}
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.66rem',
+                                fontWeight: 700,
+                                color: brandColor,
+                                background: `${brandColor}16`,
+                                padding: '2px 6px',
+                                borderRadius: '999px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.source || 'Saved'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
@@ -1146,13 +1365,21 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                     Process Type
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
-                    {PROCESS_PRESETS.map((proc) => {
-                      const isSel = form.processType === proc;
+                    {processOptions.map((proc) => {
+                      const isSel = proc === 'Other'
+                        ? !processOptions.filter((x) => x !== 'Other').includes(form.processType)
+                        : form.processType === proc;
                       return (
                         <button
                           key={proc}
                           type="button"
-                          onClick={() => setForm((p) => ({ ...p, processType: proc }))}
+                          onClick={() => {
+                            if (proc === 'Other') {
+                              setForm((p) => ({ ...p, processType: customProcessInput || 'Other' }));
+                            } else {
+                              setForm((p) => ({ ...p, processType: proc }));
+                            }
+                          }}
                           style={{
                             padding: '4px 11px',
                             borderRadius: '999px',
@@ -1168,6 +1395,24 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                         </button>
                       );
                     })}
+                    {!processOptions.filter((x) => x !== 'Other').includes(form.processType) && (
+                      <input
+                        type="text"
+                        value={customProcessInput}
+                        onChange={(e) => {
+                          setCustomProcessInput(e.target.value);
+                          setForm((p) => ({ ...p, processType: e.target.value || 'Other' }));
+                        }}
+                        placeholder="Type custom process (e.g. Overlock, Fusing)..."
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                          border: `1px solid ${brandColor}`,
+                          fontSize: '0.78rem',
+                          minWidth: 210,
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -1219,7 +1464,7 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                       </thead>
                       <tbody>
                         {form.items.map((item, idx) => {
-                          const sugs = designSuggestions[idx] || [];
+                          const sugs = getRowDesignOptions(idx, item.designNo);
                           return (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '0.45rem 0.4rem', textAlign: 'center', fontWeight: 700, color: '#64748b' }}>
