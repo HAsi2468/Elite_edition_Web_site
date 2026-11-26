@@ -84,6 +84,58 @@ export function InfrastructureBilling() {
 
   // Toast Notifications
   const [toast, setToast] = useState(null);
+  // Live 1-minute ticker for 24-hour AWS Cost Explorer cooldown countdown
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const awsCooldown = useMemo(() => {
+    const cost = awsMetrics?.cost;
+    const lockExpiresIso = cost?.lockExpiresAt || null;
+    const lastSyncedIso = cost?.lastSyncedAt || null;
+    const lockExpiresMs = lockExpiresIso ? new Date(lockExpiresIso).getTime() : 0;
+    const remainingMs = lockExpiresMs > 0 ? Math.max(0, lockExpiresMs - nowTick) : 0;
+    const canSyncNow = !lockExpiresMs || remainingMs <= 0;
+
+    let remainingLabel = 'Ready now';
+    if (!canSyncNow) {
+      const totalMinutes = Math.ceil(remainingMs / 60000);
+      const hrs = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      remainingLabel = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    }
+
+    const lastSyncedLabel = lastSyncedIso
+      ? new Date(lastSyncedIso).toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : 'Never';
+
+    const unlocksAtLabel = lockExpiresMs > 0
+      ? new Date(lockExpiresMs).toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : null;
+
+    return {
+      canSyncNow,
+      remainingMs,
+      remainingLabel,
+      lastSyncedLabel,
+      unlocksAtLabel,
+    };
+  }, [awsMetrics, nowTick]);
 
   const currentMonthDisplayName = useMemo(() => {
     return new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -143,13 +195,20 @@ export function InfrastructureBilling() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 2. Synchronize All Cloud Providers
+  // 2. Synchronize All Cloud Providers (Manual Button Only + 24h Cooldown)
   const handleSyncAll = async () => {
+    if (!awsCooldown.canSyncNow) {
+      showToast(
+        `AWS Cost Explorer is on 24h cooldown ($0.00 fee). Next live sync available in ${awsCooldown.remainingLabel}${awsCooldown.unlocksAtLabel ? ` (${awsCooldown.unlocksAtLabel})` : ''}.`,
+        'warning'
+      );
+      return;
+    }
     setSyncing(true);
     try {
       const result = await infrastructureService.syncAllProviders(exchangeRate);
       if (result.success) {
-        showToast('All 3 cloud providers synchronized successfully with live metrics!');
+        showToast(result.message || 'Cloud providers synchronized successfully!', result.cached ? 'warning' : 'success');
         await loadData();
       } else {
         showToast(result.error || 'Sync completed with warnings.', 'warning');
@@ -535,11 +594,39 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
             <span>Currency: <strong style={{ color: '#2563eb' }}>{currency}</strong></span>
           </button>
 
-          {/* Sync All Cloud Providers */}
+          {/* 24h AWS Cooldown Countdown Badge */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 11px',
+              borderRadius: 8,
+              border: awsCooldown.canSyncNow ? '1px solid #a7f3d0' : '1px solid #fde68a',
+              background: awsCooldown.canSyncNow ? '#ecfdf5' : '#fffbeb',
+              fontSize: '0.74rem',
+              fontWeight: 700,
+              color: awsCooldown.canSyncNow ? '#047857' : '#92400e',
+            }}
+            title={
+              awsCooldown.canSyncNow
+                ? `24h cooldown complete. Last AWS sync: ${awsCooldown.lastSyncedLabel}. Click Sync to fetch fresh AWS billing ($0.01).`
+                : `Last AWS sync: ${awsCooldown.lastSyncedLabel}. Next paid AWS API call allowed at ${awsCooldown.unlocksAtLabel}.`
+            }
+          >
+            <Clock size={13} />
+            <span>
+              {awsCooldown.canSyncNow
+                ? `AWS Sync Ready (Last: ${awsCooldown.lastSyncedLabel})`
+                : `Next AWS sync in ${awsCooldown.remainingLabel}`}
+            </span>
+          </div>
+
+          {/* Sync All Cloud Providers (Manual Only + 24h Lock) */}
           <button
             type="button"
             onClick={handleSyncAll}
-            disabled={syncing}
+            disabled={syncing || !awsCooldown.canSyncNow}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -547,17 +634,27 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
               padding: '7px 14px',
               borderRadius: 8,
               border: 'none',
-              background: '#2563eb',
+              background: !awsCooldown.canSyncNow ? '#94a3b8' : '#2563eb',
               color: '#ffffff',
               fontSize: '0.78rem',
               fontWeight: 700,
-              cursor: 'pointer',
+              cursor: syncing || !awsCooldown.canSyncNow ? 'not-allowed' : 'pointer',
               opacity: syncing ? 0.6 : 1,
             }}
-            title="Fetches live billing from AWS Cost Explorer & MongoDB Atlas"
+            title={
+              awsCooldown.canSyncNow
+                ? 'Click to fetch live AWS Cost Explorer billing ($0.01/call, max once per 24h)'
+                : `Locked for 24h to prevent AWS API charges. Unlocks in ${awsCooldown.remainingLabel} (${awsCooldown.unlocksAtLabel})`
+            }
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-            <span>{syncing ? 'Syncing...' : 'Sync Cloud Metrics'}</span>
+            <span>
+              {syncing
+                ? 'Syncing...'
+                : !awsCooldown.canSyncNow
+                  ? `Sync Locked (${awsCooldown.remainingLabel})`
+                  : 'Sync Cloud Metrics'}
+            </span>
           </button>
         </div>
       </header>
@@ -1664,23 +1761,34 @@ Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} I
                     <button
                       type="button"
                       onClick={handleSyncAll}
-                      disabled={syncing}
+                      disabled={syncing || !awsCooldown.canSyncNow}
                       style={{
                         padding: '8px 16px',
                         borderRadius: 8,
                         border: 'none',
-                        background: '#d97706',
+                        background: !awsCooldown.canSyncNow ? '#94a3b8' : '#d97706',
                         color: '#ffffff',
                         fontSize: '0.78rem',
                         fontWeight: 700,
-                        cursor: 'pointer',
+                        cursor: syncing || !awsCooldown.canSyncNow ? 'not-allowed' : 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 6,
                       }}
+                      title={
+                        awsCooldown.canSyncNow
+                          ? 'Click to sync live AWS Cost Explorer billing ($0.01)'
+                          : `Next AWS sync allowed in ${awsCooldown.remainingLabel} (${awsCooldown.unlocksAtLabel})`
+                      }
                     >
                       <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-                      <span>{syncing ? 'Syncing...' : 'Refresh Telemetry'}</span>
+                      <span>
+                        {syncing
+                          ? 'Syncing...'
+                          : !awsCooldown.canSyncNow
+                            ? `Next Sync in ${awsCooldown.remainingLabel}`
+                            : 'Sync AWS Now'}
+                      </span>
                     </button>
                   </div>
                 </div>
