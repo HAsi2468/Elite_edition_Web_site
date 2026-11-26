@@ -847,9 +847,9 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                           ) : (
                             vendors.map((v) => (
                               <tr key={v._id}>
-                                <td style={{ fontWeight: '700', color: '#0f172a' }}>{v.businessName || 'N/A'}</td>
-                                <td style={{ color: '#334155' }}>{v.name}</td>
-                                <td style={{ color: '#64748b' }}>{v.phone || 'N/A'}</td>
+                                <td style={{ fontWeight: '700', color: 'var(--text-primary, #0f172a)' }}>{v.businessName || 'N/A'}</td>
+                                <td style={{ color: 'var(--text-secondary, #334155)' }}>{v.name}</td>
+                                <td style={{ color: 'var(--text-muted, #64748b)' }}>{v.phone || 'N/A'}</td>
                                 <td>
                                   {v.gstin ? (
                                     <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
@@ -945,9 +945,9 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                           ) : (
                             parties.map((p) => (
                               <tr key={p._id}>
-                                <td style={{ fontWeight: '700', color: '#0f172a' }}>{p.name}</td>
-                                <td style={{ color: '#64748b' }}>{p.phone || 'N/A'}</td>
-                                <td style={{ color: '#334155' }}>{p.address || 'N/A'}</td>
+                                <td style={{ fontWeight: '700', color: 'var(--text-primary, #0f172a)' }}>{p.name}</td>
+                                <td style={{ color: 'var(--text-muted, #64748b)' }}>{p.phone || 'N/A'}</td>
+                                <td style={{ color: 'var(--text-secondary, #334155)' }}>{p.address || 'N/A'}</td>
                                 <td>
                                   <div style={styles.actionsCell}>
                                     <button onClick={() => handleEditParty(p)} style={styles.editBtn} title="Edit Party">
@@ -1594,8 +1594,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.35rem',
-    background: '#f8fafc',
-    borderRight: '1px solid #e2e8f0',
+    background: 'var(--bg-surface, #f8fafc)',
+    borderRight: '1px solid var(--border-color, #e2e8f0)',
     padding: '1.2rem 0.85rem',
     flexShrink: 0,
   },
@@ -1608,7 +1608,7 @@ const styles = {
     padding: '0.68rem 0.9rem',
     width: '100%',
     textAlign: 'left',
-    color: '#475569',
+    color: 'var(--text-secondary, #475569)',
     fontSize: '0.85rem',
     fontWeight: '600',
     borderRadius: '10px',
@@ -1628,7 +1628,8 @@ const styles = {
     overflowY: 'auto',
     maxHeight: 'calc(92vh - 75px)',
     padding: '1.4rem 1.6rem',
-    background: '#ffffff',
+    background: 'var(--bg-card, #ffffff)',
+    color: 'var(--text-primary, #0f172a)',
     gap: '1.1rem',
   },
   tabContent: {
@@ -1638,8 +1639,8 @@ const styles = {
     height: 'auto',
   },
   inlineForm: {
-    background: '#ffffff',
-    border: '1.5px solid #e2e8f0',
+    background: 'var(--bg-surface, #ffffff)',
+    border: '1.5px solid var(--border-color, #e2e8f0)',
     borderRadius: '16px',
     padding: '1.25rem 1.4rem',
     display: 'flex',
@@ -1763,8 +1764,9 @@ const styles = {
     overflowY: 'auto',
     WebkitOverflowScrolling: 'touch',
     borderRadius: '14px',
-    border: '1px solid #e2e8f0',
-    background: '#ffffff',
+    border: '1px solid var(--border-color, #e2e8f0)',
+    background: 'var(--bg-card, #ffffff)',
+    color: 'var(--text-primary, #0f172a)',
     boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
   },
   actionsCell: {

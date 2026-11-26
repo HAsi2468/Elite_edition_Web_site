@@ -149,11 +149,15 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
     fetchChallans();
   }, [fetchChallans]);
 
-  // Load dynamic Parties/Vendors/Karigars, Process Types, and Master Designs for instant dropdowns
+  // Load STRICTLY company-isolated Parties/Vendors/Karigars, Process Types, and Designs
   useEffect(() => {
     let active = true;
     const loadDynamicMasters = async () => {
       try {
+        const isStitching = company.id === 'stitching';
+        const isDigitalPrint = company.id === 'digital_print';
+        const isOnline = company.id === 'elite_online';
+
         const [
           billingVendorsRes,
           billingCustomersRes,
@@ -166,16 +170,16 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
         ] = await Promise.allSettled([
           api.getBillingVendors ? api.getBillingVendors(company.name) : Promise.resolve([]),
           api.getBillingCustomers ? api.getBillingCustomers(company.name) : Promise.resolve([]),
-          api.getFabricVendors ? api.getFabricVendors() : Promise.resolve([]),
-          api.getParties ? api.getParties() : Promise.resolve([]),
-          api.getVendors ? api.getVendors() : Promise.resolve([]),
-          api.getStitchingConfig ? api.getStitchingConfig() : Promise.resolve(null),
-          api.getDesigns ? api.getDesigns({ limit: 300 }) : Promise.resolve([]),
-          api.getGarmentJobCards ? api.getGarmentJobCards({ limit: 150 }) : Promise.resolve([]),
+          isDigitalPrint && api.getFabricVendors ? api.getFabricVendors() : Promise.resolve([]),
+          isOnline && api.getParties ? api.getParties() : Promise.resolve([]),
+          isOnline && api.getVendors ? api.getVendors() : Promise.resolve([]),
+          isStitching && api.getStitchingConfig ? api.getStitchingConfig() : Promise.resolve(null),
+          api.getDesigns ? api.getDesigns({ limit: 300, department: company.id }) : Promise.resolve([]),
+          isStitching && api.getGarmentJobCards ? api.getGarmentJobCards({ limit: 150 }) : Promise.resolve([]),
         ]);
         if (!active) return;
 
-        // 1. Merge & deduplicate all Parties / Karigars / Vendors
+        // 1. Merge & deduplicate ONLY this company's Parties / Karigars / Vendors
         const mergedParties = [];
         const seenParties = new Set();
         const pushParties = (raw, sourceTag) => {
@@ -200,15 +204,16 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
 
         if (billingVendorsRes.status === 'fulfilled') pushParties(billingVendorsRes.value, 'Vendor');
         if (billingCustomersRes.status === 'fulfilled') pushParties(billingCustomersRes.value, 'Customer');
-        if (fabricVendorsRes.status === 'fulfilled') pushParties(fabricVendorsRes.value, 'Job/Fabric Vendor');
-        if (partiesRes.status === 'fulfilled') pushParties(partiesRes.value, 'Party');
-        if (vendorsRes.status === 'fulfilled') pushParties(vendorsRes.value, 'Vendor');
+        if (isDigitalPrint && fabricVendorsRes.status === 'fulfilled') pushParties(fabricVendorsRes.value, 'Fabric Vendor');
+        if (isOnline && partiesRes.status === 'fulfilled') pushParties(partiesRes.value, 'Party');
+        if (isOnline && vendorsRes.status === 'fulfilled') pushParties(vendorsRes.value, 'Vendor');
 
-        // 2. Dynamic Process Types & Karigars from Stitching Config
-        if (stitchingCfgRes.status === 'fulfilled' && stitchingCfgRes.value) {
+        // 2. Elite Stitching Settings: Parties, Vendors & Process Types
+        if (isStitching && stitchingCfgRes.status === 'fulfilled' && stitchingCfgRes.value) {
           const cfg = stitchingCfgRes.value?.data || stitchingCfgRes.value;
-          if (Array.isArray(cfg?.vendors)) pushParties(cfg.vendors, 'Stitching Karigar');
+          if (Array.isArray(cfg?.vendors)) pushParties(cfg.vendors, 'Stitching Vendor');
           if (Array.isArray(cfg?.karigars)) pushParties(cfg.karigars, 'Karigar');
+          if (Array.isArray(cfg?.parties)) pushParties(cfg.parties, 'Stitching Party');
           const cfgProcs = cfg?.processTypes || cfg?.processes || [];
           if (Array.isArray(cfgProcs) && cfgProcs.length > 0) {
             const combined = [...PROCESS_PRESETS];
@@ -225,7 +230,7 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
         mergedParties.sort((a, b) => a.name.localeCompare(b.name));
         setPartiesList(mergedParties);
 
-        // 3. Pre-load Master Designs + Garment Job Card designs (with images & size ratios!)
+        // 3. Pre-load this company's Designs + (if Stitching) Garment Job Card designs
         const mergedDesigns = [];
         const seenDesigns = new Set();
 
@@ -234,6 +239,8 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
             ? designsRes.value
             : designsRes.value?.data || designsRes.value?.designs || [];
           dArr.forEach((d) => {
+            const dept = String(d?.department || '').toLowerCase();
+            if (dept && dept !== company.id && !(isStitching && dept === 'stitching')) return;
             const code = String(d?.designName || d?.designNo || '').trim();
             if (code && !seenDesigns.has(code.toLowerCase())) {
               seenDesigns.add(code.toLowerCase());
@@ -249,14 +256,13 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
           });
         }
 
-        if (garmentCardsRes.status === 'fulfilled' && garmentCardsRes.value) {
+        if (isStitching && garmentCardsRes.status === 'fulfilled' && garmentCardsRes.value) {
           const gArr = Array.isArray(garmentCardsRes.value)
             ? garmentCardsRes.value
             : garmentCardsRes.value?.data || garmentCardsRes.value?.cards || [];
           gArr.forEach((g) => {
             const code = String(g?.design_number || g?.designNo || '').trim();
             if (!code) return;
-            // Format size ratio string from Garment Job Card if available
             let ratioStr = '';
             if (g.size_ratios && typeof g.size_ratios === 'object') {
               const parts = Object.entries(g.size_ratios)
@@ -1256,17 +1262,19 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                           marginTop: '4px',
                           maxHeight: 220,
                           overflowY: 'auto',
-                          background: '#ffffff',
+                          background: 'var(--bg-card, #ffffff)',
                           border: `1px solid ${brandColor}66`,
                           borderRadius: '10px',
-                          boxShadow: '0 12px 28px rgba(15,23,42,0.22)',
+                          boxShadow: '0 14px 32px rgba(0,0,0,0.35)',
                           zIndex: 60,
+                          padding: '4px',
                         }}
                       >
                         {filteredParties.map((p) => (
-                          <button
+                          <div
                             key={p.name}
-                            type="button"
+                            role="option"
+                            tabIndex={0}
                             onMouseDown={() => {
                               setForm((prev) => ({
                                 ...prev,
@@ -1285,20 +1293,21 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               gap: '0.5rem',
-                              padding: '0.5rem 0.7rem',
-                              border: 'none',
-                              borderBottom: '1px solid #f1f5f9',
-                              background: '#ffffff',
+                              padding: '0.5rem 0.65rem',
+                              borderRadius: '7px',
+                              borderBottom: '1px solid var(--border-color, rgba(148,163,184,0.16))',
+                              background: 'transparent',
                               textAlign: 'left',
                               cursor: 'pointer',
+                              boxSizing: 'border-box',
                             }}
                           >
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary, #0f172a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {p.name}
                               </div>
                               {(p.phone || p.address) && (
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #64748b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {[p.phone, p.address].filter(Boolean).join(' • ')}
                                 </div>
                               )}
@@ -1308,15 +1317,15 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                                 fontSize: '0.66rem',
                                 fontWeight: 700,
                                 color: brandColor,
-                                background: `${brandColor}16`,
-                                padding: '2px 6px',
+                                background: `${brandColor}1c`,
+                                padding: '2px 7px',
                                 borderRadius: '999px',
                                 flexShrink: 0,
                               }}
                             >
                               {p.source || 'Saved'}
                             </span>
-                          </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1529,19 +1538,21 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                                       top: '100%',
                                       left: 6,
                                       zIndex: 50,
-                                      width: 270,
-                                      maxHeight: 210,
+                                      width: 280,
+                                      maxHeight: 220,
                                       overflowY: 'auto',
-                                      background: '#ffffff',
-                                      border: '1px solid #cbd5e1',
+                                      background: 'var(--bg-card, #ffffff)',
+                                      border: `1px solid ${brandColor}66`,
                                       borderRadius: '10px',
-                                      boxShadow: '0 10px 25px rgba(15,23,42,0.18)',
+                                      boxShadow: '0 14px 32px rgba(0,0,0,0.35)',
+                                      padding: '4px',
                                     }}
                                   >
                                     {sugs.map((sug) => (
-                                      <button
+                                      <div
                                         key={sug.designNo}
-                                        type="button"
+                                        role="option"
+                                        tabIndex={0}
                                         onMouseDown={() => handleSelectDesignSuggestion(idx, sug)}
                                         style={{
                                           width: '100%',
@@ -1549,29 +1560,30 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                                           alignItems: 'center',
                                           gap: '0.55rem',
                                           padding: '0.45rem 0.6rem',
-                                          border: 'none',
-                                          borderBottom: '1px solid #f1f5f9',
-                                          background: '#ffffff',
+                                          borderRadius: '7px',
+                                          borderBottom: '1px solid var(--border-color, rgba(148,163,184,0.16))',
+                                          background: 'transparent',
                                           textAlign: 'left',
                                           cursor: 'pointer',
+                                          boxSizing: 'border-box',
                                         }}
                                       >
                                         {sug.imageUrl ? (
                                           <img
                                             src={convertDriveUrl(sug.imageUrl)}
                                             alt={sug.designNo}
-                                            style={{ width: 32, height: 32, borderRadius: '5px', objectFit: 'cover', flexShrink: 0 }}
+                                            style={{ width: 34, height: 34, borderRadius: '5px', objectFit: 'cover', flexShrink: 0 }}
                                           />
                                         ) : (
-                                          <div style={{ width: 32, height: 32, borderRadius: '5px', background: '#f1f5f9', flexShrink: 0 }} />
+                                          <div style={{ width: 34, height: 34, borderRadius: '5px', background: 'rgba(148,163,184,0.16)', flexShrink: 0 }} />
                                         )}
                                         <div style={{ minWidth: 0 }}>
-                                          <div style={{ fontWeight: 800, fontSize: '0.8rem', color: '#0f172a' }}>{sug.designNo}</div>
-                                          <div style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                          <div style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--text-primary, #0f172a)' }}>{sug.designNo}</div>
+                                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {sug.description || sug.fabricName || 'Design Master'}
                                           </div>
                                         </div>
-                                      </button>
+                                      </div>
                                     ))}
                                   </div>
                                 )}
