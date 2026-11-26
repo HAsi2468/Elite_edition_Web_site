@@ -239,8 +239,6 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
             ? designsRes.value
             : designsRes.value?.data || designsRes.value?.designs || [];
           dArr.forEach((d) => {
-            const dept = String(d?.department || '').toLowerCase();
-            if (dept && dept !== company.id && !(isStitching && dept === 'stitching')) return;
             const code = String(d?.designName || d?.designNo || '').trim();
             if (code && !seenDesigns.has(code.toLowerCase())) {
               seenDesigns.add(code.toLowerCase());
@@ -250,7 +248,7 @@ export default function JobChallanPanel({ companyId = 'stitching', currentUser =
                 description: [d.category, d.fabricName, d.colors].filter(Boolean).join(' — '),
                 fabricName: d.fabricName || '',
                 sizeRatio: '',
-                source: 'Design Master',
+                source: 'Design Room',
               });
             }
           });
