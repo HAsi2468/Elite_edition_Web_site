@@ -92,6 +92,8 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     loadTabData();
   }, [activeTab]);
 
+  const isStitchingCtx = context === 'stitching';
+
   const loadTabData = async () => {
     setLoading(true);
     setError('');
@@ -99,11 +101,23 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     setEditingId(null);
     try {
       if (activeTab === 'vendors') {
-        const res = context === 'elite_print' ? await api.getFabricVendors() : await api.getVendors();
-        setVendors(res || []);
+        if (isStitchingCtx) {
+          const res = await api.getBillingVendors('Elite Stitching');
+          const arr = Array.isArray(res) ? res : (res?.data || res?.vendors || []);
+          setVendors(arr);
+        } else {
+          const res = context === 'elite_print' ? await api.getFabricVendors() : await api.getVendors();
+          setVendors(res || []);
+        }
       } else if (activeTab === 'parties') {
-        const res = await api.getParties();
-        setParties(res || []);
+        if (isStitchingCtx) {
+          const res = await api.getBillingCustomers('Elite Stitching');
+          const arr = Array.isArray(res) ? res : (res?.data || res?.customers || []);
+          setParties(arr);
+        } else {
+          const res = await api.getParties();
+          setParties(res || []);
+        }
       } else if (activeTab === 'facilities') {
         const res = await api.getFacilities();
         setFacilities(res || []);
@@ -262,14 +276,18 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     setSuccess('');
     try {
       if (editingId) {
-        if (context === 'elite_print') {
+        if (isStitchingCtx) {
+          await api.updateBillingVendor(editingId, { ...vendorForm, companyEntity: 'Elite Stitching' });
+        } else if (context === 'elite_print') {
           await api.updateFabricVendor(editingId, vendorForm);
         } else {
           await api.updateVendor(editingId, vendorForm);
         }
         setSuccess('Vendor updated successfully.');
       } else {
-        if (context === 'elite_print') {
+        if (isStitchingCtx) {
+          await api.createBillingVendor({ ...vendorForm, companyEntity: 'Elite Stitching' });
+        } else if (context === 'elite_print') {
           await api.createFabricVendor(vendorForm);
         } else {
           await api.createVendor(vendorForm);
@@ -299,7 +317,9 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     if (!window.confirm('Delete this vendor?')) return;
     setError('');
     try {
-      if (context === 'elite_print') {
+      if (isStitchingCtx) {
+        await api.deleteBillingVendor(id);
+      } else if (context === 'elite_print') {
         await api.deleteFabricVendor(id);
       } else {
         await api.deleteVendor(id);
@@ -318,10 +338,26 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     setSuccess('');
     try {
       if (editingId) {
-        await api.updateParty(editingId, partyForm);
+        if (isStitchingCtx) {
+          await api.updateBillingCustomer(editingId, {
+            ...partyForm,
+            billingAddress: partyForm.address,
+            companyEntity: 'Elite Stitching',
+          });
+        } else {
+          await api.updateParty(editingId, partyForm);
+        }
         setSuccess('Party updated successfully.');
       } else {
-        await api.createParty(partyForm);
+        if (isStitchingCtx) {
+          await api.createBillingCustomer({
+            ...partyForm,
+            billingAddress: partyForm.address,
+            companyEntity: 'Elite Stitching',
+          });
+        } else {
+          await api.createParty(partyForm);
+        }
         setSuccess('Party created successfully.');
       }
       setPartyForm({ name: '', phone: '', address: '' });
@@ -337,7 +373,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     setPartyForm({
       name: party.name || '',
       phone: party.phone || '',
-      address: party.address || '',
+      address: party.address || party.billingAddress || '',
     });
   };
 
@@ -345,7 +381,11 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
     if (!window.confirm('Delete this party?')) return;
     setError('');
     try {
-      await api.deleteParty(id);
+      if (isStitchingCtx) {
+        await api.deleteBillingCustomer(id);
+      } else {
+        await api.deleteParty(id);
+      }
       setSuccess('Party deleted successfully.');
       loadTabData();
     } catch (err) {
@@ -947,7 +987,7 @@ export default function CatalogManagerModal({ initialTab = 'vendors', context = 
                               <tr key={p._id}>
                                 <td style={{ fontWeight: '700', color: 'var(--text-primary, #0f172a)' }}>{p.name}</td>
                                 <td style={{ color: 'var(--text-muted, #64748b)' }}>{p.phone || 'N/A'}</td>
-                                <td style={{ color: 'var(--text-secondary, #334155)' }}>{p.address || 'N/A'}</td>
+                                <td style={{ color: 'var(--text-secondary, #334155)' }}>{p.address || p.billingAddress || 'N/A'}</td>
                                 <td>
                                   <div style={styles.actionsCell}>
                                     <button onClick={() => handleEditParty(p)} style={styles.editBtn} title="Edit Party">
@@ -1375,27 +1415,27 @@ if (typeof document !== 'undefined') {
     styleEl.id = styleElId;
     styleEl.innerHTML = `
       .catalog-manager-container {
-        background: #ffffff !important;
-        color: #0f172a !important;
+        background: var(--bg-card, #ffffff) !important;
+        color: var(--text-primary, #0f172a) !important;
         font-family: inherit !important;
       }
       .catalog-manager-container table {
         width: 100% !important;
         min-width: 580px !important;
         border-collapse: collapse !important;
-        background: #ffffff !important;
+        background: var(--bg-card, #ffffff) !important;
       }
       .catalog-manager-container table thead tr {
-        background: #f8fafc !important;
+        background: var(--bg-surface, #f8fafc) !important;
       }
       .catalog-manager-container table th {
-        background: #f8fafc !important;
-        color: #475569 !important;
+        background: var(--bg-surface, #f8fafc) !important;
+        color: var(--text-secondary, #475569) !important;
         font-weight: 800 !important;
         font-size: 0.72rem !important;
         letter-spacing: 0.05em !important;
         padding: 0.8rem 1rem !important;
-        border-bottom: 1.5px solid #e2e8f0 !important;
+        border-bottom: 1.5px solid var(--border-color, #e2e8f0) !important;
         text-align: left !important;
       }
       .catalog-manager-container table th.text-center {
@@ -1404,15 +1444,15 @@ if (typeof document !== 'undefined') {
       .catalog-manager-container table td {
         padding: 0.85rem 1rem !important;
         font-size: 0.85rem !important;
-        color: #1e293b !important;
-        border-bottom: 1px solid #f1f5f9 !important;
-        background: #ffffff !important;
+        color: var(--text-primary, #1e293b) !important;
+        border-bottom: 1px solid var(--border-color, #f1f5f9) !important;
+        background: var(--bg-card, #ffffff) !important;
       }
       .catalog-manager-container table tr:last-child td {
         border-bottom: none !important;
       }
       .catalog-manager-container table tr:hover td {
-        background: #f8fbff !important;
+        background: var(--bg-surface, #f8fbff) !important;
       }
       .catalog-manager-container input:focus {
         border-color: #2563eb !important;
