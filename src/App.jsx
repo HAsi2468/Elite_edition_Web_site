@@ -68,6 +68,7 @@ const DigitalPrintComplainModule = lazyWithRetry(() => import('./components/Digi
 const DigitalPrintExpenseModule = lazyWithRetry(() => import('./components/DigitalPrintExpenseModule'));
 const CompanyDedicatedDashboard = lazyWithRetry(() => import('./components/CompanyDedicatedDashboard'));
 const GarmentJobCardDashboard = lazyWithRetry(() => import('./components/GarmentJobCardDashboard'));
+const JobChallanPanel = lazyWithRetry(() => import('./components/JobChallanPanel'));
 const CrmPanel = lazyWithRetry(() => import('./components/CrmPanel'));
 const BusinessConnectionPanel = lazyWithRetry(() => import('./components/BusinessConnectionPanel'));
 const ReportsCenter = lazyWithRetry(() => import('./components/ReportsCenter'));
@@ -302,7 +303,7 @@ export const ALL_KNOWN_ERP_TABS = new Set([
   'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials',
   'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'eo_invoices',
   'exedp_dashboard', 'exedp_invoices', 'exedp_expenses',
-  'raw_materials', 'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master',
+  'raw_materials', 'job_challan', 'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master',
   'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings', 'jobcards_stitching_challan',
   'jobcards_stitching_settings', 'jobcards_printing_log', 'jobcards_fusing_log', 'jobcards_print_entry',
   'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_split_view', 'jobcards_challan',
@@ -1059,7 +1060,7 @@ export default function App() {
     if (isMobileOrPwa() && !window.history.state?.eliteAppGuard && !window.history.state?.eliteChatRoom) {
       try {
         window.history.pushState({ eliteAppGuard: true }, '');
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const handlePopState = (e) => {
@@ -1069,7 +1070,7 @@ export default function App() {
         (Date.now() - (window.__eliteChatConsumedBackAt || 0) < 450)
       ) {
         if (isMobileOrPwa() && !window.history.state?.eliteAppGuard) {
-          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) {}
+          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) { }
         }
         return;
       }
@@ -1082,7 +1083,7 @@ export default function App() {
       if (mobileMenuOpen) {
         setMobileMenuOpen(false);
         if (isMobileOrPwa()) {
-          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) {}
+          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) { }
         }
         return;
       }
@@ -1090,7 +1091,7 @@ export default function App() {
       if (showCompanyQuickSheet) {
         setShowCompanyQuickSheet(false);
         if (isMobileOrPwa()) {
-          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) {}
+          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) { }
         }
         return;
       }
@@ -1103,7 +1104,7 @@ export default function App() {
         if (previousTab && previousTab !== activeTabRef.current) {
           isPoppingHistoryTabRef.current = true;
           setActiveTab(previousTab);
-          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) {}
+          try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) { }
           return;
         }
       }
@@ -1116,7 +1117,7 @@ export default function App() {
       }
 
       lastMobileExitSwipeRef.current = now;
-      try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) {}
+      try { window.history.pushState({ eliteAppGuard: true }, ''); } catch (_) { }
       setShowExitSwipeHint(true);
       setTimeout(() => {
         if (Date.now() - lastMobileExitSwipeRef.current >= 2100) {
@@ -1692,7 +1693,7 @@ export default function App() {
             setShowNotificationDrawer(false);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     };
 
     // Cold-start URL check (when tapping an OS push notification while app was closed)
@@ -1760,7 +1761,7 @@ export default function App() {
       'es_dashboard', 'es_invoices', 'es_finance', 'stitching_invoices', 'stitching_finance', 'es_settings', 'es_complaints', 'es_expenses', 'es_raw_materials', 'eo_scan_pack', 'eo_complaints', 'eo_expenses', 'eo_settings', 'eo_raw_materials', 'raw_materials',
       'exedp_dashboard', 'exedp_invoices', 'exedp_expenses',
       'jobcards', 'jobcards_list', 'jobcards_catalogue', 'jobcards_tracking', 'jobcards_master', 'jobcards_fabric', 'jobcards_raw_materials', 'jobcards_settings',
-      'jobcards_stitching_challan', 'jobcards_stitching_settings',
+      'jobcards_stitching_challan', 'jobcards_stitching_settings', 'job_challan',
       'jobcards_printing_log', 'jobcards_fusing_log', 'jobcards_print_entry', 'jobcards_billing', 'jobcards_costing', 'jobcards_engine', 'jobcards_split_view', 'jobcards_challan', 'jobcards_complain', 'jobcards_expense',
       'jobcards_expenses', 'expense_dashboard', 'expense_create', 'expenses', 'jobcards_qa', 'qa', 'qa_dashboard', 'jobcards_crm', 'crm_department', 'crm', 'crm_profiles', 'crm_leads', 'jobcards_master_ai', 'master_ai_agent',
       'jobcards_business_connection', 'business_connection', 'complaint_dashboard', 'complaint_create', 'eo_invoices',
@@ -1783,6 +1784,7 @@ export default function App() {
     // If user is accessing communication or task management and has workspace access, allow
     if (['communication', 'workspace'].includes(activeTab) && hasCommunicationAccess) return;
     if (activeTab === 'task_management' && hasTaskAccess) return;
+    if (activeTab === 'job_challan') return;
 
     // Check company-level workspace tab access
     if (activeDepartment === 'digital_print' && hasDigitalPrintAccess) {
@@ -3854,6 +3856,7 @@ export default function App() {
                       { id: 'jobcards_list', label: 'Garment Job Cards', icon: FileText, perm: 'stitching_jobcards' },
                       { id: 'jobcards_catalogue', label: 'Design Room', icon: BookOpen, perm: 'stitching_design' },
                       { id: 'es_raw_materials', label: 'Raw Materials', icon: Layers, perm: 'es_raw_materials' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'jobcards_stitching_challan', label: 'Stitching Challans', icon: Database, perm: 'jobcards_stitching_challan' },
                       { id: 'es_complaints', label: 'Complaints', icon: AlertTriangle },
                       { id: 'es_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'es_invoices' },
@@ -3865,6 +3868,7 @@ export default function App() {
                       { id: 'jobcards_printing_log', label: 'Printing Department', icon: Printer, perm: 'jobcards_printing_log' },
                       { id: 'jobcards_fusing_log', label: 'Fusing Department', icon: Flame, perm: 'jobcards_fusing_log' },
                       { id: 'jobcards_fabric', label: 'Fabric Management', icon: Database, perm: 'jobcards_fabric' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'jobcards_billing', label: 'Finance', icon: Receipt, perm: 'jobcards_billing' },
                       { id: 'jobcards_costing', label: 'Costing', icon: TrendingUp, perm: 'jobcards_costing' },
                       { id: 'jobcards_crm', label: 'CRM Department', icon: Users, perm: 'jobcards_crm' },
@@ -3881,6 +3885,7 @@ export default function App() {
                     modules = [
                       { id: 'yj_dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'yj_dashboard' },
                       { id: 'yj_rfd', label: 'Fabric Process', icon: Layers, perm: 'yj_rfd' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'yj_raw_materials', label: 'Raw Materials', icon: PackageCheck, perm: 'yj_raw_materials' },
                       { id: 'yj_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'yj_invoices' },
                       { id: 'yj_complaints', label: 'Complaints', icon: AlertTriangle, perm: 'yj_complaints' },
@@ -3891,6 +3896,7 @@ export default function App() {
                       { id: 'ew_dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'ew_dashboard' },
                       { id: 'ew_design', label: 'Design Room', icon: BookOpen, perm: 'ew_design' },
                       { id: 'ew_rfd', label: 'Fabric Process', icon: Layers, perm: 'ew_rfd' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'ew_raw_materials', label: 'Raw Materials', icon: Layers, perm: 'ew_raw_materials' },
                       { id: 'ew_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'ew_invoices' },
                       { id: 'ew_complaints', label: 'Complaints', icon: AlertTriangle, perm: 'ew_complaints' },
@@ -3900,6 +3906,7 @@ export default function App() {
                     modules = [
                       { id: 'ee_dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'ee_dashboard' },
                       { id: 'ee_rfd', label: 'Fabric Process', icon: Layers, perm: 'ee_rfd' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'ee_raw_materials', label: 'Raw Materials', icon: Layers, perm: 'ee_raw_materials' },
                       { id: 'ee_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'ee_invoices' },
                       { id: 'ee_complaints', label: 'Complaints', icon: AlertTriangle, perm: 'ee_complaints' },
@@ -3909,6 +3916,7 @@ export default function App() {
                     modules = [
                       { id: 'ef_dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'ef_dashboard' },
                       { id: 'ef_rfd', label: 'Fabric Process', icon: Layers, perm: 'ef_rfd' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'ef_raw_materials', label: 'Raw Materials', icon: PackageCheck, perm: 'ef_raw_materials' },
                       { id: 'ef_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'ef_invoices' },
                       { id: 'ef_complaints', label: 'Complaints', icon: AlertTriangle, perm: 'ef_complaints' },
@@ -3918,6 +3926,7 @@ export default function App() {
                     modules = [
                       { id: 'so_dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'so_dashboard' },
                       { id: 'so_rfd', label: 'Fabric Process', icon: Layers, perm: 'so_rfd' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'so_raw_materials', label: 'Raw Materials', icon: Layers, perm: 'so_raw_materials' },
                       { id: 'so_invoices', label: 'Finance & Invoices', icon: Receipt, perm: 'so_invoices' },
                       { id: 'so_complaints', label: 'Complaints', icon: AlertTriangle, perm: 'so_complaints' },
@@ -3930,6 +3939,7 @@ export default function App() {
                       { id: 'returns', label: 'Returns Department', icon: PackageMinus, perm: 'returns' },
                       { id: 'sales', label: 'Sales Orders', icon: ShoppingBag, perm: 'sales' },
                       { id: 'eo_scan_pack', label: 'Scan & Pack', icon: PackageCheck, perm: 'eo_scan_pack' },
+                      { id: 'job_challan', label: 'Job Challan', icon: FileText },
                       { id: 'eo_complaints', label: 'Complaints', icon: AlertTriangle },
                       { id: 'reports', label: 'Reports Center', icon: BarChart3, perm: 'reports' },
                       { id: 'unicommerce', label: 'Uniware Integrations', icon: RefreshCw, perm: 'unicommerce' },
@@ -3982,13 +3992,13 @@ export default function App() {
                               style={{
                                 color: isActive ? '#ffffff' : (
                                   mod.id === 'myntra' ? '#fb7185' :
-                                  mod.id.includes('fusing') ? '#fb923c' :
-                                  mod.id.includes('complain') ? '#f59e0b' :
-                                  mod.id.includes('billing') || mod.id.includes('invoice') ? '#34d399' :
-                                  mod.id.includes('costing') || mod.id.includes('qa') ? '#c084fc' :
-                                  mod.id.includes('designer') || mod.id.includes('catalogue') || mod.id.includes('design') ? '#f472b6' :
-                                  mod.id.includes('settings') ? '#94a3b8' :
-                                  '#38bdf8'
+                                    mod.id.includes('fusing') ? '#fb923c' :
+                                      mod.id.includes('complain') ? '#f59e0b' :
+                                        mod.id.includes('billing') || mod.id.includes('invoice') ? '#34d399' :
+                                          mod.id.includes('costing') || mod.id.includes('qa') ? '#c084fc' :
+                                            mod.id.includes('designer') || mod.id.includes('catalogue') || mod.id.includes('design') ? '#f472b6' :
+                                              mod.id.includes('settings') ? '#94a3b8' :
+                                                '#38bdf8'
                                 ),
                                 flexShrink: 0
                               }}
@@ -4279,6 +4289,7 @@ export default function App() {
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('yj_rfd')) &&
                         renderNavItem('yj_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('yj_raw_materials')) &&
                         renderNavItem('yj_raw_materials', 'Raw Materials', PackageCheck, null, 'Raw Materials')
                       }
@@ -4307,6 +4318,7 @@ export default function App() {
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_rfd')) &&
                         renderNavItem('ew_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('ew_raw_materials')) &&
                         renderNavItem('ew_raw_materials', 'Raw Materials', Layers, null, 'Raw Materials')
                       }
@@ -4332,6 +4344,7 @@ export default function App() {
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('ee_rfd')) &&
                         renderNavItem('ee_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('ee_raw_materials')) &&
                         renderNavItem('ee_raw_materials', 'Raw Materials', Layers, null, 'Raw Materials')
                       }
@@ -4357,6 +4370,7 @@ export default function App() {
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('ef_rfd')) &&
                         renderNavItem('ef_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('ef_raw_materials')) &&
                         renderNavItem('ef_raw_materials', 'Raw Materials', PackageCheck, null, 'Raw Materials')
                       }
@@ -4382,6 +4396,7 @@ export default function App() {
                       {(!currentUser || isSuperOrAdmin || currentUser.role === 'admin' || currentUser.permissions?.includes('so_rfd')) &&
                         renderNavItem('so_rfd', 'Fabric Process', Layers, null, 'Fabric Process')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('so_raw_materials')) &&
                         renderNavItem('so_raw_materials', 'Raw Materials', Layers, null, 'Raw Materials')
                       }
@@ -4411,6 +4426,7 @@ export default function App() {
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('es_raw_materials') || currentUser.permissions?.includes('jobcards_fabric') || currentUser.permissions?.includes('stitching_fabric')) &&
                         renderNavItem('es_raw_materials', 'Raw Materials', Layers, null, 'Raw Materials')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric') || currentUser.permissions?.includes('jobcards_stitching_challan') || currentUser.permissions?.includes('stitching_fabric')) &&
                         renderNavItem('jobcards_stitching_challan', 'Challan', Database, null, 'Challan')
                       }
@@ -4440,6 +4456,7 @@ export default function App() {
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_fabric')) &&
                         renderNavItem('jobcards_fabric', 'Fabric Management', Database, null, 'Fabric')
                       }
+                      {renderNavItem('job_challan', 'Job Challan', FileText, null, 'Job Challan')}
                       {(!currentUser || currentUser.role === 'admin' || currentUser.permissions?.includes('jobcards_billing')) &&
                         renderNavItem('jobcards_billing', 'Finance', Receipt, null, 'Finance')
                       }
@@ -4750,6 +4767,8 @@ export default function App() {
                     <RawMaterialsPanel key="Yamunaji" companyEntity="Yamunaji" />
                   ) : activeTab === 'yj_invoices' ? (
                     <EliteBillingDepartment companyEntity="Yamunaji" department="yamunaji" />
+                  ) : activeTab === 'job_challan' ? (
+                    <JobChallanPanel key={`job_challan_${activeDepartment}`} companyId={activeDepartment} currentUser={currentUser} />
                   ) : activeTab === 'es_dashboard' ? (
                     <GarmentJobCardDashboard />
                   ) : activeTab === 'es_settings' || activeTab === 'jobcards_stitching_settings' ? (
@@ -4777,15 +4796,15 @@ export default function App() {
                     <RawMaterialsPanel
                       key={`raw_${activeDepartment}`}
                       companyEntity={
-                      activeDepartment === 'elite_online' ? 'Elite Online' :
-                        activeDepartment === 'elite_edition' ? 'Elite Edition' :
-                          activeDepartment === 'elite_fabtex' ? 'Elite Fabtex' :
-                            activeDepartment === 'sobise' ? 'Sobise' :
-                              activeDepartment === 'ethno_wear' ? 'Ethno wear' :
-                                activeDepartment === 'yamunaji' ? 'Yamunaji' :
-                                  activeDepartment === 'stitching' ? 'Elite Stitching' :
-                                    'Elite Digital Print'
-                    } />
+                        activeDepartment === 'elite_online' ? 'Elite Online' :
+                          activeDepartment === 'elite_edition' ? 'Elite Edition' :
+                            activeDepartment === 'elite_fabtex' ? 'Elite Fabtex' :
+                              activeDepartment === 'sobise' ? 'Sobise' :
+                                activeDepartment === 'ethno_wear' ? 'Ethno wear' :
+                                  activeDepartment === 'yamunaji' ? 'Yamunaji' :
+                                    activeDepartment === 'stitching' ? 'Elite Stitching' :
+                                      'Elite Digital Print'
+                      } />
                   ) : activeTab === 'exedp_dashboard' ? (
                     <CompanyDedicatedDashboard companyEntity="EXEDP" onNavigate={(tab) => setActiveTab(tab)} />
                   ) : activeTab === 'exedp_invoices' || (activeDepartment === 'exedp' && activeTab !== 'workspace' && activeTab !== 'communication' && activeTab !== 'task_management' && activeTab !== 'exedp_expenses') ? (

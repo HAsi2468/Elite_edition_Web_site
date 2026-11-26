@@ -3953,6 +3953,65 @@ export const api = {
 
   async getReconciliationHistory() {
       return request('/ledger-reconciliation/sessions-history');
+    },
+
+  // ── Multi-Company Job Challan Endpoints ──
+  async getJobChallans(params = {}) {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') qs.append(k, v);
+      });
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return request(`/job-challans${query}`);
+    },
+
+  async getNextJobChallanNumber(companyEntity) {
+      return request(`/job-challans/next-number?companyEntity=${encodeURIComponent(companyEntity || 'stitching')}`);
+    },
+
+  async lookupJobChallanDesign(query) {
+      return request(`/job-challans/design-lookup?q=${encodeURIComponent(query || '')}`);
+    },
+
+  async createJobChallan(payload) {
+      return request('/job-challans', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+    },
+
+  async updateJobChallan(id, payload) {
+      return request(`/job-challans/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    },
+
+  async updateJobChallanStatus(id, status) {
+      return request(`/job-challans/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+    },
+
+  async deleteJobChallan(id) {
+      return request(`/job-challans/${id}`, {
+        method: 'DELETE'
+      });
+    },
+
+  async downloadJobChallanPdf(id, challanNo = 'JobChallan') {
+      const baseUrl = getBaseUrl();
+      const url = `${baseUrl}/job-challans/${id}/pdf`;
+      const resp = await authFetch(url);
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(errText || `Failed to generate PDF (HTTP ${resp.status})`);
+      }
+      const blob = await resp.blob();
+      const fileName = `${String(challanNo || 'JobChallan').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      downloadOrPreviewPdf(blob, fileName, { title: `Job Challan - ${challanNo || ''}` });
+      return { success: true };
     }
   };
 
