@@ -915,7 +915,12 @@ export default function DesignCatalogue({ department: rawDepartment, companyEnti
     };
 
     const loadAll = (isSilent = false) => {
-      fetchDesigns(isSilent);
+      // On background/focus refresh, NEVER wipe scrolled pages back to Page 1!
+      if (isSilent && pageRef.current > 1) {
+        fetchDesigns(true, 1, { preserveLoadedPages: true });
+      } else {
+        fetchDesigns(isSilent, 1);
+      }
       loadAllDesigns();
       fetchCategories();
       fetchConfig();
@@ -927,10 +932,10 @@ export default function DesignCatalogue({ department: rawDepartment, companyEnti
     const handleDataRefresh = () => loadAll(true);
     window.addEventListener('elite-data-refresh', handleDataRefresh);
 
-    // Refresh on window focus only if at least 60 seconds have elapsed
+    // Refresh on window focus only if at least 60 seconds have elapsed and user hasn't scrolled deep
     let lastLoaded = Date.now();
     const handleFocus = () => {
-      if (Date.now() - lastLoaded > 60000) {
+      if (Date.now() - lastLoaded > 60000 && pageRef.current <= 1) {
         lastLoaded = Date.now();
         loadAll(true);
       }
@@ -943,91 +948,122 @@ export default function DesignCatalogue({ department: rawDepartment, companyEnti
     };
   }, [search, categoryFilter, colorFilter, partyFilter, statusFilter, sortBy, sortOrder, department, activeSubTab]);
 
+  const PAGE_SIZE = 36;
   const pageRef = useRef(page);
   pageRef.current = page;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const loadingMoreRef = useRef(false);
+  const fetchSeqRef = useRef(0);
 
-  const fetchDesigns = async (isSilent = false, targetPage = 1) => {
-    // Only show full-screen loader if there are no designs rendered yet
+  const filterDeptDesigns = useCallback((rows) => {
+    return (rows || []).filter(d => {
+      if (department === 'ethno_wear') {
+        return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
+      }
+      if (department === 'stitching') {
+        return d.department === 'stitching' || /^PKD-/i.test(d.designName || '') || /stitching/i.test(d.category || '');
+      }
+      return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
+    });
+  }, [department]);
+
+  const buildQueryParams = useCallback((targetPage, targetLimit) => ({
+    search,
+    category: Array.isArray(categoryFilter) ? (categoryFilter.length > 0 ? categoryFilter.join(',') : 'All') : categoryFilter,
+    colors: Array.isArray(colorFilter) ? (colorFilter.length > 0 ? colorFilter.join(',') : 'All') : colorFilter,
+    party: Array.isArray(partyFilter) ? (partyFilter.length > 0 ? partyFilter.join(',') : 'All') : partyFilter,
+    status: statusFilter,
+    department,
+    sortBy,
+    sortOrder,
+    page: targetPage,
+    limit: targetLimit,
+  }), [search, categoryFilter, colorFilter, partyFilter, statusFilter, department, sortBy, sortOrder]);
+
+  const fetchDesigns = async (isSilent = false, targetPage = 1, opts = {}) => {
+    const seq = ++fetchSeqRef.current;
+    // Cancel any in-flight loadMore lock on fresh filter/sort reset
+    if (!opts.preserveLoadedPages) {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
     if (!isSilent && designs.length === 0) setLoading(true);
     setError('');
     try {
-      const effectivePage = targetPage;
-      const res = await api.getDesigns({
-        search,
-        category: Array.isArray(categoryFilter) ? (categoryFilter.length > 0 ? categoryFilter.join(',') : 'All') : categoryFilter,
-        colors: Array.isArray(colorFilter) ? (colorFilter.length > 0 ? colorFilter.join(',') : 'All') : colorFilter,
-        party: Array.isArray(partyFilter) ? (partyFilter.length > 0 ? partyFilter.join(',') : 'All') : partyFilter,
-        status: statusFilter,
-        department,
-        sortBy,
-        sortOrder,
-        page: effectivePage,
-        limit: 24
-      });
+      const loadedPages = Math.max(1, pageRef.current || 1);
+      const effectiveLimit = opts.loadAll
+        ? 2000
+        : opts.preserveLoadedPages
+          ? Math.min(2000, loadedPages * PAGE_SIZE)
+          : PAGE_SIZE;
+      const effectivePage = opts.preserveLoadedPages || opts.loadAll ? 1 : targetPage;
+
+      const res = await api.getDesigns(buildQueryParams(effectivePage, effectiveLimit));
+      // Ignore stale out-of-order response
+      if (seq !== fetchSeqRef.current) return;
+
       if (res && res.data) {
-        const cleanData = res.data.filter(d => {
-          if (department === 'ethno_wear') {
-            return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
-          }
-          if (department === 'stitching') {
-            return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
-          }
-          return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
-        });
-        setDesigns(cleanData);
-        setTotal(department === 'ethno_wear' ? cleanData.length : (res.total || 0));
-        setPages(res.pages || 1);
-        setPage(targetPage);
-        pageRef.current = targetPage;
+        const cleanData = filterDeptDesigns(res.data);
+        const deduped = Array.from(new Map(cleanData.map(d => [String(d._id || d.id), d])).values());
+        const serverTotal = Number(res.total) || deduped.length;
+        const computedPages = Math.max(1, Math.ceil(serverTotal / PAGE_SIZE));
+
+        setDesigns(deduped);
+        setTotal(department === 'ethno_wear' ? deduped.length : serverTotal);
+        setPages(opts.loadAll ? 1 : computedPages);
+        pagesRef.current = opts.loadAll ? 1 : computedPages;
+
+        const nextLoadedPage = opts.loadAll
+          ? 1
+          : opts.preserveLoadedPages
+            ? Math.min(loadedPages, computedPages)
+            : targetPage;
+        setPage(nextLoadedPage);
+        pageRef.current = nextLoadedPage;
       }
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       if (!isSilent) setError(err.message || 'Failed to fetch designs');
-      setDesigns([]);
-      setTotal(0);
+      if (!opts.preserveLoadedPages) {
+        setDesigns([]);
+        setTotal(0);
+      }
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const loadMore = async () => {
-    if (loadingMoreRef.current || pageRef.current >= pages) return;
+    if (loadingMoreRef.current || pageRef.current >= pagesRef.current) return;
+    const seqAtStart = fetchSeqRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const nextPage = pageRef.current + 1;
-      const res = await api.getDesigns({
-        search,
-        category: Array.isArray(categoryFilter) ? (categoryFilter.length > 0 ? categoryFilter.join(',') : 'All') : categoryFilter,
-        colors: Array.isArray(colorFilter) ? (colorFilter.length > 0 ? colorFilter.join(',') : 'All') : colorFilter,
-        party: Array.isArray(partyFilter) ? (partyFilter.length > 0 ? partyFilter.join(',') : 'All') : partyFilter,
-        status: statusFilter,
-        department,
-        sortBy,
-        sortOrder,
-        page: nextPage,
-        limit: 24
-      });
-      if (res && res.data && res.data.length > 0) {
-        const cleanMore = res.data.filter(d => {
-          if (department === 'ethno_wear') {
-            return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
-          }
-          if (department === 'stitching') {
-            return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
-          }
-          return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
-        });
+      const res = await api.getDesigns(buildQueryParams(nextPage, PAGE_SIZE));
+      // Discard if filters/search changed while this page was loading
+      if (seqAtStart !== fetchSeqRef.current) return;
+
+      if (res && Array.isArray(res.data)) {
+        const cleanMore = filterDeptDesigns(res.data);
         setDesigns(prev => {
           const map = new Map();
-          prev.forEach(d => map.set(d._id || d.id, d));
-          cleanMore.forEach(d => map.set(d._id || d.id, d));
+          prev.forEach(d => map.set(String(d._id || d.id), d));
+          cleanMore.forEach(d => map.set(String(d._id || d.id), d));
           return Array.from(map.values());
         });
-        setPage(nextPage);
-        pageRef.current = nextPage;
-        if (res.pages) setPages(res.pages);
-        if (res.total !== undefined) setTotal(department === 'ethno_wear' ? designs.length + cleanMore.length : res.total);
+        const serverTotal = res.total !== undefined ? Number(res.total) : total;
+        const computedPages = Math.max(1, Math.ceil(serverTotal / PAGE_SIZE));
+        // If server returned empty page, stop infinite scroll cleanly
+        const finalPage = res.data.length === 0 ? computedPages : nextPage;
+        setPage(finalPage);
+        pageRef.current = finalPage;
+        setPages(computedPages);
+        pagesRef.current = computedPages;
+        if (res.total !== undefined) setTotal(serverTotal);
       }
     } catch (err) {
       console.warn('Failed to load more designs:', err);
@@ -1516,16 +1552,10 @@ export default function DesignCatalogue({ department: rawDepartment, companyEnti
         </div>
       ) : (
         (() => {
-          const deptFiltered = designs.filter(d => {
-            if (department === 'ethno_wear') {
-              return d.department === 'ethno_wear' || /^EW-/i.test(d.designName || '') || d.companyEntity === 'Ethno wear';
-            }
-            if (department === 'stitching') {
-              return d.department === 'stitching' || /^PKD-/i.test(d.designName || '');
-            }
-            return d.department !== 'stitching' && d.department !== 'ethno_wear' && !/^(PKD|EW)-/i.test(d.designName || '');
-          });
-          const filteredDesigns = deptFiltered.filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'category', 'colors', 'fabric', 'partyName', 'notes']));
+          const deptFiltered = filterDeptDesigns(designs);
+          const filteredDesigns = search && search.trim()
+            ? deptFiltered.filter(d => matchSearchQuery(d, search, ['designNo', 'designName', 'designerName', 'category', 'colors', 'colourMatching', 'fabricName', 'fabric', 'parties', 'party', 'partySkuId', 'notes']))
+            : deptFiltered;
           return (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: '1rem' }}>
@@ -1763,14 +1793,16 @@ export default function DesignCatalogue({ department: rawDepartment, companyEnti
 
           {/* Infinite Scroll & Pagination */}
           <InfiniteScrollPagination
-            hasMore={page < pages}
+            hasMore={page < pages && designs.length < total}
             loading={loading && designs.length === 0}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
+            onLoadAll={() => fetchDesigns(false, 1, { loadAll: true })}
+            onFirstPage={() => fetchDesigns(false, 1)}
             page={page}
             pages={pages}
             total={total}
-            currentCount={designs.length}
+            currentCount={filteredDesigns.length}
             itemName="designs"
             onPrevPage={() => {
               const prevPage = Math.max(1, page - 1);
